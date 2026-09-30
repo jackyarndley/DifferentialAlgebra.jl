@@ -1,0 +1,13 @@
+[deps]
+DifferentialAlgebra = "413ac9d4-45af-4c75-aec7-2a1db65c23cb"
+DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
+OrdinaryDiffEqVerner = "79d7bb75-1356-48c1-b8c0-6832512096c2"
+
+[compat]
+DiffEqBase = "6, 7"
+Documenter = "1"
+Literate = "2"
+OrdinaryDiffEqVerner = "1, 2"
+julia = "1.10"

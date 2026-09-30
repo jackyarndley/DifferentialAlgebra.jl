@@ -1,0 +1,7 @@
+Manifest.toml
+Manifest-v*.toml
+.ipynb_checkpoints/
+docs/build/
+docs/src/generated/
+.vscode/
+results/

@@ -1,0 +1,9 @@
+[deps]
+DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
+DifferentialAlgebra = "413ac9d4-45af-4c75-aec7-2a1db65c23cb"
+OrdinaryDiffEqVerner = "79d7bb75-1356-48c1-b8c0-6832512096c2"
+
+[compat]
+DiffEqBase = "6, 7"
+OrdinaryDiffEqVerner = "1, 2"
+julia = "1.10"

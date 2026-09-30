@@ -1,0 +1,81 @@
+julia = "1.10.12"
+bigfloat_precision = 256
+cpu = "alderlake"
+kernel = "Linux"
+samples = 7
+taylorseries = "0.22.8"
+differentialalgebra = "0.1.0"
+ordinarydiffeqverner = "2.4.2"
+
+[[cases]]
+steps = 256
+integrator = "rk4"
+taylor_samples = [0.011223043, 0.018588254, 0.016632765, 0.016458024, 0.016233558, 0.016369637, 0.016541592]
+taylor_bytes = 41239776
+native_bytes = 10728528
+taylor_seconds = 0.016458024
+native_samples = [0.001851868, 0.004062764, 0.004100751, 0.004270047, 0.003873653, 0.003991837, 0.003879168]
+error = 1.4398605032762955e-15
+order = 2
+native_seconds = 0.003991837
+type = "Float64"
+[[cases]]
+steps = 256
+integrator = "rk4"
+taylor_samples = [0.025088167, 0.02087648, 0.028046433, 0.021482449, 0.024963926, 0.021188425, 0.024924399]
+taylor_bytes = 75007200
+native_bytes = 25275840
+taylor_seconds = 0.024924399
+native_samples = [0.007381536, 0.006730989, 0.009685683, 0.006582718, 0.009146705, 0.006569142, 0.009079656]
+error = 5.605504638830342e-15
+order = 3
+native_seconds = 0.007381536
+type = "Float64"
+[[cases]]
+steps = 256
+integrator = "rk4"
+taylor_samples = [0.095639229, 0.091470395, 0.093534948, 0.11522995, 0.090734236, 0.097993146, 0.094122381]
+taylor_bytes = 266585312
+native_bytes = 125337008
+taylor_seconds = 0.094122381
+native_samples = [0.04640414, 0.039462789, 0.038690148, 0.042929089, 0.039442005, 0.057187299, 0.040257815]
+error = 1.3469471985129464e-14
+order = 5
+native_seconds = 0.040257815
+type = "Float64"
+[[cases]]
+steps = 256
+integrator = "rk4"
+taylor_samples = [0.024157821, 0.016364383, 0.024042372, 0.017067293, 0.024218624, 0.017028703, 0.023302035]
+taylor_bytes = 53904608
+native_bytes = 14444608
+taylor_seconds = 0.023302035
+native_samples = [0.004319067, 0.003920175, 0.004158917, 0.004086445, 0.004006682, 0.004677755, 0.004057782]
+error = 3.0094224712229334e-6
+order = 3
+native_seconds = 0.004086445
+type = "Float32"
+[[cases]]
+steps = 256
+integrator = "rk4"
+taylor_samples = [0.408265127, 0.418451421, 0.43300428, 0.427977724, 0.423287978, 0.444751504, 0.432911477]
+taylor_bytes = 1392045352
+native_bytes = 793014992
+taylor_seconds = 0.427977724
+native_samples = [0.37041655, 0.352741475, 0.351971269, 0.341890726, 0.333822852, 0.357636547, 0.350556036]
+error = 8.393755804944779e-76
+order = 3
+native_seconds = 0.351971269
+type = "BigFloat"
+[[cases]]
+steps = 64
+integrator = "vern9"
+taylor_samples = [0.099630986, 0.091100997, 0.095138206, 0.089858831, 0.097339373, 0.087540957, 0.090868596]
+taylor_bytes = 325333144
+native_bytes = 67556120
+taylor_seconds = 0.091100997
+native_samples = [0.024524561, 0.028710898, 0.033640333, 0.029001075, 0.030931117, 0.027483858, 0.029384623]
+error = 4.484404115201972e-15
+order = 3
+native_seconds = 0.029001075
+type = "Float64"
