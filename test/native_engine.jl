@@ -230,12 +230,12 @@ end
         expected = DifferentialAlgebra.getCoefficient(sin(1 + x) * exp(y), [2, 1])
         jobs = [
             Threads.@spawn begin
-                    for _ in 1:100
-                        value = DifferentialAlgebra.getCoefficient(sin(1 + x) * exp(y), [2, 1])
-                        value == expected || error("Cross-task engine state corruption")
+                for _ in 1:100
+                    value = DifferentialAlgebra.getCoefficient(sin(1 + x) * exp(y), [2, 1])
+                    value == expected || error("Cross-task engine state corruption")
                 end
-                    true
-                end for _ in 1:8
+                true
+            end for _ in 1:8
         ]
         @test all(fetch, jobs)
     end

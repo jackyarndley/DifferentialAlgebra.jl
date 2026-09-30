@@ -17,12 +17,14 @@ Use [Runic.jl](https://github.com/fredrikekre/Runic.jl) for Julia source formatt
 Install it in a separate environment, then format the source and executable examples:
 
 ```sh
-julia --project=@runic -e 'using Pkg; Pkg.add("Runic")'
+julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
 julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples benchmark docs/make.jl
 ```
 
 Replace `--inplace` with `--check` to verify formatting without modifying files.
 CI runs this check on the latest stable Julia release.
+Keep the Runic version in these instructions and the CI workflow synchronized;
+formatter upgrades may change the output.
 
 The source is organized by responsibility:
 
