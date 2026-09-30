@@ -69,7 +69,7 @@ end
     valid(out) === ctx || throw(ArgumentError("Different output context"))
     n = min(max(a.len, b.len), ctx.basis.ends[order + 1])
     reserve!(out, n)
-    @inbounds for i in 1:n
+    @inbounds @simd for i in 1:n
         ac = i <= a.len ? a.coeffs[i] : zero(coefficient_type(a))
         bc = i <= b.len ? b.coeffs[i] : zero(coefficient_type(b))
         out.coeffs[i] = alpha * ac + beta * bc

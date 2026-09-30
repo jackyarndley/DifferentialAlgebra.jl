@@ -11,6 +11,15 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
 Examples and benchmarks have separate dependency environments.
 
+## Benchmarks
+
+Run `julia benchmark/setup.jl`, then
+`julia --project=benchmark benchmark/orbits.jl orbits.toml` from the repository root.
+This checks and times adaptive orbit propagation, first-order state transition
+matrices, and higher-order Kepler maps. See the
+[benchmark report](https://github.com/jackyarndley/DifferentialAlgebra.jl/blob/main/benchmark/orbit-results.md)
+for solver settings, accuracy checks and interpretation of the results.
+
 ## Code style and organization
 
 Use [Runic.jl](https://github.com/fredrikekre/Runic.jl) for Julia source formatting.

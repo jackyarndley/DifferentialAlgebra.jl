@@ -1,6 +1,30 @@
 # Performance benchmarks
 
-## Orbit integration comparison
+## Adaptive orbit propagation and Kepler maps
+
+```sh
+julia --startup-file=no benchmark/setup.jl
+julia --startup-file=no --project=benchmark benchmark/orbits.jl orbits.toml
+```
+
+This suite compares DifferentialAlgebra, TaylorSeries, ordinary Float64 states,
+and first-order state transition matrices (STMs) obtained by differentiating
+the ODE solve through DifferentiationInterface and ForwardDiff. It includes
+adaptive Tsit5 and Vern9, eccentric and J₂-perturbed orbits, polynomial orders
+through eight, and analytic Kepler propagation through order twelve.
+Use `--quick` for three samples and a smaller selection of orders.
+
+See [the orbit benchmark report](orbit-results.md) for results, accuracy checks,
+solver settings and timing methodology. To profile the warmed native paths:
+
+```sh
+julia --startup-file=no --project=benchmark benchmark/profile_orbits.jl profile.txt
+```
+
+## Fixed-step integration comparison (earlier measurements)
+
+The measurements below precede the adaptive-orbit optimization pass. The scripts
+remain available for fixed-step and coefficient-type comparisons.
 
 From the repository root:
 

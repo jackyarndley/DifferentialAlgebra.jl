@@ -39,10 +39,12 @@ include("utils.jl")
 
     include("polynomial.jl")
     include("coefficient_types.jl")
+    include("recurrences.jl")
     include("regressions.jl")
     include("constructors.jl")
     include("public_api.jl")
     include("arrays.jl")
     include("display.jl")
     include("staticarrays.jl")
+    include("sciml.jl")
 end
