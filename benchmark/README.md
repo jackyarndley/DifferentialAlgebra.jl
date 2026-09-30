@@ -70,16 +70,3 @@ The largest normalized coefficient differences were `1.35e-14` for Float64,
 `3.01e-6` for Float32 and `8.39e-76` for BigFloat. All independent orbit checks
 passed. These are warm-runtime comparisons for this workload and machine, not
 a guarantee for every polynomial order, sparsity pattern or application.
-
-## Validation
-
-The [API coverage document](../docs/src/api-coverage.md) describes the functionality
-review and deliberate changes from the native C++ interface. Tests include an
-independent C-core coefficient fixture and high-precision special-function
-references. The C-core fixture can be regenerated with
-`test/reference/generate_c_core.py`; no C library is needed to run the tests.
-
-All 1,863 package checks passed on Julia 1.10.12/Linux and 1.13.1/Windows after
-migration to DifferentialAlgebra.jl. Documentation and all four examples passed
-on Julia 1.10, including the optional DiffEqBase extension. CI runs tests on
-Linux with Julia `1.10` and `1`.

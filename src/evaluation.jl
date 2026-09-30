@@ -1,4 +1,3 @@
-"A typed, shared monomial evaluation tree, independent of native libraries."
 struct CompiledMap{T<:Real}
     coefficients::Matrix{T}
     levels::Vector{Int}
@@ -185,7 +184,6 @@ function _linear_transform(A::AbstractMatrix{<:Real},x::AbstractVector{<:DA})
     end
     result
 end
-"Invert a polynomial map using a fixed linear solve and degree-by-degree lifting."
 function invert(f::AbstractVector{<:DA})
     isempty(f) && throw(DimensionMismatch("An empty map cannot be inverted"))
     ctx = valid(first(f)); nv = ctx.basis.variables

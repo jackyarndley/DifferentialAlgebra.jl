@@ -1,32 +1,33 @@
 # DifferentialAlgebra.jl
 
-[DifferentialAlgebra.jl](https://github.com/jackyarndley/DifferentialAlgebra.jl) computes multivariate Taylor
-polynomials using a Julia engine with `Float32`, `Float64` and `BigFloat`
-coefficients. It requires Julia 1.10 or later.
+DifferentialAlgebra.jl computes multivariate Taylor expansions using ordinary
+Julia arithmetic. A polynomial carries its coefficients through a calculation,
+so its output describes both a value and its local dependence on the inputs.
 
-## Getting started
+Use it to differentiate expressions, compose and invert polynomial maps, or
+propagate an expansion through a numerical integrator. The coefficient type is
+a parameter of `DA{T}`; see [Coefficient types](manual/coefficient-types.md).
 
-Install from GitHub until the package is registered:
+## Installation
+
+Julia 1.10 or later is required.
 
 ```julia
 using Pkg
 Pkg.add(url="https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```
 
-For a local checkout, follow [Development](tutorials/setting-up-your-development-environment.md).
+## A first calculation
 
-```julia
+```@example introduction
 using DifferentialAlgebra
-DifferentialAlgebra.init(6, 2)
-x, y = DifferentialAlgebra.identity()
+x, y = variables(2; order=6)
 p = sin(x) * exp(y)
-DifferentialAlgebra.evaluate(p, [0.1, 0.2])
-DifferentialAlgebra.getCoefficient(p, [1, 1])
+(coefficient(p, [1, 1]), p([0.1, 0.2]))
 ```
 
-`DA(c)` creates a constant, including when `c` is an integer. `DA(i, c)` creates
-`c` times independent variable `i`; index zero creates a constant. Use
-`DifferentialAlgebra.identity(Float32)` or `DifferentialAlgebra.identity(BigFloat)` to choose coefficient types.
+Here `x` and `y` are independent perturbations about zero. The algebra retains
+monomials through total degree six.
 
-Polynomial evaluation uses `DifferentialAlgebra.evaluate`; `evalScalar` remains available.
-See [Julia engine and precision](tutorials/native-julia.md) for details.
+Start with [Getting started](manual/getting-started.md), then explore the
+[examples](generated/sine.md) or the [API reference](api.md).

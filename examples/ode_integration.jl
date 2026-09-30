@@ -26,22 +26,21 @@ problem = ODEProblem(kepler_ode!, initial, timespan, μ)
 nominal = solve(problem, Vern9(); abstol=1e-12, reltol=1e-12,
                 save_everystep=false)
 
-DifferentialAlgebra.init(2, 6)
-perturbed = initial .+ DifferentialAlgebra.identity()
+perturbed = initial .+ variables(6; order=2)
 @assert Base.get_extension(DifferentialAlgebra, :DifferentialAlgebraDiffEqBaseExt) !== nothing
 @assert DiffEqBase.value(perturbed[1]) == initial[1]
 
 # Adaptive error control uses constant parts; it is not an error bound for every
-# Taylor coefficient. The benchmark uses fixed steps to compare all coefficients.
+# Taylor coefficient; use convergence checks when controlling higher-order terms.
 solution = solve(remake(problem; u0=perturbed), Vern9();
                  abstol=1e-12, reltol=1e-12, save_everystep=false)
 final = solution.u[end]
-constants = DifferentialAlgebra.cons.(final)
+constants = constant_term.(final)
 @assert maximum(abs.(constants - nominal.u[end])) < 1e-9
 @assert maximum(abs.(constants - initial)) < 1e-9
 
 # The Jacobian at zero perturbation is the state transition matrix.
-stm = DifferentialAlgebra.cons.(DifferentialAlgebra.jacobian(final))
+stm = constant_term.(jacobian(final))
 @assert size(stm) == (6, 6)
 @assert all(isfinite, stm)
 println("Maximum nominal orbit error: ", maximum(abs.(constants - initial)))

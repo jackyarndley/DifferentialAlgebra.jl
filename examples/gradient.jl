@@ -5,14 +5,13 @@
 
 using DifferentialAlgebra
 
-DifferentialAlgebra.init(1, 2)
-dx, dy = DifferentialAlgebra.identity()
+dx, dy = variables(2; order=1)
 x, y = 2.0 + dx, 3.0 + dy
 r = sqrt(x*x + y*y)
 p = sin(r)/r
 
-gradient = DifferentialAlgebra.cons.(DifferentialAlgebra.gradient(p))
+g = constant_term.(gradient(p))
 r0 = sqrt(13.0)
 expected = (r0*cos(r0) - sin(r0))/r0^3 .* [2.0, 3.0]
-@assert isapprox(gradient, expected; atol=1e-14)
-println("Gradient at (2, 3): ", gradient)
+@assert isapprox(g, expected; atol=1e-14)
+println("Gradient at (2, 3): ", g)

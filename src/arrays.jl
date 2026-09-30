@@ -1,4 +1,3 @@
-"Julia-backed vector retaining DACE's elementwise vector arithmetic."
 struct AlgebraicVector{T<:Real} <: AbstractVector{T}
     data::Vector{T}
     AlgebraicVector{T}(data::Vector{T}) where {T<:Real} = new{T}(data)
@@ -21,7 +20,6 @@ Base.setindex!(v::AlgebraicVector, x, i::Int) = (v.data[i] = x)
 Base.similar(v::AlgebraicVector, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)
 Base.copy(v::AlgebraicVector) = AlgebraicVector(copy.(v.data))
 
-"Julia-backed matrix; linear algebra is performed by Julia using DifferentialAlgebra scalars."
 struct AlgebraicMatrix{T<:Real} <: AbstractMatrix{T}
     data::Matrix{T}
     AlgebraicMatrix{T}(data::Matrix{T}) where {T<:Real} = new{T}(data)

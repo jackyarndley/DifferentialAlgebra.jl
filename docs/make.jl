@@ -1,10 +1,11 @@
-using Documenter, Literate, DifferentialAlgebra
+using Documenter, DocumenterCitations, DocumenterCodeBlocks, Literate
+using DifferentialAlgebra
 
 examples = [
-    "Sine function" => "sine",
-    "Gradient" => "gradient",
-    "Polynomial inversion" => "polynomial_inversion",
-    "ODE integration" => "ode_integration",
+    "Elementary functions" => "sine",
+    "Differentiation" => "gradient",
+    "Map inversion" => "polynomial_inversion",
+    "Orbit integration" => "ode_integration",
 ]
 
 for (_, name) in examples
@@ -13,16 +14,34 @@ for (_, name) in examples
                       flavor=Literate.DocumenterFlavor(), execute=true)
 end
 
+DocMeta.setdocmeta!(DifferentialAlgebra, :DocTestSetup,
+                   :(using DifferentialAlgebra); recursive=true)
+
 makedocs(
     root=@__DIR__,
     sitename="DifferentialAlgebra.jl",
-    format=Documenter.HTML(prettyurls=get(ENV, "CI", "false") == "true"),
+    modules=[DifferentialAlgebra],
+    checkdocs=:exports,
+    plugins=[
+        CitationBibliography(joinpath(@__DIR__, "src", "references.bib"); style=:authoryear),
+        CodeBlocks(),
+    ],
+    format=Documenter.HTML(
+        prettyurls=get(ENV, "CI", "false") == "true",
+        canonical="https://jackyarndley.github.io/DifferentialAlgebra.jl/",
+    ),
     pages=[
         "Home" => "index.md",
-        "Engine and precision" => "tutorials/native-julia.md",
-        "Development" => "tutorials/setting-up-your-development-environment.md",
+        "Manual" => [
+            "Getting started" => "manual/getting-started.md",
+            "Polynomial maps" => "manual/maps.md",
+            "Coefficient types" => "manual/coefficient-types.md",
+            "Configuration and storage" => "manual/configuration.md",
+        ],
         "Examples" => [title => "generated/$name.md" for (title, name) in examples],
-        "API" => "api.md",
-        "API coverage" => "api-coverage.md",
+        "API reference" => "api.md",
+        "Mathematical background" => "background.md",
+        "References" => "references.md",
+        "Contributing" => "contributing.md",
     ],
 )

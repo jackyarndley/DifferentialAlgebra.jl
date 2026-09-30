@@ -137,10 +137,13 @@ function quotient(a::Real,b::DA)
     ctx = a isa DA ? compatible(a,b) : valid(b)
     b0 = cons(b)
     iszero(b0) && throw(DAError("Division requires a nonzero denominator constant"))
-    b.len == 1 && return a isa DA ? a/b0 : DA(a/b0)
+    if b.len == 1
+        result = a/b0
+        return result isa DA ? result : DA{typeof(result)}(result)
+    end
     basis = ctx.basis
     if isempty(basis.products)
-        return a*power_series(b,-one(float(b0)),inv(b0))
+        return a*power_series(b,-one(b0),inv(b0))
     end
     T = promote_type(a isa DA ? coefftype(a) : typeof(a),coefftype(b))
     T = typeof(one(T)/one(T))

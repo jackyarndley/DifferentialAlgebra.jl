@@ -41,4 +41,5 @@ include("utils.jl")
     include("native_types.jl")
     include("api_completion.jl")
     include("constructors.jl")
+    include("public_api.jl")
 end
