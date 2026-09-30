@@ -1,6 +1,7 @@
 # DifferentialAlgebra.jl
 
 [![Tests](https://github.com/jackyarndley/DifferentialAlgebra.jl/actions/workflows/test.yml/badge.svg)](https://github.com/jackyarndley/DifferentialAlgebra.jl/actions/workflows/test.yml)
+[![Documentation](https://github.com/jackyarndley/DifferentialAlgebra.jl/actions/workflows/documentation.yml/badge.svg)](https://github.com/jackyarndley/DifferentialAlgebra.jl/actions/workflows/documentation.yml)
 
 Multivariate Taylor polynomials implemented in Julia, with `Float32`, `Float64`
 and `BigFloat` coefficients. Includes arithmetic, elementary and special functions,
