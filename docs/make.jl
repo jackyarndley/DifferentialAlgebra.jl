@@ -3,9 +3,10 @@ using DifferentialAlgebra
 
 examples = [
     "Elementary functions" => "sine",
-    "Differentiation" => "gradient",
+    "Sombrero gradient" => "tutorial1ex8",
     "Map inversion" => "polynomial_inversion",
     "Orbit integration" => "ode_integration",
+    "Kepler Monte Carlo" => "damc_kepler",
 ]
 
 for (_, name) in examples

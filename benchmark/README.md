@@ -1,4 +1,6 @@
-# Orbit integration comparison
+# Performance benchmarks
+
+## Orbit integration comparison
 
 From the repository root:
 
@@ -13,7 +15,7 @@ The output file records every timing sample, median time, allocated bytes and
 coefficient error. Julia, TaylorSeries, OS and CPU versions are recorded too.
 Setup is compatible with Julia 1.10 and current Julia.
 
-## Workload and checks
+### Workload and checks
 
 Both packages run exactly the same six-state, six-variable two-body problem:
 unit gravitational parameter, initial circular orbit `(1,0,0,0,1,0)`, and six
@@ -43,7 +45,7 @@ TaylorSeries uses `variables!` so OrdinaryDiffEq can construct typed zero values
 in the correct default JetSpace. The standalone RK4 also works with an explicit
 JetSpace. No library source or internal multiplication implementation is patched.
 
-## Results
+### Results
 
 Measured on 2026-09-30, Linux/WSL x86-64, Intel Alder Lake, pinned to logical CPU 2,
 with one Julia compute thread. TaylorSeries was 0.22.8 and OrdinaryDiffEqVerner was
@@ -70,3 +72,61 @@ The largest normalized coefficient differences were `1.35e-14` for Float64,
 `3.01e-6` for Float32 and `8.39e-76` for BigFloat. All independent orbit checks
 passed. These are warm-runtime comparisons for this workload and machine, not
 a guarantee for every polynomial order, sparsity pattern or application.
+
+## StaticArrays comparison
+
+After running `benchmark/setup.jl`, use:
+
+```sh
+julia --startup-file=no --project=benchmark benchmark/staticarrays.jl staticarrays.toml
+```
+
+This measures three possible uses of StaticArrays: polynomial coefficient storage,
+numeric evaluation buffers, and the outer six-component integration state. Each
+pair uses the same arithmetic kernel and checks the resulting values or every
+polynomial coefficient before timing. The RK4 comparison takes 64 steps over one
+orbit. It compares array layouts within DifferentialAlgebra, independently of the
+TaylorSeries comparison above.
+
+Measurements below used Julia 1.13.1, StaticArrays 1.9.22, Windows x86-64 and an
+Intel Alder Lake CPU on 2026-09-30. Each function is warmed twice; BenchmarkTools
+takes 30 samples per batch, then the order is reversed for a second batch. Times
+are averages of the two batch medians. Each sample batches 1,000 kernel/evaluation
+calls, 100 storage-conversion calls, or one complete integration to avoid timer
+quantization. Compilation and basis initialization are excluded.
+
+| Workload | Dynamic time / static time | Dynamic / static allocated bytes |
+|:--|--:|--:|
+| Coefficient kernel, 28 coefficients | 1.08× | 0 / 0 |
+| Coefficient kernel, 84 coefficients | 1.07× | 0 / 0 |
+| Coefficient kernel, 462 coefficients | 0.98× | 0 / 0 |
+| Coefficient storage including conversion, 28 coefficients | 0.58× | 288 / 656 |
+| Coefficient storage including conversion, 84 coefficients | 0.79× | 768 / 1,632 |
+| Coefficient storage including conversion, 462 coefficients | 0.76× | 3,805 / 7,707 |
+| Compiled evaluation, 2 variables, order 6 | 1.14× | 0 / 0 |
+| Compiled evaluation, 6 variables, order 3 | 1.04× | 0 / 0 |
+| Numeric six-state RK4 | 7.10× | 107,520 / 0 |
+| Polynomial six-state RK4, order 2 | 1.08× | 2,657,808 / 2,550,288 |
+| Polynomial six-state RK4, order 3 | 1.02× | 6,544,256 / 6,436,736 |
+| Polynomial six-state RK4, order 5 | 1.06× | 30,990,976 / 30,883,584 |
+
+[Raw times, allocations and environment](results-staticarrays.toml).
+Ratios above one favor static arrays. Small differences varied between runs;
+the numeric-state gain and conversion overhead were consistent.
+
+Static vectors are useful for small fixed-size numeric states, so the Kepler
+Monte Carlo example uses them. Polynomial states gain much less because their
+coefficient arithmetic still dominates. `SVector` coordinates and `MVector`
+evaluation buffers already work through the library's generic array interfaces;
+StaticArrays is an example, test and benchmark dependency, not a runtime dependency.
+
+The coefficient experiment uses the existing convolution kernel with static input
+and output arrays. The conversion case also includes creating those arrays and
+returning an owned dynamic result, as a hybrid implementation would require.
+That conversion erased the small kernel gains and roughly doubled allocations.
+The library therefore retains dynamic coefficient storage. This does not rule out
+a separate polynomial implementation with its order and variable count encoded in
+its type; its compilation costs and whole-program performance would need their own
+measurements. Coefficient counts grow combinatorially, so a fixed-size state and a
+fixed-size coefficient array have different tradeoffs. See the
+[StaticArrays guidance](https://github.com/JuliaArrays/StaticArrays.jl#speed).

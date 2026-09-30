@@ -7,7 +7,7 @@ using DelimitedFiles
         data = readdlm(file, ' ', Int64, comments = true, comment_char = '#')
         @test size(data, 1) == binomial(6 + 4, 4)
 
-        idx = DifferentialAlgebra.getMultiIndices(6, 4)
+        idx = DifferentialAlgebra.multiindices(6, 4)
         ida = [data[k, :] for k in axes(data, 1)]
         iin = indexin(idx, ida)
 
@@ -34,9 +34,9 @@ using DelimitedFiles
 
                 M(t) = exp(μ' * t + 0.5 * t' * P * t)
 
-                DifferentialAlgebra.init(ord, dim)
-                Mt = M([DA(i, 1.0) for i in 1:dim])
-                ix, m0 = DifferentialAlgebra.getRawMoments(Mt, ord)
+                DifferentialAlgebra.initialize!(ord, dim)
+                Mt = M([TaylorPolynomial(i, 1.0) for i in 1:dim])
+                ix, m0 = DifferentialAlgebra.raw_moments(Mt, ord)
 
                 ia = [UInt32.(data[dim + 1 + k, 1:(end - 1)]) for k in eachindex(ix)]
                 ii = indexin(ix, ia)
@@ -62,9 +62,9 @@ using DelimitedFiles
 
             M(t) = exp(μ_raw' * t + 0.5 * t' * P_raw * t)
 
-            DifferentialAlgebra.init(ord, dim)
-            Mt = M([DA(i, 1.0) for i in 1:dim])
-            ix, m0 = DifferentialAlgebra.getCentralMoments(Mt, ord)
+            DifferentialAlgebra.initialize!(ord, dim)
+            Mt = M([TaylorPolynomial(i, 1.0) for i in 1:dim])
+            ix, m0 = DifferentialAlgebra.central_moments(Mt, ord)
 
             ia = [UInt32.(data_ctr[dim + 1 + k, 1:(end - 1)]) for k in eachindex(ix)]
             ii = indexin(ix, ia)

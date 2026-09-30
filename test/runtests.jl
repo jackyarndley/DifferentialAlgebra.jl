@@ -25,23 +25,24 @@ include("utils.jl")
         include("linear_algebra.jl")
     end
 
-    @testset verbose = true "Access & extraction" begin
-        include("extraction.jl")
+    @testset verbose = true "Hessians" begin
+        include("hessians.jl")
     end
 
     @testset verbose = true "Statistics" begin
         include("statistics.jl")
     end
 
-    @testset verbose = true "Factories" begin
-        include("factory.jl")
+    @testset verbose = true "Variables" begin
+        include("variables.jl")
     end
 
-    include("native_engine.jl")
-    include("native_types.jl")
-    include("api_completion.jl")
+    include("polynomial.jl")
+    include("coefficient_types.jl")
+    include("regressions.jl")
     include("constructors.jl")
     include("public_api.jl")
     include("arrays.jl")
     include("display.jl")
+    include("staticarrays.jl")
 end

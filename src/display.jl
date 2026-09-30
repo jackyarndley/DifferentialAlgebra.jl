@@ -24,12 +24,12 @@ function show_term(io::IO, coefficient::Real, exponents, first::Bool)
     return nothing
 end
 
-function Base.show(io::IO, p::DA)
-    if !p.context.active
-        print(io, "DA(inactive)")
+function Base.show(io::IO, p::TaylorPolynomial)
+    if !p.algebra.active
+        print(io, "TaylorPolynomial(inactive)")
         return nothing
     end
-    basis = p.context.basis
+    basis = p.algebra.basis
     # Honor Julia's :limit context in the REPL and array displays. Ordinary
     # show/string calls retain every term; compact mode still shows the variables.
     limit = get(io, :limit, false) ? (get(io, :compact, false) ? 4 : 8) : typemax(Int)
@@ -43,16 +43,16 @@ function Base.show(io::IO, p::DA)
         show_term(io, p.coeffs[i], @view(basis.exponents[:, i]), terms == 0)
         terms += 1
     end
-    terms == 0 && show(io, zero(coefftype(p)))
+    terms == 0 && show(io, zero(coefficient_type(p)))
     return nothing
 end
 
-function Base.show(io::IO, ::MIME"text/plain", p::DA)
-    p.context.active || return show(io, p)
-    n = p.context.basis.variables
+function Base.show(io::IO, ::MIME"text/plain", p::TaylorPolynomial)
+    p.algebra.active || return show(io, p)
+    n = p.algebra.basis.variables
     print(
         io, typeof(p), " polynomial in ", n, n == 1 ? " variable" : " variables",
-        " (order ≤ ", p.context.basis.order, "):\n  "
+        " (order ≤ ", p.algebra.basis.order, "):\n  "
     )
     return show(io, p)
 end

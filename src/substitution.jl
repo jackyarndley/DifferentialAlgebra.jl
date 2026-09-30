@@ -1,8 +1,8 @@
 # Shared affine substitution kernel for translation, scaling and partial evaluation.
-function affine_variable(p::DA, from::Integer, to::Integer, a::Real, c::Real; cutoff::Int = valid(p).basis.order)
+function affine_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Real, c::Real; cutoff::Int = valid(p).basis.order)
     ctx = valid(p); b = ctx.basis
     1 <= from <= b.variables && 1 <= to <= b.variables || throw(ArgumentError("Variable index out of bounds"))
-    T = promote_type(coefftype(p), typeof(a), typeof(c))
+    T = promote_type(coefficient_type(p), typeof(a), typeof(c))
     result = allocate(ctx, T)
     powers = zeros(Int, b.variables)
     # Precompute scalar powers once, including 0^0 = 1 for constant terms.
@@ -32,19 +32,19 @@ function affine_variable(p::DA, from::Integer, to::Integer, a::Real, c::Real; cu
     return finish!(result)
 end
 """
-    translateVariable(p, variable, a = 1, c = 0)
+    translate_variable(p, variable, a = 1, c = 0)
 
 Replace one coordinate by `a*x[variable]+c`, retaining the other variables.
 """
-translateVariable(p::DA, v::Integer, a::Real = 1, c::Real = 0) = affine_variable(p, v, v, a, c)
-replaceVariable(p::DA, from::Integer, to::Integer, a::Real = 1) = affine_variable(p, from, to, a, 0)
-scaleVariable(p::DA, v::Integer, a::Real = 1) = affine_variable(p, v, v, a, 0)
-plug(p::DA, v::Integer, value::Real = 0) = affine_variable(p, v, v, 0, value; cutoff = valid(p).cutoff)
+translate_variable(p::TaylorPolynomial, v::Integer, a::Real = 1, c::Real = 0) = affine_variable(p, v, v, a, c)
+replace_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Real = 1) = affine_variable(p, from, to, a, 0)
+scale_variable(p::TaylorPolynomial, v::Integer, a::Real = 1) = affine_variable(p, v, v, a, 0)
+substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) = affine_variable(p, v, v, 0, value; cutoff = valid(p).cutoff)
 
 "Dot product of corresponding polynomial coefficients, without multiplying monomials."
-function evalMonomials(a::DA, b::DA)
+function coefficient_dot(a::TaylorPolynomial, b::TaylorPolynomial)
     compatible(a, b)
-    T = promote_type(coefftype(a), coefftype(b))
+    T = promote_type(coefficient_type(a), coefficient_type(b))
     result = zero(T)
     @inbounds for i in 1:min(a.len, b.len)
         result += a.coeffs[i] * b.coeffs[i]
@@ -53,18 +53,17 @@ function evalMonomials(a::DA, b::DA)
 end
 
 "Retain coefficients of p whose monomials occur in mask."
-function filterMonomials(p::DA, mask::DA)
+function filter_terms(p::TaylorPolynomial, mask::TaylorPolynomial)
     ctx = compatible(p, mask)
     n = min(p.len, mask.len)
-    result = allocate(ctx, coefftype(p), n)
+    result = allocate(ctx, coefficient_type(p), n)
     @inbounds for i in 1:n
         !iszero(mask.coeffs[i]) && (result.coeffs[i] = p.coeffs[i])
     end
     return finish!(result, n)
 end
-"Create one monomial from its exponents and coefficient."
 function monomial(powers::AbstractVector{<:Integer}, value::Real = 1.0)
-    return setCoefficient!(DA(zero(value)), powers, value)
+    return set_coefficient!(TaylorPolynomial(zero(value)), powers, value)
 end
 "Create a polynomial with the same coefficient at every monomial."
 function filled(value::Real = 1.0)
@@ -73,14 +72,13 @@ function filled(value::Real = 1.0)
     return finish!(result)
 end
 "Number of nonzero coefficients (Julia's size(p) retains scalar semantics)."
-nterms(p::DA) = (valid(p); count(!iszero, @view p.coeffs[1:p.len]))
-maxNorm(p::DA) = norm(p, 0)
+nterms(p::TaylorPolynomial) = (valid(p); count(!iszero, @view p.coeffs[1:p.len]))
 
 "Estimated radius where the first omitted order has norm tolerance; this is not a rigorous bound."
-function convRadius(p::DA, tolerance::Real, type::Integer = 1)
+function convergence_radius(p::TaylorPolynomial, tolerance::Real, type::Integer = 1)
     isfinite(tolerance) && tolerance > 0 || throw(ArgumentError("Tolerance must be positive and finite"))
     degree = valid(p).cutoff + 1
-    estimate = estimNorm(p, 0, type, degree)[end]
+    estimate = estimate_norms(p, 0, type, degree)[end]
     return (tolerance / estimate)^(one(float(estimate)) / degree)
 end
-plug(a::AbstractArray{<:DA}, i::Integer, value::Real = 0) = plug.(a, i, value)
+substitute(a::AbstractArray{<:TaylorPolynomial}, i::Integer, value::Real = 0) = substitute.(a, i, value)

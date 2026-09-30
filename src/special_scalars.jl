@@ -38,13 +38,13 @@ function scalar_psi(n::Integer, x::BigFloat)
     previous = BigFloat(Inf)
     for k in 1:precision(BigFloat)
         term = 2SpecialFunctions.zeta(BigFloat(2k)) * factor
-        abs(term) < previous || throw(DAError("Polygamma asymptotic sum did not converge"))
+        abs(term) < previous || throw(TaylorError("Polygamma asymptotic sum did not converge"))
         value += isodd(k) ? term : -term
         abs(term) <= eps(BigFloat) * abs(value) && return (isodd(n) ? value : -value) * factorial(big(n))
         previous = abs(term)
         factor *= BigFloat(s + 2k - 1) * (s + 2k) / (z * z * pi2)
     end
-    throw(DAError("Polygamma sum did not converge"))
+    throw(TaylorError("Polygamma sum did not converge"))
 end
 
 scalar_bessel(fn, n::Integer, x::Real) = fn(n, x)
@@ -74,7 +74,7 @@ function big_besseli(n::Integer, x::BigFloat, scaled::Bool)
             term *= (big(2k - 1)^2 - 4big(n)^2) / (8ax * k)
             value += term
             abs(term) <= eps(BigFloat) * abs(value) && break
-            k == precision(BigFloat) && throw(DAError("Bessel I expansion did not converge"))
+            k == precision(BigFloat) && throw(TaylorError("Bessel I expansion did not converge"))
         end
         value *= sign / sqrt(2BigFloat(π) * ax)
         return scaled ? value : exp(ax) * value
@@ -114,6 +114,6 @@ function big_besselk(n::Integer, x::BigFloat, scaled::Bool)
         integrand, -peak * width, zero(x), BigFloat(Inf);
         rtol = 64eps(BigFloat), order = max(15, cld(precision(BigFloat), 8))
     )
-    error <= 128eps(BigFloat) * abs(value) || throw(DAError("Bessel K quadrature did not converge"))
+    error <= 128eps(BigFloat) * abs(value) || throw(TaylorError("Bessel K quadrature did not converge"))
     return exp(scaled ? shift : shift - x) * value
 end

@@ -1,6 +1,6 @@
 @testset "Independent variables" begin
     x = variables(4; order = 4)
-    @test x isa Vector{DA{Float64}}
+    @test x isa Vector{TaylorPolynomial{Float64}}
     @test constant_term(x) == zeros(4)
     @test constant_term(jacobian(x)) == Matrix{Float64}(I, 4, 4)
 

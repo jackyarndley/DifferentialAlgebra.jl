@@ -11,6 +11,9 @@ p = sin(x)
 
 # Coefficients multiply ordinary monomials, so the cubic coefficient is -1/6.
 @assert coefficient(p, [3]) ≈ -1 / 6
-value = evaluate(p, [1.0])
+value = p(1.0)
 @assert isapprox(value, sin(1.0); atol = 1.0e-14)
 println("Taylor approximation of sin(1): ", value)
+println("x = ", x)
+println("sin(x) = ", p)
+println("Base.sin(1) = ", sin(1.0))

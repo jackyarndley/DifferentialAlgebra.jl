@@ -10,8 +10,10 @@ map = [sin(x)]
 inverse = invert(map)
 
 # The inverse of sin near zero is asin, through the initialized order.
-@assert DifferentialAlgebra.norm(inverse[1] - asin(x)) < 1.0e-14
+@assert DifferentialAlgebra.coefficient_norm(inverse[1] - asin(x)) < 1.0e-14
 composed = evaluate(map[1], inverse)
-@assert DifferentialAlgebra.norm(composed - x) < 1.0e-14
+@assert DifferentialAlgebra.coefficient_norm(composed - x) < 1.0e-14
 println("Inverse Taylor polynomial of sin(x):")
 println(inverse[1])
+println("asin(x):")
+println(asin(x))

@@ -1,6 +1,6 @@
 # Coefficient types
 
-`DA{T}` is parameterized by a real scalar type `T <: Real`. This includes the
+`TaylorPolynomial{T}` is parameterized by a real scalar type `T <: Real`. This includes the
 `AbstractFloat` hierarchy and allows other real number types. A subtype bound
 alone does not supply arithmetic: each operation requires the corresponding
 scalar methods and conversions.
@@ -9,7 +9,7 @@ scalar methods and conversions.
 
 Use `variables(T, n; order)` to choose the coefficient type explicitly.
 `variables(n; order)` defaults to `Float64`. Construct constants with
-`DA{T}(c)` when their storage type should be explicit.
+`TaylorPolynomial{T}(c)` when their storage type should be explicit.
 
 For example, rational coefficients can preserve exact polynomial arithmetic:
 
@@ -22,7 +22,7 @@ coefficient(p, [1, 1])
 
 Arithmetic follows Julia's promotion rules. Division or an elementary function
 may produce a different coefficient type when its scalar result requires one.
-The convenience constructor `DA(c)` uses `typeof(float(c))`; use `DA{T}(c)`
+The convenience constructor `TaylorPolynomial(c)` uses `typeof(float(c))`; use `TaylorPolynomial{T}(c)`
 to retain an exact scalar type.
 Explicit polynomial constants also avoid competing mixed-scalar methods when
 a custom number type defines broad operations on `Real` values.

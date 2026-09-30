@@ -39,7 +39,7 @@ For repeated evaluations into existing buffers, use [`evaluate!`](@ref):
 ```@example maps
 point = [0.1, 0.2]
 result = zeros(2)
-work = zeros(DifferentialAlgebra.getOrd(map) + 1)
+work = zeros(DifferentialAlgebra.degree(map) + 1)
 evaluate!(result, map, point, work)
 ```
 
@@ -51,7 +51,7 @@ depends on the scalar coefficient arithmetic.
 ```@example maps
 inverse = invert(f)
 residual = evaluate(f, inverse) .- [x, y]
-maximum(DifferentialAlgebra.norm, residual)
+maximum(DifferentialAlgebra.coefficient_norm, residual)
 ```
 
 The linear part must be nonsingular. The inverse is constructed locally about
@@ -83,8 +83,15 @@ The calculus functions also accept arrays and views. For example,
 `normalize(f)` and `normalize!(f)` use the polynomial norm; its constant part
 must be nonzero for the reciprocal to have a Taylor expansion.
 
+Small fixed-size states may use StaticArrays.jl. `SVector` inputs work with
+evaluation, composition, differentiation and inversion; `MVector` buffers can
+be passed to `evaluate!`. The polynomial coefficients remain dynamically sized.
+See the [Kepler Monte Carlo example](../generated/damc_kepler.md) for static
+Cartesian states and the [storage benchmarks](https://github.com/jackyarndley/DifferentialAlgebra.jl/tree/main/benchmark)
+for measured tradeoffs.
+
 `jacobian(f)` gives polynomial partial derivatives. Standard Julia matrix
-operations apply to arrays of `DA` values. `DifferentialAlgebra.eigh(A)`
+operations apply to arrays of `TaylorPolynomial` values. `DifferentialAlgebra.eigenpairs(A)`
 computes Taylor eigenpairs for symmetric matrices with distinct constant
 eigenvalues; constant and diagonal matrices are also supported. Other repeated
 eigenvalues do not generally define a unique Taylor eigenbasis.

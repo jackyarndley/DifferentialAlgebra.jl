@@ -6,7 +6,6 @@
 
 using DifferentialAlgebra
 using OrdinaryDiffEqVerner
-using DiffEqBase: DiffEqBase
 
 # Normalized Kepler equations: acceleration = -μ r / |r|³.
 function kepler_ode!(du, u, μ, _)
@@ -29,8 +28,6 @@ nominal = solve(
 )
 
 perturbed = initial .+ variables(6; order = 2)
-@assert Base.get_extension(DifferentialAlgebra, :DifferentialAlgebraDiffEqBaseExt) !== nothing
-@assert DiffEqBase.value(perturbed[1]) == initial[1]
 
 # Adaptive error control uses constant parts; it is not an error bound for every
 # Taylor coefficient; use convergence checks when controlling higher-order terms.

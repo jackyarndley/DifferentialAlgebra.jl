@@ -4,10 +4,10 @@ import ForwardDiff: Dual
 
 @testset verbose = true "Eigendecomposition" begin
 
-    DifferentialAlgebra.init(1, 6)
+    DifferentialAlgebra.initialize!(1, 6)
 
     A = [4.0 2.0 1.0; 2.0 3.0 1.0; 1.0 1.0 2.0]
-    Ada = Matrix{DA}(undef, 3, 3)
+    Ada = Matrix{TaylorPolynomial}(undef, 3, 3)
     Afd = Matrix{Dual{Nothing, Float64, 6}}(undef, 3, 3)
 
     k = 1
@@ -15,7 +15,7 @@ import ForwardDiff: Dual
     for i in 1:3
         for j in 1:i
             p[k] = 1.0
-            Ada[i, j] = A[i, j] + DA(k, 1.0)
+            Ada[i, j] = A[i, j] + TaylorPolynomial(k, 1.0)
             Afd[i, j] = Dual(A[i, j], p...)
             p[k] = 0.0
             k += 1
@@ -32,14 +32,14 @@ import ForwardDiff: Dual
     Fda = LinearAlgebra.eigen(Hermitian(Ada))
     Ffd = LinearAlgebra.eigen(Hermitian(Afd))
 
-    λda, Vda = Fda.values, Fda.vectors          # GenericLinearAlgebra + DA
-    λcc, Vcc = DifferentialAlgebra.eigh(Ada)                   # Taylor eigenpairs in Julia
+    λda, Vda = Fda.values, Fda.vectors          # GenericLinearAlgebra + TaylorPolynomial
+    λcc, Vcc = DifferentialAlgebra.eigenpairs(Ada)                   # Taylor eigenpairs in Julia
     λfd, Vfd = Ffd.values, Ffd.vectors          # GenericLinearAlgebra + ForwardDiff
     λde, Vde = DifferentiableEigen.eigen(Afd)   # DifferentiableEigen + ForwardDiff
     λde, Vde = λde[1:2:end], Vde[1:2:end]
 
-    cλda = DifferentialAlgebra.cons.(λda)
-    cλcc = DifferentialAlgebra.cons.(λcc)
+    cλda = DifferentialAlgebra.constant_term.(λda)
+    cλcc = DifferentialAlgebra.constant_term.(λcc)
     cλfd = [λ.value for λ in λfd]
     cλde = [λ.value for λ in λde]
 
@@ -49,8 +49,8 @@ import ForwardDiff: Dual
         @test all(isapprox.(cλda, cλde, atol = 1.0e-14, rtol = 1.0e-14))
     end
 
-    Jλda = vcat([DifferentialAlgebra.linear.(λda)...]'...)
-    Jλcc = vcat([DifferentialAlgebra.linear.(λcc)...]'...)
+    Jλda = vcat([DifferentialAlgebra.linear_part.(λda)...]'...)
+    Jλcc = vcat([DifferentialAlgebra.linear_part.(λcc)...]'...)
     Jλfd = vcat([[λ.partials...] for λ in λfd]'...)
     Jλde = vcat([[λ.partials...] for λ in λde]'...)
 
@@ -60,8 +60,8 @@ import ForwardDiff: Dual
         @test all(isapprox.(Jλda, Jλde, atol = 1.0e-14, rtol = 1.0e-14))
     end
 
-    cVda = DifferentialAlgebra.cons.(Vda)
-    cVcc = DifferentialAlgebra.cons.(Vcc)
+    cVda = DifferentialAlgebra.constant_term.(Vda)
+    cVcc = DifferentialAlgebra.constant_term.(Vcc)
     cVfd = [V.value for V in Vfd]
     cVde = reshape([V.value for V in Vde], 3, 3)
 
@@ -75,8 +75,8 @@ import ForwardDiff: Dual
         @test all(isapprox.(cVda, cVde .* sde, atol = 1.0e-14, rtol = 1.0e-14))
     end
 
-    JVda = [[DifferentialAlgebra.linear(V)...] for V in Vda]
-    JVcc = [[DifferentialAlgebra.linear(V)...] for V in Vcc]
+    JVda = [[DifferentialAlgebra.linear_part(V)...] for V in Vda]
+    JVcc = [[DifferentialAlgebra.linear_part(V)...] for V in Vcc]
     JVfd = [[V.partials...] for V in Vfd]
     JVde = reshape([[V.partials...] for V in Vde], 3, 3)
 

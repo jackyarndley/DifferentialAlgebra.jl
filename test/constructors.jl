@@ -2,12 +2,12 @@ using DifferentialAlgebra, Test
 
 @testset "Monomial and compiled map constructors" begin
     for T in (Float32, Float64, BigFloat)
-        DifferentialAlgebra.init(4, 2)
+        DifferentialAlgebra.initialize!(4, 2)
         m = Monomial{T}()
-        @test DifferentialAlgebra.getCoefficient(m) isa T && iszero(DifferentialAlgebra.getCoefficient(m))
-        @test DifferentialAlgebra.getExponents(m) == UInt32[0, 0]
-        @test DifferentialAlgebra.order(Monomial()) == 0
-        x, y = variable.(1:DifferentialAlgebra.getMaxVariables(), T)
+        @test DifferentialAlgebra.coefficient(m) isa T && iszero(DifferentialAlgebra.coefficient(m))
+        @test DifferentialAlgebra.exponents(m) == UInt32[0, 0]
+        @test DifferentialAlgebra.degree(Monomial()) == 0
+        x, y = variable.(1:DifferentialAlgebra.nvariables(), T)
         map = DifferentialAlgebra.compile([1 + x, 2 + y])
         for other in (copy(map), DifferentialAlgebra.CompiledMap(map))
             @test other.coefficients !== map.coefficients
@@ -17,7 +17,7 @@ using DifferentialAlgebra, Test
         other = copy(map)
         map.coefficients[1, 1] = T(10)
         @test DifferentialAlgebra.evaluate(other, T[2, 3]) == T[3, 5]
-        DifferentialAlgebra.init(2, 1)
+        DifferentialAlgebra.initialize!(2, 1)
         @test DifferentialAlgebra.evaluate(other, T[2, 3]) == T[3, 5]
     end
 end

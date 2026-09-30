@@ -3,7 +3,7 @@
 ## Algebra lifetime
 
 `variables(n; order)` creates a global algebra. The lower-level
-`DifferentialAlgebra.init(order, n)` initializes the same configuration without
+`DifferentialAlgebra.initialize!(order, n)` initializes the same configuration without
 constructing variables. Reinitializing invalidates existing polynomials, even
 when the dimensions are unchanged.
 
@@ -23,17 +23,17 @@ When creating mutable work buffers, a comprehension such as
 
 ## Truncation and filtering
 
-`DifferentialAlgebra.setTO(order)` changes the working order without changing the
+`DifferentialAlgebra.set_truncation_order!(order)` changes the working order without changing the
 maximum order chosen at initialization. It returns the previous working order.
-`pushTO` and `popTO` provide a stack for temporary changes.
+`with_order(order) do ... end` restores the previous order even when the calculation throws.
 
-`DifferentialAlgebra.setEps(tolerance)` discards sufficiently small floating-point
+`DifferentialAlgebra.set_coefficient_tolerance!(tolerance)` discards sufficiently small floating-point
 coefficients. The default threshold is zero. Filtering and truncation are
 approximations, not rigorous error bounds.
 
 ## Memory and repeated calculations
 
-The `table_bytes` keyword of `variables` and `init` bounds the multiplication
+The `table_bytes` keyword of `variables` and `initialize!` bounds the multiplication
 lookup tables. Larger bases calculate indices as needed. This budget excludes
 polynomial coefficients and basis metadata.
 

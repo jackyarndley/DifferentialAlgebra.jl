@@ -14,7 +14,7 @@ using OrdinaryDiffEqVerner: OrdinaryDiffEqVerner, ODEProblem, solve, Vern9
 
 function initial(::Type{T}, order, backend) where {T}
     variables = if backend === :DifferentialAlgebra
-        DifferentialAlgebra.init(order, 6)
+        DifferentialAlgebra.initialize!(order, 6)
         [DifferentialAlgebra.variable(i, T) for i in 1:6]
     else
         # OrdinaryDiffEq sometimes calls zero(eltype(u)), which needs a default
@@ -27,7 +27,7 @@ function initial(::Type{T}, order, backend) where {T}
 end
 
 rhs!(du, u, p, t) = rhs!(du, u)
-constant(p::DifferentialAlgebra.DA) = DifferentialAlgebra.cons(p)
+constant(p::DifferentialAlgebra.TaylorPolynomial) = DifferentialAlgebra.constant_term(p)
 constant(p::TS.TaylorN) = TS.constant_term(p)
 constant(x::Real) = x
 constant_norm(u, t) = sqrt(sum(x -> abs2(constant(x)), u))
@@ -97,11 +97,11 @@ function compare(::Type{T}, order; steps = 256, samples = 5, integrator = rk4) w
     @assert all(p -> constant(p) isa T, a) && all(p -> constant(p) isa T, b)
     errors = zeros(T, order + 1)
     magnitudes = zeros(T, order + 1)
-    for powers in DifferentialAlgebra.getMultiIndices(order, 6)
+    for powers in DifferentialAlgebra.multiindices(order, 6)
         degree = sum(powers)
         scale = (one(T) / 1000)^degree
         for i in 1:6
-            ca, cb = DifferentialAlgebra.getCoefficient(a[i], powers) / scale, TS.getcoeff(b[i], Int.(powers)) / scale
+            ca, cb = DifferentialAlgebra.coefficient(a[i], powers) / scale, TS.getcoeff(b[i], Int.(powers)) / scale
             errors[degree + 1] = max(errors[degree + 1], abs(ca - cb))
             magnitudes[degree + 1] = max(magnitudes[degree + 1], abs(ca), abs(cb))
         end
@@ -109,7 +109,7 @@ function compare(::Type{T}, order; steps = 256, samples = 5, integrator = rk4) w
     error = maximum(errors ./ max.(one(T), magnitudes))
     @assert error < (T === Float32 ? T(0.005) : T === BigFloat ? big"1e-60" : T(2.0e-10)) error
     nominal = T[1, 0, 0, 0, 1, 0]
-    @assert maximum(abs.(DifferentialAlgebra.cons.(a) - nominal)) < T(2.0e-5)
+    @assert maximum(abs.(DifferentialAlgebra.constant_term.(a) - nominal)) < T(2.0e-5)
     if integrator === rk4 && T === Float64
         coarse = maximum(abs.(rk4(nominal, dt, steps) - nominal))
         fine = maximum(abs.(rk4(nominal, dt / 2, 2steps) - nominal))

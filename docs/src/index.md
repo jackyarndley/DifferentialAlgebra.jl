@@ -6,7 +6,7 @@ so its output describes both a value and its local dependence on the inputs.
 
 Use it to differentiate expressions, compose and invert polynomial maps, or
 propagate an expansion through a numerical integrator. The coefficient type is
-a parameter of `DA{T}`; see [Coefficient types](manual/coefficient-types.md).
+a parameter of `TaylorPolynomial{T}`; see [Coefficient types](manual/coefficient-types.md).
 
 ## Installation
 

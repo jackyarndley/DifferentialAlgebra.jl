@@ -25,6 +25,7 @@ LinearAlgebra = "1"
 QuadGK = "2"
 Random = "1"
 SpecialFunctions = "2"
+StaticArrays = "1"
 TOML = "1"
 Test = "1"
 julia = "1.10"
@@ -34,8 +35,9 @@ DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 DifferentiableEigen = "73a20539-4e65-4dcb-a56d-dc20f210a01b"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["DelimitedFiles", "DifferentiableEigen", "ForwardDiff", "GenericLinearAlgebra", "Test", "TOML"]
+test = ["DelimitedFiles", "DifferentiableEigen", "ForwardDiff", "GenericLinearAlgebra", "StaticArrays", "Test", "TOML"]

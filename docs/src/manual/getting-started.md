@@ -20,7 +20,7 @@ To expand about a nonzero point, add that point to the independent variables:
 `sin(2 + x)` expands around 2. To retrieve a variable without reinitializing
 the algebra, use [`variable`](@ref).
 
-`DA(c)` creates a constant polynomial. In particular, `DA(1)` is constant one.
+`TaylorPolynomial(c)` creates a constant polynomial. In particular, `TaylorPolynomial(1)` is constant one.
 
 ## Display polynomials
 
@@ -34,7 +34,7 @@ the independent-variable indices, regardless of the Julia names assigned to them
 Array displays use the same expressions. Julia's limited displays abbreviate
 long polynomials with `…`; `print(p)` or `string(p)` includes every term.
 Display is for reading, rather than a serialization format. Use
-`DifferentialAlgebra.getMonomials(p)` to inspect coefficient and exponent data.
+`DifferentialAlgebra.monomials(p)` to inspect coefficient and exponent data.
 
 ## Inspect and evaluate
 
@@ -69,7 +69,7 @@ constant_term(gradient(p))
 ## Compare polynomials
 
 Scalar comparisons use the constant part. To compare every coefficient, use
-`DifferentialAlgebra.norm(p - q)`; `iszero(p)` also checks the full polynomial.
+`DifferentialAlgebra.coefficient_norm(p - q)`; `iszero(p)` also checks the full polynomial.
 
 Calling `variables` again starts a new algebra and invalidates existing
 polynomials. See [Configuration and storage](configuration.md) when managing

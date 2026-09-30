@@ -28,11 +28,11 @@ formatter upgrades may change the output.
 
 The source is organized by responsibility:
 
-- `engine.jl` defines polynomial storage, the monomial basis and algebra configuration.
+- `basis.jl` defines the monomial basis; `polynomial.jl` defines polynomial storage and algebra configuration.
 - `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
 - `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
 - `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
-- `display.jl` handles polynomial output; `api.jl` and `docs.jl` define convenience methods and public documentation.
+- `display.jl` handles polynomial output. Public docstrings live immediately beside the definitions they document.
 
 Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`
 interfaces when appropriate, and test views as well as dense arrays.
