@@ -5,7 +5,7 @@
 
 using DifferentialAlgebra
 
-x, = variables(1; order = 10)
+x, = variables((:x,); order = 10)
 map = [sin(x)]
 inverse = invert(map)
 

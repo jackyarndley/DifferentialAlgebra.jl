@@ -10,7 +10,7 @@ function sombrero(x)
     return sin(r) / r
 end
 
-dx, dy = variables(2; order = 1)
+dx, dy = variables((:δx, :δy); order = 1)
 x = [2.0 + dx, 3.0 + dy]
 z = sombrero(x)
 grad_z = gradient(z)

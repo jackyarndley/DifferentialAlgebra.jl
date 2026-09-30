@@ -1,6 +1,6 @@
 # Human-readable expressions. Display is deliberately independent of file formats.
 # Use scalar show methods so coefficient precision and custom types are preserved.
-function show_term(io::IO, coefficient::Real, exponents, first::Bool)
+function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     negative = coefficient < zero(coefficient)
     if first
         negative && print(io, '-')
@@ -17,8 +17,12 @@ function show_term(io::IO, coefficient::Real, exponents, first::Bool)
     for (i, power) in enumerate(exponents)
         iszero(power) && continue
         factor && print(io, '*')
-        print(io, 'x', i)
-        power == 1 || print(io, '^', power)
+        print(io, names[i])
+        if power != 1
+            for digit in string(power)
+                print(io, ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')[digit - '0' + 1])
+            end
+        end
         factor = true
     end
     return nothing
@@ -40,7 +44,7 @@ function Base.show(io::IO, p::TaylorPolynomial)
             print(io, " + …")
             return nothing
         end
-        show_term(io, p.coeffs[i], @view(basis.exponents[:, i]), terms == 0)
+        show_term(io, p.coeffs[i], @view(basis.exponents[:, i]), p.algebra.names, terms == 0)
         terms += 1
     end
     terms == 0 && show(io, zero(coefficient_type(p)))

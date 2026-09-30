@@ -21,7 +21,7 @@ Pkg.add(url = "https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```julia
 using DifferentialAlgebra
 
-x, y = variables(2; order = 6)
+x, y = variables((:x, :y); order = 6)
 p = sin(x) * exp(y)
 
 p([0.1, 0.2])                  # Evaluate the polynomial

@@ -12,3 +12,26 @@
     @test_throws ArgumentError variable(0)
     @test_throws ArgumentError variable(5)
 end
+
+@testset "Variable names" begin
+    names = ["position", "velocity"]
+    x, v = variables(Float32, names; order = 3)
+    @test coefficient_type(x) === Float32
+    @test string(x + v) == "position + velocity"
+    names[1] = "changed"
+    @test string(x) == "position"
+
+    # Invalid names must leave the existing algebra usable.
+    @test_throws DimensionMismatch variables(2; order = 3, names = (:x,))
+    @test_throws ArgumentError variables((:x, "x"); order = 3)
+    @test_throws ArgumentError variables(("", "y"); order = 3)
+    @test_throws ArgumentError variables(("x+y", "y"); order = 3)
+    @test_throws ArgumentError variables((:x, 2); order = 3)
+    @test_throws ArgumentError variables(2; order = 3, names = "xy")
+    @test (x + v)([2, 3]) == 5
+
+    initialize!(3, 2; names = (:r, :v))
+    @test string(variable(1) + variable(2)) == "r + v"
+    initialize!(3, 2)
+    @test string(variable(1) + variable(2)) == "x₁ + x₂"
+end

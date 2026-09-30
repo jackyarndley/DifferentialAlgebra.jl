@@ -2,11 +2,11 @@
     x, y = variables(2; order = 5)
     @test sprint(show, zero(x)) == "0.0"
     @test sprint(show, TaylorPolynomial(-2)) == "-2.0"
-    @test sprint(show, x) == "x1"
-    @test sprint(show, -y) == "-x2"
-    @test sprint(show, x * y) == "x1*x2"
-    @test sprint(show, 2 + 3x - y^2) == "2.0 + 3.0*x1 - x2^2"
-    @test sprint(show, -2x + x * y - y^2) == "-2.0*x1 + x1*x2 - x2^2"
+    @test sprint(show, x) == "x₁"
+    @test sprint(show, -y) == "-x₂"
+    @test sprint(show, x * y) == "x₁*x₂"
+    @test sprint(show, 2 + 3x - y^2) == "2.0 + 3.0*x₁ - x₂²"
+    @test sprint(show, -2x + x * y - y^2) == "-2.0*x₁ + x₁*x₂ - x₂²"
     @test sprint(show, TaylorPolynomial(Inf)) == "Inf"
     @test sprint(show, TaylorPolynomial(-Inf)) == "-Inf"
     @test sprint(show, TaylorPolynomial(NaN)) == "NaN"
@@ -14,9 +14,9 @@
     @test sprint(show, TaylorPolynomial{Float32}(2)) == "2.0f0"
     @test sprint(show, Monomial(3.0, UInt32[1, 2])) == "Monomial(3.0, [1, 2])"
     @test sprint(show, MIME"text/plain"(), x + y) ==
-        "TaylorPolynomial{Float64} polynomial in 2 variables (order ≤ 5):\n  x1 + x2"
-    @test occursin("x1", sprint(show, MIME"text/plain"(), [x y; y x]))
-    @test sprint(show, x + y; context = :compact => true) == "x1 + x2"
+        "TaylorPolynomial{Float64} polynomial in 2 variables (order ≤ 5):\n  x₁ + x₂"
+    @test occursin("x₁", sprint(show, MIME"text/plain"(), [x y; y x]))
+    @test sprint(show, x + y; context = :compact => true) == "x₁ + x₂"
     map = CompiledMap([x + y^2, y])
     @test sprint(show, map) == "CompiledMap{Float64}(2 outputs, 2 variables, degree 2, 4 nodes)"
 
@@ -24,7 +24,7 @@
     full = sprint(show, p)
     limited = sprint(show, p; context = :limit => true)
     compact = sprint(show, p; context = (:limit => true, :compact => true))
-    @test !occursin('…', full) && occursin("x2^5", full)
+    @test !occursin('…', full) && occursin("x₂⁵", full)
     @test endswith(limited, " + …")
     @test endswith(compact, " + …")
     @test length(compact) < length(limited) < length(full)
@@ -33,9 +33,30 @@
     variables(Rational{BigInt}, 1; order = 2)
     @test sprint(show, p) == "TaylorPolynomial(inactive)"
     @test sprint(show, MIME"text/plain"(), p) == "TaylorPolynomial(inactive)"
-    @test sprint(show, variable(1, Rational{BigInt}) / 3) == "1//3*x1"
+    @test sprint(show, variable(1, Rational{BigInt}) / 3) == "1//3*x₁"
     setprecision(256) do
         c = BigFloat(1) / 3
         @test sprint(show, TaylorPolynomial{BigFloat}(c)) == sprint(show, c)
     end
+end
+
+@testset "Named variables and Unicode powers" begin
+    x, y = variables((:x, :y); order = 12)
+    p = 2 + 3x - x * y + y^12
+    @test string(p) == "2.0 + 3.0*x - x*y + y¹²"
+    @test coefficient(p, [0, 12]) == 1
+    @test p([2, 1]) == 7
+    @test string(differentiate(p, 2)) == "-x + 12.0*y¹¹"
+    @test string(variable(2)) == "y"
+    @test occursin("x*y", sprint(show, MIME"text/plain"(), [p]))
+
+    q, r = variables(2; order = 12, names = ["q₁", "δr"])
+    @test string(q^10 * r^2) == "q₁¹⁰*δr²"
+    @test string(p) == "TaylorPolynomial(inactive)"
+    @test string(copy(q + r)) == "q₁ + δr"
+    @test string(evaluate(CompiledMap([q + r^2]), [q, r])[1]) == "q₁ + δr²"
+
+    x = variables(12; order = 2)
+    @test string(x[10] * x[12]) == "x₁₀*x₁₂"
+    @test string(x[12]^2) == "x₁₂²"
 end

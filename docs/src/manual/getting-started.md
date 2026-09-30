@@ -8,13 +8,24 @@ CurrentModule = DifferentialAlgebra
 
 ```@example basics
 using DifferentialAlgebra
-x, y = variables(2; order=4)
+x, y = variables((:x, :y); order=4)
 p = 2 + 3x + x*y + y^2
 ```
 
 [`variables`](@ref) initializes an algebra and returns its independent variables
 in an ordinary Julia vector. Every monomial has total degree at most `order`;
 multiplication and analytic functions discard higher-degree terms.
+
+Names may be symbols or strings in a tuple or vector. They must be distinct
+identifiers and are displayed exactly as supplied, including Unicode names such
+as `:δx` or `:q₁`. The number of variables is inferred from the names. You can
+also write `variables(2; order=4, names=("x", "y"))` or choose a coefficient type
+with `variables(T, (:x, :y); order=4)`.
+
+For automatic names, use `variables(2; order=4)`. Assigning the returned values
+to Julia bindings does not rename the polynomial coordinates. Names are copied
+at initialization and affect display only; coefficients and derivatives still
+use variable indices.
 
 To expand about a nonzero point, add that point to the independent variables:
 `sin(2 + x)` expands around 2. To retrieve a variable without reinitializing
@@ -24,8 +35,9 @@ the algebra, use [`variable`](@ref).
 
 ## Display polynomials
 
-Polynomials print as expressions in `x1`, `x2`, and so on. These labels follow
-the independent-variable indices, regardless of the Julia names assigned to them.
+Polynomials print with Unicode superscripts for powers, such as `x²` and `y¹²`.
+Automatic variable names use subscripts: `x₁`, `x₂`, …, `x₁₀`. With the names
+chosen above, the following expression displays as `2.0 + 3.0*x - y²`:
 
 ```@example basics
 2 + 3x - y^2

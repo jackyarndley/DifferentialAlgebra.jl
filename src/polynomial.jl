@@ -1,5 +1,6 @@
 mutable struct Algebra
     basis::MonomialBasis
+    names::Vector{String}
     cutoff::Int
     epsilon::Float64
     big_epsilon::Union{Nothing, BigFloat}
@@ -48,26 +49,40 @@ end
 end
 
 """
-    initialize!(order, n; table_bytes = 32 * 1024^2)
+    initialize!(order, n; names = nothing, table_bytes = 32 * 1024^2)
 
 Initialize the global algebra with maximum total degree `order` and `n` variables.
 Existing polynomials become invalid. Both dimensions must be positive.
 Use [`variables`](@ref) to initialize and construct the variables in one call.
 `table_bytes` bounds lookup tables, excluding polynomial storage and basis metadata.
 Configure the algebra before launching concurrent calculations.
+`names` is an optional tuple or vector of distinct symbol or string identifiers
+used when displaying polynomials. The default labels are `x₁`, `x₂`, and so on.
 """
-function initialize!(no::Integer, nv::Integer; table_bytes::Integer = 32 * 1024^2)
+function initialize!(no::Integer, nv::Integer; names = nothing, table_bytes::Integer = 32 * 1024^2)
     1 <= no <= 65535 && 1 <= nv <= 1024 || throw(ArgumentError("Invalid order or variable count"))
     nm = binomial(big(no) + nv, nv)
     nm * nv <= 32 * 1024^2 && nm <= typemax(Int32) || throw(ArgumentError("Monomial basis is too large"))
     0 <= table_bytes <= typemax(Int) || throw(ArgumentError("Invalid lookup-table budget"))
+    labels = variable_labels(names, Int(nv))
     lock(ALGEBRA_LOCK) do
         old = isassigned(CURRENT_ALGEBRA) ? CURRENT_ALGEBRA[] : nothing
         basis = old !== nothing && old.basis.order == no && old.basis.variables == nv && old.basis.table_bytes == table_bytes ? old.basis : MonomialBasis(Int(no), Int(nv); table_bytes = Int(table_bytes))
         old !== nothing && (old.active = false)
-        CURRENT_ALGEBRA[] = Algebra(basis, Int(no), 0.0, nothing, true, Int[])
+        CURRENT_ALGEBRA[] = Algebra(basis, labels, Int(no), 0.0, nothing, true, Int[])
     end
     return nothing
+end
+
+function variable_labels(names, n::Int)
+    names === nothing && return ["x" * join('₀' + (c - '0') for c in string(i)) for i in 1:n]
+    names isa Union{Tuple, AbstractVector} || throw(ArgumentError("Names must be a tuple or vector of symbols or strings"))
+    length(names) == n || throw(DimensionMismatch("Provide one name per independent variable"))
+    all(name -> name isa Union{Symbol, AbstractString}, names) || throw(ArgumentError("Variable names must be symbols or strings"))
+    labels = String[String(name) for name in names]
+    all(Base.isidentifier, labels) || throw(ArgumentError("Variable names must be identifiers"))
+    allunique(labels) || throw(ArgumentError("Variable names must be distinct"))
+    return labels
 end
 """
     max_order()
@@ -253,24 +268,34 @@ function linear_part(v::AbstractVector{<:TaylorPolynomial})
 end
 
 """
-    variables(n; order, table_bytes = 32 * 1024^2)
-    variables(T, n; order, table_bytes = 32 * 1024^2)
+    variables(n; order, names = nothing, table_bytes = 32 * 1024^2)
+    variables(T, n; order, names = nothing, table_bytes = 32 * 1024^2)
+    variables(names; order, table_bytes = 32 * 1024^2)
+    variables(T, names; order, table_bytes = 32 * 1024^2)
 
 Initialize an algebra of total degree `order` and return its `n` independent variables.
 `T` is a concrete real coefficient type and defaults to `Float64`. The result is
 an ordinary `Vector{TaylorPolynomial{T}}`. Reinitialization invalidates existing polynomials;
 use [`variable`](@ref) to retrieve a variable in the current algebra.
 
+Supply a tuple or vector of distinct symbol or string identifiers to name the
+variables in polynomial displays. The number of variables can be inferred from
+the names, or supplied explicitly with the `names` keyword. Names are copied at
+initialization and do not affect arithmetic or indexing. Defaults are `x₁`, `x₂`, …;
+custom names are displayed verbatim, and powers use Unicode superscripts.
+
 # Examples
 ```julia
-x, y = variables(2; order = 6)
+x, y = variables((:x, :y); order = 6)
 p = sin(x) * exp(y)
 p([0.1, 0.2])
 ```
 """
-function variables(::Type{T}, n::Integer; order::Integer, table_bytes::Integer = 32 * 1024^2) where {T <: Real}
+function variables(::Type{T}, n::Integer; order::Integer, names = nothing, table_bytes::Integer = 32 * 1024^2) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
-    initialize!(order, n; table_bytes)
+    initialize!(order, n; names, table_bytes)
     return [variable(i, T) for i in 1:n]
 end
 variables(n::Integer; kwargs...) = variables(Float64, n; kwargs...)
+variables(::Type{T}, names::Union{Tuple, AbstractVector}; kwargs...) where {T <: Real} = variables(T, length(names); names, kwargs...)
+variables(names::Union{Tuple, AbstractVector}; kwargs...) = variables(Float64, names; kwargs...)

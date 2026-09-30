@@ -6,7 +6,7 @@
 using DifferentialAlgebra
 
 # Initialize a 20th-order algebra with one variable.
-x, = variables(1; order = 20)
+x, = variables((:x,); order = 20)
 p = sin(x)
 
 # Coefficients multiply ordinary monomials, so the cubic coefficient is -1/6.
