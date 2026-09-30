@@ -30,4 +30,4 @@ jobs:
           using Pkg
           Pkg.develop(path=".")
           Pkg.instantiate()
-          include("docs/make.jl")
+          include(joinpath(pwd(), "docs", "make.jl"))
