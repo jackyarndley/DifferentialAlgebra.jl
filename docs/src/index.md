@@ -14,7 +14,7 @@ Julia 1.10 or later is required.
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/jackyarndley/DifferentialAlgebra.jl")
+Pkg.add(url = "https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```
 
 ## A first calculation

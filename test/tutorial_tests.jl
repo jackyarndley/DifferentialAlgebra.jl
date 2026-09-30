@@ -19,5 +19,5 @@
     # compute int_{-1}^{+1} (erf)
     value = DifferentialAlgebra.evalScalar(Inty, 1.0) - DifferentialAlgebra.evalScalar(Inty, -1.0)
 
-    @test isapprox(value, 0.682689492137, atol=1e-8, rtol=1e-5)
+    @test isapprox(value, 0.682689492137, atol = 1.0e-8, rtol = 1.0e-5)
 end

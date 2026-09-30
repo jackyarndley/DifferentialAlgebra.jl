@@ -22,6 +22,20 @@ the algebra, use [`variable`](@ref).
 
 `DA(c)` creates a constant polynomial. In particular, `DA(1)` is constant one.
 
+## Display polynomials
+
+Polynomials print as expressions in `x1`, `x2`, and so on. These labels follow
+the independent-variable indices, regardless of the Julia names assigned to them.
+
+```@example basics
+2 + 3x - y^2
+```
+
+Array displays use the same expressions. Julia's limited displays abbreviate
+long polynomials with `…`; `print(p)` or `string(p)` includes every term.
+Display is for reading, rather than a serialization format. Use
+`DifferentialAlgebra.getMonomials(p)` to inspect coefficient and exponent data.
+
 ## Inspect and evaluate
 
 ```@example basics

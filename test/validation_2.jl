@@ -1,9 +1,9 @@
 @testset verbose = true "TEST 2: Single-variable functions" begin
     k = 10  # order
-    eps = 1e-15  # tolerance for comparing real numbers
+    eps = 1.0e-15  # tolerance for comparing real numbers
 
     @testset "2.1 Power function" begin
-        for n = 1:10
+        for n in 1:10
             @testset "2.1 Power function (n=$(n))" begin
                 DifferentialAlgebra.init(k, 1)
 
@@ -19,7 +19,7 @@
                     else
                         a_exact = 0.0
                     end
-                    @test isapprox(a_da, a_exact, atol=eps)
+                    @test isapprox(a_da, a_exact, atol = eps)
                 end
             end
         end
@@ -36,12 +36,12 @@
             jj[1] = i
             a_da = DifferentialAlgebra.getCoefficient(f, jj)
             a_exact = 1.0
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
     @testset "2.3 nth root function" begin
-        for n = 2:5
+        for n in 2:5
             @testset "2.3 nth root function (n=$(n))" begin
                 DifferentialAlgebra.init(k, 1)
 
@@ -59,7 +59,7 @@
                         push!(args, 1.0 / n - (i - 1))
                         a_exact = 1.0 / factorial(i) * prod(args)
                     end
-                    @test isapprox(a_da, a_exact, atol=eps)
+                    @test isapprox(a_da, a_exact, atol = eps)
                 end
             end
         end
@@ -76,7 +76,7 @@
             jj[1] = i
             a_da = DifferentialAlgebra.getCoefficient(f, jj)
             a_exact = 1 / factorial(i)
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -93,9 +93,9 @@
             if i == 0
                 a_exact = 0.0
             else
-                a_exact = (-1)^(i+1) * 1.0 / i
+                a_exact = (-1)^(i + 1) * 1.0 / i
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -114,7 +114,7 @@
             else
                 a_exact = (-1)^((i - 1) / 2) / factorial(i)
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -133,7 +133,7 @@
             else
                 a_exact = 0.0
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -150,9 +150,9 @@
             if iseven(i)
                 a_exact = 0.0
             else
-                a_exact = (-1)^((i-1)/2) * 2^(i+1) * (2^(i+1) - 1) * bernoulli(i+1) / factorial(i+1)
+                a_exact = (-1)^((i - 1) / 2) * 2^(i + 1) * (2^(i + 1) - 1) * bernoulli(i + 1) / factorial(i + 1)
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -171,7 +171,7 @@
             else
                 a_exact = factorial(i - 1) / (4.0^((i - 1) / 2) * factorial(div(i - 1, 2))^2 * i)
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -192,7 +192,7 @@
             else
                 a_exact = - factorial(i - 1) / (4.0^((i - 1) / 2) * factorial(div(i - 1, 2))^2 * i)
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -209,9 +209,9 @@
             if iseven(i)
                 a_exact = 0.0
             else
-                a_exact = (-1)^((i-1)/2) / i
+                a_exact = (-1)^((i - 1) / 2) / i
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -230,7 +230,7 @@
             else
                 a_exact = 1.0 / factorial(i)
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -249,7 +249,7 @@
             else
                 a_exact = 0.0
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -265,11 +265,11 @@
             a_da = DifferentialAlgebra.getCoefficient(f, jj)
             if iseven(i)
                 a_exact = 0.0
-                @test isapprox(a_da, a_exact, atol=eps)
+                @test isapprox(a_da, a_exact, atol = eps)
             else
                 # tanh(x) = sum(2^(2n)*(2^(2n)-1)*B_(2n)/(2n)! * x^(2n-1)).
-                a_exact = 2^(i+1) * (2^(i+1) - 1) * bernoulli(i+1) / factorial(i+1)
-                @test isapprox(a_da, a_exact, atol=eps)
+                a_exact = 2^(i + 1) * (2^(i + 1) - 1) * bernoulli(i + 1) / factorial(i + 1)
+                @test isapprox(a_da, a_exact, atol = eps)
             end
         end
     end
@@ -287,9 +287,9 @@
             if iseven(i)
                 a_exact = 0.0
             else
-                a_exact = (-1)^((i-1)/2) * factorial(i-1) / (4^((i-1)/2) * factorial(div(i-1, 2))^2 * i)
+                a_exact = (-1)^((i - 1) / 2) * factorial(i - 1) / (4^((i - 1) / 2) * factorial(div(i - 1, 2))^2 * i)
             end
-            @test isapprox(a_da, a_exact, atol=eps)
+            @test isapprox(a_da, a_exact, atol = eps)
         end
     end
 
@@ -309,7 +309,7 @@
                 a_exact = 1 / i
             end
             # Preserve the reference validation's 1e-12 coefficient tolerance.
-            @test isapprox(a_da, a_exact, atol=1e-12)
+            @test isapprox(a_da, a_exact, atol = 1.0e-12)
         end
     end
 end

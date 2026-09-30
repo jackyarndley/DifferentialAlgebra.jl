@@ -35,11 +35,9 @@ compile
 invert
 ```
 
-## Containers and additional operations
+## Additional operations
 
 ```@docs
-AlgebraicVector
-AlgebraicMatrix
 Monomial
 eigh
 norm
@@ -71,11 +69,9 @@ The following functions are available with the `DifferentialAlgebra.` prefix:
 | `bound(p)` | Bound the polynomial over coordinates in `[-1, 1]` |
 | `estimNorm(p)` / `convRadius(p, tolerance)` | Estimate coefficient growth and convergence heuristically |
 | `monomial(exponents, value)` | Construct a single monomial |
-| `toString(p)` / `fromString(text, T)` | Convert between polynomials and text |
 
 ## Compatibility names
 
-The compatibility names `cons`, `deriv`, `getCoefficient`, and `compiledDA`
-remain available. Prefer `constant_term`, `differentiate`, `coefficient`, and
-`CompiledMap` in new code. Unlike `getCoefficient`, `coefficient` validates that
+The alternative names `cons`, `deriv` and `getCoefficient` remain available.
+Prefer `constant_term`, `differentiate` and `coefficient` in new code. Unlike `getCoefficient`, `coefficient` validates that
 exactly one exponent per variable is supplied and that the total degree is valid.

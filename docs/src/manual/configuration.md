@@ -16,6 +16,11 @@ A polynomial owns mutable coefficient storage. Assignment shares that object;
 numeric evaluation continues to work after reinitialization. Polynomial
 composition still requires the original algebra.
 
+Julia manages polynomial memory automatically. A standard array copy, `copy(A)`,
+shares its polynomial entries; use `copy.(A)` for independent coefficients.
+When creating mutable work buffers, a comprehension such as
+`[zero(p) for _ in 1:n]` creates independent entries. `fill(p, n)` shares `p`.
+
 ## Truncation and filtering
 
 `DifferentialAlgebra.setTO(order)` changes the working order without changing the
@@ -36,14 +41,3 @@ Reuse compiled maps when evaluating many points. The in-place operations
 `evaluate!`, `LinearAlgebra.mul!`, `DifferentialAlgebra.add!` and
 `DifferentialAlgebra.scale!` can reuse storage. Scalar types with allocating
 arithmetic may still allocate inside these operations.
-
-## Persistence
-
-`DifferentialAlgebra.toString(p)` and `parse(DA{T}, text)` provide text round
-trips at the coefficient type's precision. `write(io, p)` and `read(io, DA)`
-interoperate with the DACE binary format. Binary records contain double-precision
-coefficients and 32-bit exponent indices.
-
-The text parser accepts DACE records and whitespace-separated COSY-style
-records, including Fortran `D` exponents. Terms outside the initialized order
-or variable count are discarded when reading.

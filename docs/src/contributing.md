@@ -11,6 +11,30 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
 Examples and benchmarks have separate dependency environments.
 
+## Code style and organization
+
+Use [Runic.jl](https://github.com/fredrikekre/Runic.jl) for Julia source formatting.
+Install it in a separate environment, then format the source and executable examples:
+
+```sh
+julia --project=@runic -e 'using Pkg; Pkg.add("Runic")'
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples benchmark docs/make.jl
+```
+
+Replace `--inplace` with `--check` to verify formatting without modifying files.
+CI runs this check on the latest stable Julia release.
+
+The source is organized by responsibility:
+
+- `engine.jl` defines polynomial storage, the monomial basis and algebra configuration.
+- `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
+- `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
+- `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
+- `display.jl` handles polynomial output; `api.jl` and `docs.jl` define convenience methods and public documentation.
+
+Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`
+interfaces when appropriate, and test views as well as dense arrays.
+
 ## Build the documentation
 
 From the repository root:

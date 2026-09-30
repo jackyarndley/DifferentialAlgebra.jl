@@ -23,3 +23,8 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         env:
           JULIA_NUM_THREADS: '4'
+      - name: Check Runic formatting
+        if: matrix.julia-version == '1'
+        run: |
+          julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version="1"))'
+          julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --check --docstrings src test ext examples benchmark docs/make.jl

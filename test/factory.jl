@@ -1,33 +1,14 @@
-@testset verbose = true "Identity" begin
+@testset "Independent variables" begin
+    x = variables(4; order = 4)
+    @test x isa Vector{DA{Float64}}
+    @test constant_term(x) == zeros(4)
+    @test constant_term(jacobian(x)) == Matrix{Float64}(I, 4, 4)
 
-    @testset verbose = true "First N" begin
-
-        DifferentialAlgebra.init(4,4)
-        av = DifferentialAlgebra.identity(2)
-        ae = [DA(1, 1.0), DA(2, 1.0)]
-
-        @test length(av) == 2
-        @test all(av .== ae)
-    end
-
-    @testset verbose = true "Unsorted" begin
-
-        DifferentialAlgebra.init(4,4)
-        av = DifferentialAlgebra.identity(Vector{UInt32}([3, 4, 1, 1, 3]), false)
-        ae = [DA(3, 1.0), DA(4, 1.0), DA(1, 1.0), DA(1, 1.0), DA(3, 1.0)]
-
-        @test length(av) == 5
-        @test all(av .== ae)
-    end
-
-    @testset verbose = true "Sorted & Unique" begin
-
-        DifferentialAlgebra.init(4,4)
-        av = DifferentialAlgebra.identity(Vector{UInt32}([3, 1, 1, 4, 3, 3]), true)
-        ae = [DA(1, 1.0), 0.0, DA(3, 1.0), DA(4, 1.0)]
-
-        @test length(av) == 4 # max number of variables
-        @test all(av .== ae)
-    end
-
+    # Retrieve selected variables without invalidating an existing calculation.
+    p = x[1] * x[3]
+    selected = variable.([3, 4, 1, 1, 3])
+    @test all(iszero, selected - x[[3, 4, 1, 1, 3]])
+    @test p([2, 3, 4, 5]) == 8
+    @test_throws ArgumentError variable(0)
+    @test_throws ArgumentError variable(5)
 end

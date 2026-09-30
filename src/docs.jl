@@ -1,5 +1,5 @@
 @doc """
-    DA{T}(c=zero(T))
+    DA{T}(c = zero(T))
     DA(c::Real)
     DA(i::Integer, c::Real)
 
@@ -13,14 +13,14 @@ Use [`variables`](@ref) to initialize the algebra. A polynomial is callable:
 """ DA
 
 @doc """
-    variable(i, T=Float64)
+    variable(i, T = Float64)
 
 Return independent variable `i` in the current algebra with coefficient type `T`.
 Indices start at one. This does not reinitialize or invalidate other polynomials.
 """ variable
 
 @doc """
-    init(order, n; table_bytes=32*1024^2)
+    init(order, n; table_bytes = 32 * 1024^2)
 
 Initialize the global algebra with maximum total degree `order` and `n` variables.
 Existing polynomials become invalid. Both dimensions must be positive.
@@ -44,6 +44,7 @@ degree at most the initialized order. Throws on invalid dimensions or exponents.
 Integrate a polynomial with respect to variable `i`, choosing zero integration constant.
 A vector `counts` requests repeated integrals. Terms above the working order are
 discarded. The coefficient type follows the scalar division operation.
+An array and an integer index integrate each entry, preserving the array's shape.
 """ integrate
 
 @doc """
@@ -81,7 +82,6 @@ Polynomial composition requires its original algebra.
 
 `getDim`, `getOrd`, `getVars` and `getTerms` inspect its output dimension,
 maximum degree, highest variable index and number of evaluation-tree nodes.
-The compatibility constructor `compiledDA` names the same type.
 """ CompiledMap
 
 @doc """
@@ -124,22 +124,6 @@ A partial map is completed with identity coordinates before inversion.
 """ invert
 
 @doc """
-    AlgebraicVector(values)
-    AlgebraicVector{T}(n)
-
-A Julia vector wrapper with elementwise vector arithmetic.
-Ordinary Julia vectors of polynomials can be used with the map and calculus APIs.
-""" AlgebraicVector
-
-@doc """
-    AlgebraicMatrix(values)
-    AlgebraicMatrix{T}(m, n)
-
-A Julia matrix wrapper for polynomial linear algebra.
-Ordinary Julia matrices of polynomials are also supported.
-""" AlgebraicMatrix
-
-@doc """
     Monomial(coefficient, exponents)
 
 A coefficient and its vector of nonnegative integer exponents.
@@ -158,7 +142,7 @@ dimension validation. `setCoefficient!` changes a coefficient in place.
 """ getCoefficient
 
 @doc """
-    norm(p::DA, type=0)
+    norm(p::DA, type = 0)
 
 Compute a norm over all polynomial coefficients.
 Type zero returns the maximum absolute coefficient; type one returns their

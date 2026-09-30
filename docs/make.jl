@@ -9,28 +9,32 @@ examples = [
 ]
 
 for (_, name) in examples
-    Literate.markdown(joinpath(@__DIR__, "..", "examples", name * ".jl"),
-                      joinpath(@__DIR__, "src", "generated");
-                      flavor=Literate.DocumenterFlavor(), execute=true)
+    Literate.markdown(
+        joinpath(@__DIR__, "..", "examples", name * ".jl"),
+        joinpath(@__DIR__, "src", "generated");
+        flavor = Literate.DocumenterFlavor(), execute = true
+    )
 end
 
-DocMeta.setdocmeta!(DifferentialAlgebra, :DocTestSetup,
-                   :(using DifferentialAlgebra); recursive=true)
+DocMeta.setdocmeta!(
+    DifferentialAlgebra, :DocTestSetup,
+    :(using DifferentialAlgebra); recursive = true
+)
 
 makedocs(
-    root=@__DIR__,
-    sitename="DifferentialAlgebra.jl",
-    modules=[DifferentialAlgebra],
-    checkdocs=:exports,
-    plugins=[
-        CitationBibliography(joinpath(@__DIR__, "src", "references.bib"); style=:authoryear),
+    root = @__DIR__,
+    sitename = "DifferentialAlgebra.jl",
+    modules = [DifferentialAlgebra],
+    checkdocs = :exports,
+    plugins = [
+        CitationBibliography(joinpath(@__DIR__, "src", "references.bib"); style = :authoryear),
         CodeBlocks(),
     ],
-    format=Documenter.HTML(
-        prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://jackyarndley.github.io/DifferentialAlgebra.jl/",
+    format = Documenter.HTML(
+        prettyurls = get(ENV, "CI", "false") == "true",
+        canonical = "https://jackyarndley.github.io/DifferentialAlgebra.jl/",
     ),
-    pages=[
+    pages = [
         "Home" => "index.md",
         "Manual" => [
             "Getting started" => "manual/getting-started.md",

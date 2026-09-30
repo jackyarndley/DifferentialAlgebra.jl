@@ -42,4 +42,6 @@ include("utils.jl")
     include("api_completion.jl")
     include("constructors.jl")
     include("public_api.jl")
+    include("arrays.jl")
+    include("display.jl")
 end

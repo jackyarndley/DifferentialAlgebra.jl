@@ -42,7 +42,3 @@ An analytic expansion also requires a regular center, such as a nonzero
 constant for a reciprocal. Numerical precision and range are properties of the
 chosen scalar type. For configurable-precision types, construct coefficients
 and perform calculations within that type's precision context.
-
-Binary DACE files store double-precision coefficients. Use text output for
-coefficient types that do not fit that format; parsing additionally requires
-the scalar type to implement `parse`.

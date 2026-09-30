@@ -13,7 +13,7 @@ Requires Julia 1.10 or later. Install directly from GitHub:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/jackyarndley/DifferentialAlgebra.jl")
+Pkg.add(url = "https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```
 
 ## Quick start
@@ -21,7 +21,7 @@ Pkg.add(url="https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```julia
 using DifferentialAlgebra
 
-x, y = variables(2; order=6)
+x, y = variables(2; order = 6)
 p = sin(x) * exp(y)
 
 p([0.1, 0.2])                  # Evaluate the polynomial
@@ -44,5 +44,4 @@ invalidates existing polynomials; see the [user guide](https://jackyarndley.gith
 ## Acknowledgments
 
 DifferentialAlgebra.jl grew out of the native Julia implementation developed for
-[DACE.jl](https://github.com/UoA-AstroGroup/DACE.jl). It retains its MIT attribution
-and supports DACE polynomial formats for interoperability.
+[DACE.jl](https://github.com/UoA-AstroGroup/DACE.jl). It retains its MIT attribution.

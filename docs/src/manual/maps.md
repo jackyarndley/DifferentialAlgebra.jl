@@ -4,8 +4,8 @@
 CurrentModule = DifferentialAlgebra
 ```
 
-A vector of polynomials represents a map. Ordinary Julia vectors are sufficient;
-`AlgebraicVector` is available when elementwise vector arithmetic is desired.
+A standard Julia vector of polynomials represents a map. Use ordinary arrays
+and Julia broadcasting for elementwise operations, such as `sin.(f)` and `f .^ 2`.
 
 ## Evaluation and composition
 
@@ -61,6 +61,27 @@ the identity through the configured order. See the
 [inversion example](../generated/polynomial_inversion.md).
 
 ## Linear algebra
+
+Use matrix literals, multiplication, solves, and the standard `LinearAlgebra`
+functions with polynomial entries:
+
+```@example maps
+using LinearAlgebra
+A = [2 + x y; y 4 - x]
+det(A)
+```
+
+Use dots for elementwise operations:
+
+```@example maps
+sin.(f)
+```
+
+The calculus functions also accept arrays and views. For example,
+`differentiate(A, 1)` differentiates each entry while preserving the matrix shape.
+`A * f` is matrix multiplication; `A .* A` multiplies entries elementwise.
+`normalize(f)` and `normalize!(f)` use the polynomial norm; its constant part
+must be nonzero for the reciprocal to have a Taylor expansion.
 
 `jacobian(f)` gives polynomial partial derivatives. Standard Julia matrix
 operations apply to arrays of `DA` values. `DifferentialAlgebra.eigh(A)`
