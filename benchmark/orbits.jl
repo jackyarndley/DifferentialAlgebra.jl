@@ -8,7 +8,7 @@ import DifferentialAlgebra as DA
 import TaylorSeries as TS
 import DifferentiationInterface as DI
 import ForwardDiff
-using LinearAlgebra, StaticArrays, Statistics, Printf, TOML, SHA, Dates
+using LinearAlgebra, Statistics, Printf, TOML, SHA, Dates
 using BenchmarkTools
 using OrdinaryDiffEqTsit5: OrdinaryDiffEqTsit5, Tsit5
 using OrdinaryDiffEqVerner: OrdinaryDiffEqVerner, Vern9
@@ -20,7 +20,7 @@ const PERTURBATION_SCALE = 1.0e-3
 function initial(u0, order, backend)
     x = backend === :DifferentialAlgebra ? DA.variables(6; order) :
         TS.variables!(Float64, [Symbol("x", i) for i in 1:6]; order, nowarn = true)
-    return u0 + PERTURBATION_SCALE * SVector{6}(x)
+    return u0 + PERTURBATION_SCALE * x
 end
 
 function state_stm(polynomials::AbstractVector{<:DA.TaylorPolynomial})
@@ -144,7 +144,7 @@ function run_scenario(scenario; orders, samples, analytic = false)
     scalar_solution = analytic ? nothing : propagate(s.u0, s.tf, s.j2, s.algorithm, s.tolerance)
     # Collect solver statistics with an equivalent fully seeded dual state;
     # the timed AD call above always goes through DifferentiationInterface.
-    dual_input = SVector{6}(ntuple(i -> ForwardDiff.Dual(s.u0[i], ntuple(j -> Float64(i == j), 6)), 6))
+    dual_input = [ForwardDiff.Dual(s.u0[i], ntuple(j -> Float64(i == j), 6)) for i in 1:6]
     dual_solution = analytic ? nothing : propagate(dual_input, s.tf, s.j2, s.algorithm, s.tolerance)
     rows = [
         row(s, method, "Float64", 0, timings[1], (numeric_error, nothing); solution = scalar_solution),
@@ -160,7 +160,7 @@ function run_scenario(scenario; orders, samples, analytic = false)
         @assert maximum(errors) < (analytic ? 1.0e-10 : 1.0e-8) (scenario = s.name, order, errors)
         ae, be = validate_stm(state_stm(a), reference; tolerance = error_limit), validate_stm(state_stm(b), reference; tolerance = error_limit)
         # Test a nonzero perturbation against scalar propagation, not just nominal values.
-        delta = SVector(0.02, -0.015, 0.01, -0.02, 0.01, 0.015)
+        delta = [0.02, -0.015, 0.01, -0.02, 0.01, 0.015]
         perturbed = flow(s.u0 + PERTURBATION_SCALE * delta)
         perturbed_errors = (relative_error(DA.evaluate(a, delta), perturbed), relative_error([TS.evaluate(p, delta) for p in b], perturbed))
         @assert maximum(perturbed_errors) < (order == 1 ? 5.0e-4 : 5.0e-7) perturbed_errors
@@ -191,8 +191,10 @@ function metadata(samples)
     root = dirname(@__DIR__)
     sources = sort(vcat(readdir(joinpath(root, "src"); join = true), readdir(joinpath(root, "ext"); join = true)))
     source_hash = bytes2hex(sha256(join(read(file, String) for file in sources)))
+    benchmark_hash = bytes2hex(sha256(join(read(joinpath(@__DIR__, file), String) for file in ("orbits.jl", "orbit_models.jl"))))
     return Dict(
         "core_source_sha256" => source_hash,
+        "benchmark_source_sha256" => benchmark_hash, "state_container" => "Vector",
         "utc" => string(now(UTC)), "cpu_model" => first(Sys.cpu_info()).model,
         "julia" => string(VERSION), "cpu" => Sys.CPU_NAME, "kernel" => string(Sys.KERNEL),
         "threads" => Threads.nthreads(), "blas_threads" => BLAS.get_num_threads(),

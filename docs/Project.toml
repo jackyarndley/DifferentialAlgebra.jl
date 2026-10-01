@@ -7,7 +7,6 @@ DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 DocumenterCodeBlocks = "b6400b83-267f-4b55-9fd8-bffc853bdfd8"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 OrdinaryDiffEqVerner = "79d7bb75-1356-48c1-b8c0-6832512096c2"
-StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 CairoMakie = "0.15"
@@ -17,5 +16,4 @@ DocumenterCitations = "1"
 DocumenterCodeBlocks = "1"
 Literate = "2"
 OrdinaryDiffEqVerner = "1, 2"
-StaticArrays = "1"
 julia = "1.10"

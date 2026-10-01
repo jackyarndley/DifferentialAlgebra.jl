@@ -41,7 +41,7 @@ function compare()
             record(name, order, (() -> f(a0, b0), () -> f(a1, b1)); scale = 0.1)
         end
         for s in B.scenarios()[2:3]
-            u0 = s.u0 + B.PERTURBATION_SCALE * B.SVector{6}(Old.variables(6; order))
+            u0 = s.u0 + B.PERTURBATION_SCALE * Old.variables(6; order)
             u1 = B.initial(s.u0, order, :DifferentialAlgebra)
             functions = (() -> B.kepler(u0, s.tf, order), () -> B.kepler(u1, s.tf, order))
             record(s.name, order, functions; scale = B.PERTURBATION_SCALE)

@@ -17,9 +17,9 @@ end
     names = ["position", "velocity"]
     x, v = variables(Float32, names; order = 3)
     @test coefficient_type(x) === Float32
-    @test string(x + v) == "position + velocity"
+    @test string(x + v) == "1.0f0position + 1.0f0velocity"
     names[1] = "changed"
-    @test string(x) == "position"
+    @test string(x) == "1.0f0position"
 
     # Invalid names must leave the existing algebra usable.
     @test_throws DimensionMismatch variables(2; order = 3, names = (:x,))
@@ -31,7 +31,7 @@ end
     @test (x + v)([2, 3]) == 5
 
     initialize!(3, 2; names = (:r, :v))
-    @test string(variable(1) + variable(2)) == "r + v"
+    @test string(variable(1) + variable(2)) == "1.0r + 1.0v"
     initialize!(3, 2)
-    @test string(variable(1) + variable(2)) == "x₁ + x₂"
+    @test string(variable(1) + variable(2)) == "1.0x₁ + 1.0x₂"
 end

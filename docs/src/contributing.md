@@ -41,6 +41,7 @@ The source is organized by responsibility:
 - `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
 - `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
 - `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
+- `domain_splitting.jl` builds and evaluates adaptive piecewise maps; `precompile.jl` holds the package's small compilation workload.
 - `display.jl` handles polynomial output. Public docstrings live immediately beside the definitions they document.
 
 Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`

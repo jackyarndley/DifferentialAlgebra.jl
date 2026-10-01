@@ -54,6 +54,14 @@ invert
 eigenpairs
 ```
 
+## Automatic domain splitting
+
+```@docs
+adaptive_map
+PiecewiseTaylorMap
+TaylorPatch
+```
+
 ## Statistical moments
 
 ```@docs

@@ -41,3 +41,17 @@ Reuse compiled maps when evaluating many points. The in-place operations
 `evaluate!`, `LinearAlgebra.mul!`, `DifferentialAlgebra.add!` and
 `DifferentialAlgebra.scale!` can reuse storage. Scalar types with allocating
 arithmetic may still allocate inside these operations.
+
+## Package compilation
+
+PrecompileTools records a small, two-variable workload for common arithmetic,
+elementary functions, differentiation and compiled-map evaluation. It uses
+ordinary vectors and a single coefficient type. Polynomial order and variable
+count are runtime data, so they do not create a separate family of types.
+Other scalar types and application callbacks compile when first used.
+
+Plotting packages and ODE solvers are optional application
+dependencies; none is loaded or exercised by the package's precompile workload.
+Loading DifferentialAlgebra leaves the algebra uninitialized. The latency
+benchmark in `benchmark/latency.jl` measures package-cache construction,
+loading and first use in separate Julia processes.

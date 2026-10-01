@@ -1,9 +1,10 @@
 # Examples
 
-These scripts reproduce the five examples in
+The first five scripts reproduce the examples in
 [DACE.jl](https://github.com/UoA-AstroGroup/DACE.jl/tree/7271c372ce86350e80a95a9c2c0d7e8739d09e83/examples)
 using DifferentialAlgebra.jl's native Julia API. Each script is self-contained
-and includes numerical checks.
+and includes numerical checks. An additional Kepler example demonstrates
+automatic domain splitting.
 
 From the repository root:
 
@@ -14,6 +15,7 @@ julia --project=examples examples/polynomial_inversion.jl
 julia --project=examples examples/tutorial1ex8.jl
 julia --project=examples examples/ode_integration.jl
 julia --project=examples examples/damc_kepler.jl
+julia --project=examples examples/ads_kepler.jl
 ```
 
 | Script | Calculation |
@@ -23,11 +25,11 @@ julia --project=examples examples/damc_kepler.jl
 | `tutorial1ex8.jl` | First-order gradient of the sombrero function about (2, 3) |
 | `ode_integration.jl` | Second-order Kepler flow and its state transition matrix |
 | `damc_kepler.jl` | 10,000 Monte Carlo samples after 30 revolutions, compared with orders 2, 4 and 8 |
+| `ads_kepler.jl` | Adaptive Taylor patches for an uncertain Kepler map, with independent error checks |
 
-The DAMC example uses a fixed random seed and writes `damc_kepler.pdf` and
-`damc_kepler.png` in the
+The Kepler examples use fixed random seeds and write PDF and PNG figures in the
 working directory. CairoMakie renders without an interactive display. The
-documentation build executes all five scripts and includes the resulting figure.
+documentation build executes all six scripts and includes the resulting figures.
 
 The [benchmarks](../benchmark) compare numerical integration with TaylorSeries.jl
-and measure dynamic versus static array storage separately.
+and measure package loading and first-use latency.

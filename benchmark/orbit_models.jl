@@ -7,24 +7,27 @@ primal(x::ForwardDiff.Dual) = primal(ForwardDiff.value(x))
 primal_norm(x::Number, t) = abs(primal(x))
 primal_norm(x::AbstractArray, t) = sqrt(sum(v -> abs2(primal(v)), x) / length(x))
 
-function orbit_rhs(u, j2, t)
+function orbit_rhs!(du, u, j2, t)
     x, y, z, vx, vy, vz = u
     r2 = x * x + y * y + z * z
     gravity = -inv(r2 * sqrt(r2))
+    du[1], du[2], du[3] = vx, vy, vz
     if iszero(j2)
-        return SVector(vx, vy, vz, gravity * x, gravity * y, gravity * z)
+        du[4], du[5], du[6] = gravity * x, gravity * y, gravity * z
+    else
+        # The parameter is J₂ R²; the spin axis is the z axis.
+        c = -1.5j2 * gravity / r2
+        s = 5z * z / r2
+        du[4] = gravity * x + c * x * (s - 1)
+        du[5] = gravity * y + c * y * (s - 1)
+        du[6] = gravity * z + c * z * (s - 3)
     end
-    # The parameter is J₂ R²; the spin axis is the z axis.
-    c = -1.5j2 * gravity / r2
-    s = 5z * z / r2
-    return SVector(
-        vx, vy, vz,
-        gravity * x + c * x * (s - 1), gravity * y + c * y * (s - 1), gravity * z + c * z * (s - 3)
-    )
+    return du
 end
+orbit_rhs(u, j2, t) = orbit_rhs!(similar(u), u, j2, t)
 
 function propagate(u0, tf, j2, algorithm, tolerance)
-    problem = ODEProblem(orbit_rhs, u0, (0.0, tf), j2)
+    problem = ODEProblem(orbit_rhs!, u0, (0.0, tf), j2)
     solution = solve(
         problem, algorithm; adaptive = true, dt = 0.01,
         abstol = tolerance, reltol = tolerance, internalnorm = primal_norm,
@@ -37,7 +40,7 @@ end
 # Elliptic Lagrange f/g propagation, used independently of the ODE solver.
 # Newton first converges the nominal anomaly, then lifts all Taylor orders.
 function kepler(state, tf, order = 0)
-    r0, v0 = SVector(state[1], state[2], state[3]), SVector(state[4], state[5], state[6])
+    r0, v0 = state[1:3], state[4:6]
     radius0 = sqrt(sum(abs2, r0))
     a = inv(2 / radius0 - sum(abs2, v0))
     primal(a) > 0 || error("This benchmark requires an elliptic orbit")
@@ -76,7 +79,7 @@ end
 # error controller includes the STM, unlike the benchmark's nominal-only norm.
 function variational_reference(u0, tf, j2)
     function rhs!(du, u, p, t)
-        state = SVector{6}(@view u[1:6])
+        state = @view u[1:6]
         du[1:6] .= orbit_rhs(state, p, t)
         A = ForwardDiff.jacobian(x -> orbit_rhs(x, p, t), state)
         mul!(reshape(@view(du[7:42]), 6, 6), A, reshape(@view(u[7:42]), 6, 6))
@@ -94,10 +97,10 @@ function variational_reference(u0, tf, j2)
 end
 
 function scenarios()
-    circular = SVector(1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    circular = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     e, inclination = 0.4, 0.5
     speed = sqrt((1 + e) / (1 - e))
-    eccentric = SVector(1 - e, 0.0, 0.0, 0.0, speed * cos(inclination), speed * sin(inclination))
+    eccentric = [1 - e, 0.0, 0.0, 0.0, speed * cos(inclination), speed * sin(inclination)]
     return [
         (name = "circular", u0 = circular, tf = 2π, j2 = 0.0, algorithm = Tsit5(), tolerance = 1.0e-9),
         (name = "circular", u0 = circular, tf = 2π, j2 = 0.0, algorithm = Vern9(), tolerance = 1.0e-11),

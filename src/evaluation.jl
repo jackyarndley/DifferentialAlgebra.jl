@@ -93,6 +93,8 @@ not overlap. The output and workspace have the same scalar element type.
 Scalar arithmetic may allocate even when these buffers are reused.
 Use [`evaluate`](@ref) for polynomial composition.
 """
+function evaluate! end
+
 function evaluate!(out::AbstractVector{T}, map::CompiledMap, args::AbstractVector{<:Real}, work::AbstractVector{T}) where {T <: Real}
     Base.require_one_based_indexing(out, args, work)
     any(x -> x isa TaylorPolynomial, args) && throw(ArgumentError("Use evaluate for polynomial composition"))

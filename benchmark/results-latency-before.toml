@@ -1,0 +1,42 @@
+samples = 3
+julia = "1.13.1"
+precompile_workload = false
+date = "2026-10-01T01:54:44.592"
+cpu = "12th Gen Intel(R) Core(TM) i7-12700"
+source_sha256 = "aa2e9c296d11a3987f27673a848d7e9d6a483731611744146090e5505c30ca43"
+os = "Linux"
+
+[[build]]
+cache_bytes = 1156015
+build_seconds = 2.641751937
+cache_files = ["/home/jack/.julia/compiled/v1.13/DifferentialAlgebra/qiSJ9_w9Gjb.ji", "/home/jack/.julia/compiled/v1.13/DifferentialAlgebra/qiSJ9_w9Gjb.so"]
+[[build]]
+cache_bytes = 1156095
+build_seconds = 1.43209748
+cache_files = ["/home/jack/.julia/compiled/v1.13/DifferentialAlgebra/qiSJ9_w9Gjb.ji", "/home/jack/.julia/compiled/v1.13/DifferentialAlgebra/qiSJ9_w9Gjb.so"]
+[[build]]
+cache_bytes = 1155999
+build_seconds = 1.481138313
+cache_files = ["/home/jack/.julia/compiled/v1.13/DifferentialAlgebra/qiSJ9_w9Gjb.ji", "/home/jack/.julia/compiled/v1.13/DifferentialAlgebra/qiSJ9_w9Gjb.so"]
+
+[[core]]
+first_bytes = 162834840
+load_seconds = 0.240885949
+first_compile_seconds = 1.4706877
+load_compile_seconds = 0.008175859
+first_seconds = 1.47238977
+warm_seconds = 2.0916e-5
+[[core]]
+first_bytes = 162826296
+load_seconds = 0.170654087
+first_compile_seconds = 1.480992595
+load_compile_seconds = 0.00809151
+first_seconds = 1.481239192
+warm_seconds = 2.2415e-5
+[[core]]
+first_bytes = 162841144
+load_seconds = 0.167553016
+first_compile_seconds = 1.464902147
+load_compile_seconds = 0.008782844
+first_seconds = 1.465129402
+warm_seconds = 2.6373e-5

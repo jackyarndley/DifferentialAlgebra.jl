@@ -7,6 +7,7 @@ examples = [
     "Map inversion" => "polynomial_inversion",
     "Orbit integration" => "ode_integration",
     "Kepler Monte Carlo" => "damc_kepler",
+    "Kepler domain splitting" => "ads_kepler",
 ]
 
 for (_, name) in examples
@@ -40,6 +41,7 @@ makedocs(
         "Manual" => [
             "Getting started" => "manual/getting-started.md",
             "Polynomial maps" => "manual/maps.md",
+            "Automatic domain splitting" => "manual/domain-splitting.md",
             "Coefficient types" => "manual/coefficient-types.md",
             "Configuration and storage" => "manual/configuration.md",
         ],

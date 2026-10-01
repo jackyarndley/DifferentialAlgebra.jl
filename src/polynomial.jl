@@ -7,7 +7,7 @@ mutable struct Algebra
     active::Bool
     stack::Vector{Int}
 end
-const CURRENT_ALGEBRA = Ref{Algebra}()
+const CURRENT_ALGEBRA = Ref{Union{Nothing, Algebra}}(nothing)
 const ALGEBRA_LOCK = ReentrantLock() # Serializes algebra initialization.
 
 # A real multivariate Taylor polynomial with coefficients of type T.
@@ -35,8 +35,9 @@ end
 Base.showerror(io::IO, e::TaylorError) = print(io, "DifferentialAlgebra: ", e.message)
 
 @inline function ready()
-    isassigned(CURRENT_ALGEBRA) || throw(ArgumentError("Call initialize!(order, variables) first"))
-    return CURRENT_ALGEBRA[]
+    ctx = CURRENT_ALGEBRA[]
+    ctx === nothing && throw(ArgumentError("Call initialize!(order, variables) first"))
+    return ctx
 end
 @inline function valid(a::TaylorPolynomial)
     a.algebra.active || throw(ArgumentError("Polynomial belongs to a previous initialization"))
@@ -66,7 +67,7 @@ function initialize!(no::Integer, nv::Integer; names = nothing, table_bytes::Int
     0 <= table_bytes <= typemax(Int) || throw(ArgumentError("Invalid lookup-table budget"))
     labels = variable_labels(names, Int(nv))
     lock(ALGEBRA_LOCK) do
-        old = isassigned(CURRENT_ALGEBRA) ? CURRENT_ALGEBRA[] : nothing
+        old = CURRENT_ALGEBRA[]
         basis = old !== nothing && old.basis.order == no && old.basis.variables == nv && old.basis.table_bytes == table_bytes ? old.basis : MonomialBasis(Int(no), Int(nv); table_bytes = Int(table_bytes))
         old !== nothing && (old.active = false)
         CURRENT_ALGEBRA[] = Algebra(basis, labels, Int(no), 0.0, nothing, true, Int[])
@@ -91,7 +92,28 @@ end
 Maximum total degree of the current algebra, or of the algebra owning `p`.
 """
 max_order() = ready().basis.order
-isinitialized() = isassigned(CURRENT_ALGEBRA) && CURRENT_ALGEBRA[].active
+isinitialized() = CURRENT_ALGEBRA[] !== nothing && CURRENT_ALGEBRA[].active
+
+# Temporary maps own their compiled coefficients. Restore the caller's algebra,
+# including the uninitialized state, even if the callback fails or reinitializes.
+function with_algebra(f, order, n; kwargs...)
+    return lock(ALGEBRA_LOCK) do
+        previous = CURRENT_ALGEBRA[]
+        active = previous !== nothing && previous.active
+        temporary = nothing
+        try
+            initialize!(order, n; kwargs...)
+            temporary = ready()
+            return f(temporary)
+        finally
+            current = CURRENT_ALGEBRA[]
+            current !== nothing && current !== previous && (current.active = false)
+            temporary !== nothing && (temporary.active = false)
+            CURRENT_ALGEBRA[] = previous
+            previous !== nothing && (previous.active = active)
+        end
+    end
+end
 """
     nvariables()
     nvariables(p::TaylorPolynomial)

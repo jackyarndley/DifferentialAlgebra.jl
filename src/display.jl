@@ -9,21 +9,15 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     end
     # Widen negative integers before negation, including typemin(Int).
     magnitude = negative ? -(coefficient isa Integer ? big(coefficient) : coefficient) : coefficient
-    constant = all(iszero, exponents)
-    factor = !isone(magnitude) || constant
-    if factor
-        show(io, magnitude)
-    end
+    show(io, magnitude)
     for (i, power) in enumerate(exponents)
         iszero(power) && continue
-        factor && print(io, '*')
         print(io, names[i])
         if power != 1
             for digit in string(power)
                 print(io, ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')[digit - '0' + 1])
             end
         end
-        factor = true
     end
     return nothing
 end
