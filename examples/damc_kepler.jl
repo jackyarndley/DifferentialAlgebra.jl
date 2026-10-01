@@ -2,7 +2,7 @@
 #
 # Propagate the same uncertain orbit as DACE.jl's DAMC example: 10,000 samples,
 # 30 nominal revolutions, and polynomial orders 2, 4 and 8. The method follows
-# Valli et al. (2013), DOI: 10.2514/1.58068. The initial covariance is diagonal.
+# [Valli2013](@citet), DOI: 10.2514/1.58068. The initial covariance is diagonal.
 #
 # A Taylor map is propagated once at each order, then evaluated for every sample.
 # Ordinary vectors hold the Cartesian states.
@@ -86,6 +86,9 @@ energy(state) = dot(state[4:6], state[4:6]) / 2 - μ / norm(state[1:3])
 monte_carlo = stack(lagrange_propagator(x, Δt, μ) for x in eachcol(initial_samples));
 
 # The independent coordinates are scaled by three standard deviations.
+# Gaussian samples are not clipped at this scale: distant samples can have
+# substantial truncation errors, even at high order. The error distribution
+# below includes these tails.
 perturbations = variables(6; order = 8)
 initial_map = x0 + scale * sqrt.(variance) .* perturbations
 approximations = Dict{Int, Matrix{Float64}}()
@@ -115,18 +118,35 @@ escape_state = [1.0, 0.0, 0.0, 0.0, 2.0, 0.0]
 escaped = lagrange_propagator(escape_state, 0.25, μ)
 @assert norm(lagrange_propagator(escaped, -0.25, μ) - escape_state) < 1.0e-12
 
-# Compare the final position distributions and save the same PDF as DACE.jl.
-figure = Figure()
-axis = Axis(figure[1, 1]; xlabel = "x [-]", ylabel = "y [-]")
-scatter!(axis, monte_carlo[1, :], monte_carlo[2, :]; marker = :diamond, color = :black, label = "MC")
-for (order, marker, color) in ((2, :dtriangle, "#666666"), (4, :circle, "#999999"), (8, :utriangle, "#CCCCCC"))
-    values = approximations[order]
-    scatter!(axis, values[1, :], values[2, :]; marker, color, label = "DAMC-$order")
-end
-axislegend(axis; position = :rt)
-save("damc_kepler.pdf", figure)
-save("damc_kepler.png", figure)
-
-# ![Monte Carlo and polynomial propagation of the final position distribution.](damc_kepler.png)
+# ## Distribution and sample errors
 #
-# [Download the figure as a PDF.](damc_kepler.pdf)
+# Each position panel compares the same numeric Monte Carlo cloud with a Taylor
+# map of a different order. The final panel shows the cumulative distribution of
+# the maximum component error of each sample; curves farther left are more accurate.
+
+figure = Figure(size = (1100, 800), fontsize = 15)
+colors = Makie.wong_colors()
+error_axis = Axis(figure[2, 2]; xlabel = "Maximum component error per sample", ylabel = "Fraction of samples", title = "Accuracy over all 10,000 samples", xscale = log10)
+positions = ((1, 1), (1, 2), (2, 1))
+position_axes = Axis[]
+for (i, order) in enumerate((2, 4, 8))
+    row, column = positions[i]
+    color = colors[i]
+    axis = Axis(figure[row, column]; xlabel = "x", ylabel = "y", title = "Order $order Taylor map", aspect = DataAspect())
+    push!(position_axes, axis)
+    values = approximations[order]
+    scatter!(axis, monte_carlo[1, :], monte_carlo[2, :]; color = (:black, 0.2), markersize = 4, label = "Numeric propagation")
+    scatter!(axis, values[1, :], values[2, :]; color = (color, 0.4), markersize = 3, label = "Taylor map")
+    axislegend(axis; position = :rt, labelsize = 11)
+    sample_errors = sort(vec(maximum(abs.(values - monte_carlo); dims = 1)))
+    lines!(error_axis, max.(sample_errors, eps(Float64)), (1:nsamples) ./ nsamples; color, linewidth = 2.5, label = "Order $order")
+end
+linkaxes!(position_axes...)
+axislegend(error_axis; position = :rb)
+mkpath("figures")
+save("figures/damc_kepler.png", figure; px_per_unit = 2)
+save("figures/damc_kepler.pdf", figure);
+
+# ![Monte Carlo and polynomial position distributions, with cumulative sample errors.](figures/damc_kepler.png)
+#
+# [Download the figure as a PDF.](figures/damc_kepler.pdf)

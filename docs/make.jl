@@ -45,7 +45,10 @@ makedocs(
             "Coefficient types" => "manual/coefficient-types.md",
             "Configuration and storage" => "manual/configuration.md",
         ],
-        "Examples" => [title => "generated/$name.md" for (title, name) in examples],
+        "Examples" => [
+            "Overview" => "examples.md",
+            [title => "generated/$name.md" for (title, name) in examples]...,
+        ],
         "API reference" => "api.md",
         "Mathematical background" => "background.md",
         "References" => "references.md",

@@ -6,7 +6,7 @@
 # across this box because mean motion depends on `a`. Automatic domain splitting
 # (ADS) replaces it with smaller, locally expanded maps.
 #
-# ADS originates in the uncertainty-propagation work of Wittig et al. (2015),
+# ADS originates in the uncertainty-propagation work of [Wittig2015](@citet),
 # DOI: 10.1007/s10569-015-9618-3. Here the complete Kepler map is recomputed on
 # each child domain using the analytic flow.
 
@@ -76,11 +76,22 @@ for (elements, state) in zip(samples, reference)
 end
 println((patches = length(split.patches), single_error = single_error, split_error = split_error))
 
+# ## Inspect the adaptive map
+#
 # Plot the partition in parameter space and its image in the orbital plane.
 # The colored curves are images of patch boundaries, not trajectory segments.
+# The lower panels compare a single expansion with the ADS map on the same grid
+# and color scale. Errors include all four state components, not just position.
 using CairoMakie
 
-figure = Figure(size = (1000, 420))
+semimajor_axes = range(lower[1], upper[1]; length = 81)
+eccentricities = range(lower[2], upper[2]; length = 61)
+map_error(map, elements) = maximum(abs, map(elements) - kepler_map(elements))
+single_errors = [map_error(single, [a, e]) for a in semimajor_axes, e in eccentricities]
+split_errors = [map_error(split, [a, e]) for a in semimajor_axes, e in eccentricities]
+@assert maximum(split_errors) < tolerance
+
+figure = Figure(size = (1150, 850), fontsize = 15)
 domain_axis = Axis(figure[1, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS: $(length(split.patches)) patches")
 image_axis = Axis(figure[1, 2]; xlabel = "x", ylabel = "y", title = "Propagated uncertainty", aspect = DataAspect())
 colors = Makie.wong_colors()
@@ -98,9 +109,20 @@ for (i, patch) in enumerate(split.patches)
     states = split.(boundary)
     lines!(image_axis, first.(states), getindex.(states, 2); color, linewidth = 0.8)
 end
-save("ads_kepler.png", figure)
-save("ads_kepler.pdf", figure);
+single_axis = Axis(figure[2, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "Single map: max error $(round(maximum(single_errors); sigdigits = 2))")
+split_axis = Axis(figure[2, 2]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS map: max error $(round(maximum(split_errors); sigdigits = 2))")
+color_limits = (-12.0, max(-6.0, ceil(log10(maximum(single_errors)))))
+heatmap!(single_axis, semimajor_axes, eccentricities, log10.(max.(single_errors, 1.0e-12)); colormap = :viridis, colorrange = color_limits)
+heat = heatmap!(split_axis, semimajor_axes, eccentricities, log10.(max.(split_errors, 1.0e-12)); colormap = :viridis, colorrange = color_limits)
+Colorbar(figure[2, 3], heat; label = "log₁₀ maximum component error")
+mkpath("figures")
+save("figures/ads_kepler.png", figure; px_per_unit = 2)
+save("figures/ads_kepler.pdf", figure);
 
-# ![ADS partition in orbital elements and its image in the orbital plane.](ads_kepler.png)
+# ![ADS partition, propagated orbital map, and error relative to independent Kepler solutions.](figures/ads_kepler.png)
 #
-# [Download the figure as a PDF.](ads_kepler.pdf)
+# Errors below 10⁻¹² share the color scale's lower limit. The estimates that drive
+# splitting are heuristic; the plotted errors come from independent pointwise
+# evaluations. Tightening `atol` generally produces more patches.
+#
+# [Download the figure as a PDF.](figures/ads_kepler.pdf)

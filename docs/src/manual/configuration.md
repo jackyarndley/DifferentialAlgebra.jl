@@ -52,6 +52,4 @@ Other scalar types and application callbacks compile when first used.
 
 Plotting packages and ODE solvers are optional application
 dependencies; none is loaded or exercised by the package's precompile workload.
-Loading DifferentialAlgebra leaves the algebra uninitialized. The latency
-benchmark in `benchmark/latency.jl` measures package-cache construction,
-loading and first use in separate Julia processes.
+Loading DifferentialAlgebra leaves the algebra uninitialized.

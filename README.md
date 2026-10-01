@@ -38,7 +38,6 @@ invalidates existing polynomials; see the [user guide](https://jackyarndley.gith
 
 - [Documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
 - [Runnable examples](examples)
-- [Integration benchmarks](benchmark)
 - [Contributing](docs/src/contributing.md)
 
 ## Acknowledgments

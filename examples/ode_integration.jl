@@ -6,6 +6,7 @@
 
 using DifferentialAlgebra
 using OrdinaryDiffEqVerner
+using CairoMakie
 
 # Normalized Kepler equations: acceleration = -μ r / |r|³.
 function kepler_ode!(du, u, μ, _)
@@ -24,7 +25,7 @@ timespan = (0.0, 2π)
 problem = ODEProblem(kepler_ode!, initial, timespan, μ)
 nominal = solve(
     problem, Vern9(); abstol = 1.0e-12, reltol = 1.0e-12,
-    save_everystep = false
+    saveat = range(timespan...; length = 161), save_everystep = false
 )
 
 perturbed = initial .+ variables(6; order = 2)
@@ -47,3 +48,50 @@ stm = constant_term.(jacobian(final))
 println("Maximum nominal orbit error: ", maximum(abs.(constants - initial)))
 println("State transition matrix:")
 display(stm)
+
+# ## Linear and nonlinear sensitivity
+#
+# A first-order prediction uses the STM: Φ δx₀. Evaluating the second-order
+# flow map also includes quadratic terms. Compare both with independent numeric
+# integrations after small changes to the initial radial position.
+
+displacements = 10.0 .^ range(-4, -2; length = 17)
+linear_errors, quadratic_errors = Float64[], Float64[]
+for displacement in displacements
+    delta = [displacement, 0.0, 0.0, 0.0, 0.0, 0.0]
+    reference = solve(
+        remake(problem; u0 = initial + delta), Vern9();
+        abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false
+    ).u[end]
+    push!(linear_errors, maximum(abs, constants + stm * delta - reference))
+    push!(quadratic_errors, maximum(abs, evaluate(final, delta) - reference))
+end
+@assert all(quadratic_errors .< linear_errors)
+@assert quadratic_errors[end] < linear_errors[end] / 10
+
+# The STM heatmap includes position and velocity components in the normalized
+# units of this problem. The error plot shows the benefit of quadratic terms
+# without needing to reintegrate the Taylor map for each initial condition.
+
+figure = Figure(size = (1350, 430), fontsize = 15)
+orbit_axis = Axis(figure[1, 1]; xlabel = "x", ylabel = "y", title = "One Kepler revolution", aspect = DataAspect())
+lines!(orbit_axis, getindex.(nominal.u, 1), getindex.(nominal.u, 2); color = Makie.wong_colors()[1], linewidth = 3)
+scatter!(orbit_axis, [0.0], [0.0]; color = :black, markersize = 14, label = "Central body")
+scatter!(orbit_axis, [initial[1]], [initial[2]]; color = Makie.wong_colors()[2], markersize = 12, label = "Initial / final state")
+axislegend(orbit_axis; position = :lb, labelsize = 11)
+labels = ["x", "y", "z", "vx", "vy", "vz"]
+stm_axis = Axis(figure[1, 2]; xlabel = "Initial component", ylabel = "Final component", title = "State transition matrix", xticks = (1:6, labels), yticks = (1:6, labels), yreversed = true, aspect = DataAspect())
+limit = maximum(abs, stm)
+heat = heatmap!(stm_axis, 1:6, 1:6, transpose(stm); colormap = :balance, colorrange = (-limit, limit))
+Colorbar(figure[1, 3], heat)
+error_axis = Axis(figure[1, 4]; xlabel = "Initial radial displacement", ylabel = "Maximum final-state error", title = "Nonlinear terms improve the map", xscale = log10, yscale = log10, xticks = ([1.0e-4, 1.0e-3, 1.0e-2], ["10⁻⁴", "10⁻³", "10⁻²"]), yticks = ([1.0e-8, 1.0e-6, 1.0e-4, 1.0e-2], ["10⁻⁸", "10⁻⁶", "10⁻⁴", "10⁻²"]))
+scatterlines!(error_axis, displacements, linear_errors; color = Makie.wong_colors()[1], linewidth = 2, label = "STM (first order)")
+scatterlines!(error_axis, displacements, quadratic_errors; color = Makie.wong_colors()[2], linewidth = 2, label = "Second-order map")
+axislegend(error_axis; position = :lt, labelsize = 11)
+mkpath("figures")
+save("figures/ode_integration.png", figure; px_per_unit = 2)
+save("figures/ode_integration.pdf", figure);
+
+# ![Nominal orbit, state transition matrix, and errors of first- and second-order flow maps.](figures/ode_integration.png)
+#
+# [Download the figure as a PDF.](figures/ode_integration.pdf)

@@ -7,7 +7,4 @@ docs/src/generated/
 results/
 *.log
 LocalPreferences.toml
-damc_kepler.pdf
-damc_kepler.png
-ads_kepler.pdf
-ads_kepler.png
+figures/

@@ -1,10 +1,11 @@
 # Examples
 
-The first five scripts reproduce the examples in
+The first five scripts reproduce every example in
 [DACE.jl](https://github.com/UoA-AstroGroup/DACE.jl/tree/7271c372ce86350e80a95a9c2c0d7e8739d09e83/examples)
 using DifferentialAlgebra.jl's native Julia API. Each script is self-contained
-and includes numerical checks. An additional Kepler example demonstrates
-automatic domain splitting.
+and includes numerical checks and CairoMakie plots. An additional Kepler example
+demonstrates automatic domain splitting (ADS). All six scripts become executable
+documentation pages through Literate.jl.
 
 From the repository root:
 
@@ -20,16 +21,15 @@ julia --project=examples examples/ads_kepler.jl
 
 | Script | Calculation |
 |:--|:--|
-| `sine.jl` | Twentieth-order expansion and evaluation of sine |
-| `polynomial_inversion.jl` | Tenth-order inverse of sine, compared with arcsine |
-| `tutorial1ex8.jl` | First-order gradient of the sombrero function about (2, 3) |
-| `ode_integration.jl` | Second-order Kepler flow and its state transition matrix |
-| `damc_kepler.jl` | 10,000 Monte Carlo samples after 30 revolutions, compared with orders 2, 4 and 8 |
-| `ads_kepler.jl` | Adaptive Taylor patches for an uncertain Kepler map, with independent error checks |
+| `sine.jl` | Twentieth-order expansion of sine, with approximation and error curves |
+| `polynomial_inversion.jl` | Tenth-order inverse of sine, with convergence toward arcsine |
+| `tutorial1ex8.jl` | Sombrero gradient about (2, 3), with contours and a tangent section |
+| `ode_integration.jl` | Kepler trajectory, state transition matrix, and nonlinear flow-map errors |
+| `damc_kepler.jl` | 10,000 Monte Carlo samples after 30 revolutions, with maps of orders 2, 4 and 8 |
+| `ads_kepler.jl` | Kepler ADS partition, mapped uncertainty, and error heatmaps |
 
-The Kepler examples use fixed random seeds and write PDF and PNG figures in the
-working directory. CairoMakie renders without an interactive display. The
-documentation build executes all six scripts and includes the resulting figures.
-
-The [benchmarks](../benchmark) compare numerical integration with TaylorSeries.jl
-and measure package loading and first-use latency.
+Every script writes PDF and PNG figures under `figures/` in the working directory.
+The Monte Carlo and ADS examples use fixed random seeds. CairoMakie renders
+without an interactive display. The documentation build executes all six scripts
+and includes the figures with PDF download links. Generated figures are ignored
+by Git.
