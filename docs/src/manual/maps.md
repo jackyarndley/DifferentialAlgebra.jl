@@ -58,7 +58,7 @@ The linear part must be nonsingular. The inverse is constructed locally about
 the input origin and includes the shift by the map's constant value, so its
 arguments are output coordinates. For a zero-constant map, composition gives
 the identity through the configured order. See the
-[inversion example](../generated/polynomial_inversion.md).
+[inversion example](../generated/ex09_sinx_inversion.md).
 
 ## Linear algebra
 

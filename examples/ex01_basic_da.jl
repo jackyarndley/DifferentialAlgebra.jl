@@ -1,3 +1,6 @@
+# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
+# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex01_basic_da.jl #src
+# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
 # # Sine function
 #
 # Construct a Taylor expansion, inspect its coefficients and evaluate it.
@@ -35,9 +38,9 @@ errors = [abs.(values - exact) for values in approximations]
 
 # The right panel uses a logarithmic scale. Errors below machine epsilon are
 # placed at the plotting floor; this is a display convention, not an error bound.
-figure = Figure(size = (1050, 420), fontsize = 15)
-value_axis = Axis(figure[1, 1]; xlabel = "x", ylabel = "sin(x)", title = "Taylor expansions about zero")
-error_axis = Axis(figure[1, 2]; xlabel = "x", ylabel = "Absolute error", yscale = log10, title = "Accuracy improves with order")
+fig = Figure(size = (1050, 420), fontsize = 15)
+value_axis = Axis(fig[1, 1]; xlabel = "x", ylabel = "sin(x)", title = "Taylor expansions about zero")
+error_axis = Axis(fig[1, 2]; xlabel = "x", ylabel = "Absolute error", yscale = log10, title = "Accuracy improves with order")
 lines!(value_axis, points, exact; color = :black, linewidth = 3, label = "sin(x)")
 colors = Makie.wong_colors()
 for (i, order) in enumerate(orders)
@@ -46,10 +49,6 @@ for (i, order) in enumerate(orders)
     lines!(error_axis, points, max.(errors[i], eps(Float64)); color, linewidth = 2)
 end
 axislegend(value_axis; position = :lt, labelsize = 12)
-mkpath("figures")
-save("figures/sine.png", figure; px_per_unit = 2)
-save("figures/sine.pdf", figure);
 
-# ![Taylor approximations of sine and their absolute errors.](figures/sine.png)
+fig
 #
-# [Download the figure as a PDF.](figures/sine.pdf)

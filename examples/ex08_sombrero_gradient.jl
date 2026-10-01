@@ -1,3 +1,6 @@
+# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
+# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex08_sombrero_gradient.jl #src
+# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
 # # Gradient of the sombrero function
 #
 # Tutorial 1, exercise 8 from DACE.jl: expand sin(r)/r about (2, 3) and
@@ -42,23 +45,19 @@ tangent = [z(t * direction) for t in distance]
 
 grid = range(-5, 5; length = 151)
 height = [sombrero([a, b]) for a in grid, b in grid]
-figure = Figure(size = (1100, 440), fontsize = 15)
-surface_axis = Axis(figure[1, 1]; xlabel = "x", ylabel = "y", title = "Sombrero function", aspect = DataAspect())
+fig = Figure(size = (1100, 440), fontsize = 15)
+surface_axis = Axis(fig[1, 1]; xlabel = "x", ylabel = "y", title = "Sombrero function", aspect = DataAspect())
 contours = contourf!(surface_axis, grid, grid, height; levels = 24, colormap = :viridis)
-Colorbar(figure[1, 2], contours; label = "sin(r) / r")
+Colorbar(fig[1, 2], contours; label = "sin(r) / r")
 path = [center + t * direction for t in distance]
 lines!(surface_axis, first.(path), last.(path); color = :white, linewidth = 3, label = "Gradient direction")
 scatter!(surface_axis, [center[1]], [center[2]]; color = :white, strokecolor = :black, strokewidth = 1, markersize = 12, label = "Expansion center")
 axislegend(surface_axis; position = :lb, labelsize = 11, backgroundcolor = (:black, 0.65), labelcolor = :white)
-section_axis = Axis(figure[1, 3]; xlabel = "Distance along gradient", ylabel = "Function value", title = "First-order tangent map")
+section_axis = Axis(fig[1, 3]; xlabel = "Distance along gradient", ylabel = "Function value", title = "First-order tangent map")
 lines!(section_axis, distance, section; color = :black, linewidth = 3, label = "Exact section")
 lines!(section_axis, distance, tangent; color = Makie.wong_colors()[1], linewidth = 2, linestyle = :dash, label = "Taylor map")
 scatter!(section_axis, [0.0], [sombrero(center)]; color = :black, markersize = 10)
 axislegend(section_axis; position = :lt)
-mkpath("figures")
-save("figures/tutorial1ex8.png", figure; px_per_unit = 2)
-save("figures/tutorial1ex8.pdf", figure);
 
-# ![The sombrero surface and a section along its gradient through the expansion center.](figures/tutorial1ex8.png)
+fig
 #
-# [Download the figure as a PDF.](figures/tutorial1ex8.pdf)

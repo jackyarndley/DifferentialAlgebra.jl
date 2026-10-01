@@ -91,9 +91,9 @@ single_errors = [map_error(single, [a, e]) for a in semimajor_axes, e in eccentr
 split_errors = [map_error(split, [a, e]) for a in semimajor_axes, e in eccentricities]
 @assert maximum(split_errors) < tolerance
 
-figure = Figure(size = (1150, 850), fontsize = 15)
-domain_axis = Axis(figure[1, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS: $(length(split.patches)) patches")
-image_axis = Axis(figure[1, 2]; xlabel = "x", ylabel = "y", title = "Propagated uncertainty", aspect = DataAspect())
+fig = Figure(size = (1150, 850), fontsize = 15)
+domain_axis = Axis(fig[1, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS: $(length(split.patches)) patches")
+image_axis = Axis(fig[1, 2]; xlabel = "x", ylabel = "y", title = "Propagated uncertainty", aspect = DataAspect())
 colors = Makie.wong_colors()
 for (i, patch) in enumerate(split.patches)
     a0, e0 = patch.lower
@@ -109,20 +109,16 @@ for (i, patch) in enumerate(split.patches)
     states = split.(boundary)
     lines!(image_axis, first.(states), getindex.(states, 2); color, linewidth = 0.8)
 end
-single_axis = Axis(figure[2, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "Single map: max error $(round(maximum(single_errors); sigdigits = 2))")
-split_axis = Axis(figure[2, 2]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS map: max error $(round(maximum(split_errors); sigdigits = 2))")
+single_axis = Axis(fig[2, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "Single map: max error $(round(maximum(single_errors); sigdigits = 2))")
+split_axis = Axis(fig[2, 2]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS map: max error $(round(maximum(split_errors); sigdigits = 2))")
 color_limits = (-12.0, max(-6.0, ceil(log10(maximum(single_errors)))))
 heatmap!(single_axis, semimajor_axes, eccentricities, log10.(max.(single_errors, 1.0e-12)); colormap = :viridis, colorrange = color_limits)
 heat = heatmap!(split_axis, semimajor_axes, eccentricities, log10.(max.(split_errors, 1.0e-12)); colormap = :viridis, colorrange = color_limits)
-Colorbar(figure[2, 3], heat; label = "log₁₀ maximum component error")
-mkpath("figures")
-save("figures/ads_kepler.png", figure; px_per_unit = 2)
-save("figures/ads_kepler.pdf", figure);
+Colorbar(fig[2, 3], heat; label = "log₁₀ maximum component error")
 
-# ![ADS partition, propagated orbital map, and error relative to independent Kepler solutions.](figures/ads_kepler.png)
+fig
 #
 # Errors below 10⁻¹² share the color scale's lower limit. The estimates that drive
 # splitting are heuristic; the plotted errors come from independent pointwise
 # evaluations. Tightening `atol` generally produces more patches.
 #
-# [Download the figure as a PDF.](figures/ads_kepler.pdf)

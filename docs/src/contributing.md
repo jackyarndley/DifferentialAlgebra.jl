@@ -18,7 +18,7 @@ Install it in a separate environment, then format the source and executable exam
 
 ```sh
 julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples docs/make.jl
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples docs/make.jl docs/literate.jl docs/test_literate.jl
 ```
 
 Replace `--inplace` with `--check` to verify formatting without modifying files.
@@ -44,6 +44,7 @@ From the repository root:
 
 ```sh
 julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=docs docs/test_literate.jl
 julia --project=docs docs/make.jl
 ```
 
@@ -53,9 +54,14 @@ and DocumenterCodeBlocks.jl adds linked and highlighted code blocks.
 
 Keep examples executable and add references to `docs/src/references.bib`.
 Each example is a self-contained Literate script with numerical checks and
-CairoMakie figures. Save figures under `figures/` in the working directory and
-link them using relative paths; Literate executes the scripts inside the generated
-documentation directory. Add new pages to the example list in `docs/make.jl`.
+CairoMakie figures where helpful. End each plotting block with `fig`; Literate
+captures its rich display automatically. Separate printed reports from figure
+blocks with narrative text or `#-`, since a returned figure takes precedence over
+standard output in the same block. Use `println` for reports, or return a value
+as the final expression of its own block, rather than calling `display` explicitly.
+Add new pages to the example list in `docs/make.jl`; the build checks that every
+script is registered. The rendering helper in `docs/literate.jl` converts Makie's
+embedded display images to links that work with both local and deployed URLs.
 Generated pages, build output and local manifests are excluded from version control.
 
 ## Publish documentation
