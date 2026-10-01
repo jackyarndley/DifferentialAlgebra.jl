@@ -26,6 +26,7 @@ jobs:
           using Pkg
           Pkg.develop(path=".")
           Pkg.instantiate()
+          include(joinpath(pwd(), "docs", "test_literate.jl"))
           include(joinpath(pwd(), "docs", "make.jl"))
       - name: Upload documentation
         uses: actions/upload-artifact@v7

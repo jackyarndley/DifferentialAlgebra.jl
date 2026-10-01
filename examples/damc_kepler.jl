@@ -124,15 +124,15 @@ escaped = lagrange_propagator(escape_state, 0.25, μ)
 # map of a different order. The final panel shows the cumulative distribution of
 # the maximum component error of each sample; curves farther left are more accurate.
 
-figure = Figure(size = (1100, 800), fontsize = 15)
+fig = Figure(size = (1100, 800), fontsize = 15)
 colors = Makie.wong_colors()
-error_axis = Axis(figure[2, 2]; xlabel = "Maximum component error per sample", ylabel = "Fraction of samples", title = "Accuracy over all 10,000 samples", xscale = log10)
+error_axis = Axis(fig[2, 2]; xlabel = "Maximum component error per sample", ylabel = "Fraction of samples", title = "Accuracy over all 10,000 samples", xscale = log10)
 positions = ((1, 1), (1, 2), (2, 1))
 position_axes = Axis[]
 for (i, order) in enumerate((2, 4, 8))
     row, column = positions[i]
     color = colors[i]
-    axis = Axis(figure[row, column]; xlabel = "x", ylabel = "y", title = "Order $order Taylor map", aspect = DataAspect())
+    axis = Axis(fig[row, column]; xlabel = "x", ylabel = "y", title = "Order $order Taylor map", aspect = DataAspect())
     push!(position_axes, axis)
     values = approximations[order]
     scatter!(axis, monte_carlo[1, :], monte_carlo[2, :]; color = (:black, 0.2), markersize = 4, label = "Numeric propagation")
@@ -143,10 +143,6 @@ for (i, order) in enumerate((2, 4, 8))
 end
 linkaxes!(position_axes...)
 axislegend(error_axis; position = :rb)
-mkpath("figures")
-save("figures/damc_kepler.png", figure; px_per_unit = 2)
-save("figures/damc_kepler.pdf", figure);
 
-# ![Monte Carlo and polynomial position distributions, with cumulative sample errors.](figures/damc_kepler.png)
+fig
 #
-# [Download the figure as a PDF.](figures/damc_kepler.pdf)

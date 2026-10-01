@@ -1,3 +1,6 @@
+# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
+# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex09_sinx_inversion.jl #src
+# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
 # # Polynomial inversion
 #
 # Invert a polynomial map and check that its composition is the identity.
@@ -34,9 +37,9 @@ errors = [abs.(values - exact) for values in approximations]
 @assert maximum(errors[end]) < maximum(errors[1])
 @assert isapprox(inverse[1](0.1), asin(0.1); atol = 3.0e-13)
 
-figure = Figure(size = (1050, 420), fontsize = 15)
-value_axis = Axis(figure[1, 1]; xlabel = "y", ylabel = "Inverse value", title = "Inverting sin(x) near zero")
-error_axis = Axis(figure[1, 2]; xlabel = "y", ylabel = "Absolute error", yscale = log10, title = "The inverse is local")
+fig = Figure(size = (1050, 420), fontsize = 15)
+value_axis = Axis(fig[1, 1]; xlabel = "y", ylabel = "Inverse value", title = "Inverting sin(x) near zero")
+error_axis = Axis(fig[1, 2]; xlabel = "y", ylabel = "Absolute error", yscale = log10, title = "The inverse is local")
 lines!(value_axis, points, exact; color = :black, linewidth = 3, label = "asin(y)")
 colors = Makie.wong_colors()
 for (i, order) in enumerate(orders)
@@ -45,10 +48,6 @@ for (i, order) in enumerate(orders)
     lines!(error_axis, points, max.(errors[i], eps(Float64)); color, linewidth = 2)
 end
 axislegend(value_axis; position = :lt, labelsize = 12)
-mkpath("figures")
-save("figures/polynomial_inversion.png", figure; px_per_unit = 2)
-save("figures/polynomial_inversion.pdf", figure);
 
-# ![Inverse Taylor polynomials and their error relative to arcsine.](figures/polynomial_inversion.png)
+fig
 #
-# [Download the figure as a PDF.](figures/polynomial_inversion.pdf)
