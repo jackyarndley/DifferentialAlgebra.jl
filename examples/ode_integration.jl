@@ -6,6 +6,7 @@
 
 using DifferentialAlgebra
 using OrdinaryDiffEqVerner
+using SciMLBase: successful_retcode
 using CairoMakie
 
 # Normalized Kepler equations: acceleration = -μ r / |r|³.
@@ -37,6 +38,14 @@ solution = solve(
     abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false
 )
 final = solution.u[end]
+comparison = solve(
+    remake(problem; u0 = perturbed), Vern7();
+    abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false
+)
+@assert successful_retcode(nominal) && successful_retcode(solution) && successful_retcode(comparison)
+coefficient_error = maximum(coefficient_norm, final - comparison.u[end])
+@assert coefficient_error < 1.0e-6
+println("Maximum coefficient difference, Vern9 versus Vern7: ", coefficient_error)
 constants = constant_term.(final)
 @assert maximum(abs.(constants - nominal.u[end])) < 1.0e-9
 @assert maximum(abs.(constants - initial)) < 1.0e-9
@@ -59,10 +68,12 @@ displacements = 10.0 .^ range(-4, -2; length = 17)
 linear_errors, quadratic_errors = Float64[], Float64[]
 for displacement in displacements
     delta = [displacement, 0.0, 0.0, 0.0, 0.0, 0.0]
-    reference = solve(
+    reference_solution = solve(
         remake(problem; u0 = initial + delta), Vern9();
         abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false
-    ).u[end]
+    )
+    @assert successful_retcode(reference_solution)
+    reference = reference_solution.u[end]
     push!(linear_errors, maximum(abs, constants + stm * delta - reference))
     push!(quadratic_errors, maximum(abs, evaluate(final, delta) - reference))
 end

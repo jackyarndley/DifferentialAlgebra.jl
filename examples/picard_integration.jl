@@ -1,6 +1,4 @@
-# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
-# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex22_kepler_flow_picard.jl #src
-# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
+# SPDX-License-Identifier: Apache-2.0; modified examples, see ../THIRD_PARTY_NOTICES.md. #src
 # # A Kepler flow map with an explicit time variable
 #
 # Propagate six initial-state perturbations through an eccentric Earth orbit.

@@ -1,6 +1,4 @@
-# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
-# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex17_kepler_eq_pseudo_arc_length.jl #src
-# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
+# SPDX-License-Identifier: Apache-2.0; modified examples, see ../THIRD_PARTY_NOTICES.md. #src
 # # Pseudo-arclength continuation
 #
 # Parameterize the Kepler solution curve with a local coordinate s.

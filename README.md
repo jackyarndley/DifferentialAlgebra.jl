@@ -39,8 +39,3 @@ invalidates existing polynomials; see the [user guide](https://jackyarndley.gith
 - [Documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
 - [Runnable examples](examples)
 - [Contributing](docs/src/contributing.md)
-
-## Acknowledgments
-
-DifferentialAlgebra.jl grew out of the native Julia implementation developed for
-[DACE.jl](https://github.com/UoA-AstroGroup/DACE.jl). It retains its MIT attribution.

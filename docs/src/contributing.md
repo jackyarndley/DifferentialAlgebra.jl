@@ -32,7 +32,8 @@ The source is organized by responsibility:
 - `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
 - `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
 - `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
-- `domain_splitting.jl` builds and evaluates adaptive piecewise maps; `precompile.jl` holds the package's small compilation workload.
+- `ads_estimators.jl` defines error indicators; `domain_splitting.jl` builds and evaluates piecewise maps; `adaptive_flow.jl` monitors propagation.
+- `precompile.jl` holds the package's small compilation workload.
 - `display.jl` handles polynomial output. Public docstrings live immediately beside the definitions they document.
 
 Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`
@@ -59,7 +60,7 @@ captures its rich display automatically. Separate printed reports from figure
 blocks with narrative text or `#-`, since a returned figure takes precedence over
 standard output in the same block. Use `println` for reports, or return a value
 as the final expression of its own block, rather than calling `display` explicitly.
-Add new pages to the example list in `docs/make.jl`; the build checks that every
+Add new pages to the catalog in `docs/src/examples.md`; the build checks that every
 script is registered. The rendering helper in `docs/literate.jl` converts Makie's
 embedded display images to links that work with both local and deployed URLs.
 Generated pages, build output and local manifests are excluded from version control.

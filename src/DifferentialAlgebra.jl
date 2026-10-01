@@ -12,7 +12,8 @@ export coefficient_type, set_coefficient!, monomials, monomial, exponents, degre
 export coefficient_norm, linear_part, nvariables, max_order, noutputs, nnodes
 export initialize!, truncation_order, set_truncation_order!, with_order
 export coefficient_tolerance, set_coefficient_tolerance!
-export adaptive_map, PiecewiseTaylorMap, TaylorPatch
+export adaptive_map, adaptive_flow, PiecewiseTaylorMap, TaylorPatch
+export GuardedTail, ExtrapolatedTail, LastTerms
 
 include("basis.jl")
 include("polynomial.jl")
@@ -25,7 +26,9 @@ include("display.jl")
 include("evaluation.jl")
 include("linear_algebra.jl")
 include("statistics.jl")
+include("ads_estimators.jl")
 include("domain_splitting.jl")
+include("adaptive_flow.jl")
 include("precompile.jl")
 
 end

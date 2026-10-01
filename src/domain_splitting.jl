@@ -4,7 +4,8 @@
 One box in a [`PiecewiseTaylorMap`](@ref). `lower` and `upper` are physical
 coordinate bounds; `map` is a [`CompiledMap`](@ref) on normalized coordinates
 `(point - center) ./ radius`. A fixed coordinate has normalized value zero.
-`error_estimate` contains one absolute truncation-error estimate per output.
+`error_estimate` contains one absolute error indicator per output (the maximum
+over checkpoints for a flow). Its meaning depends on the selected estimator.
 `status` is `:converged`, `:max_depth`, `:max_patches`, or `:roundoff`.
 The estimates are heuristic, not certified error bounds. Treat patch data as read-only.
 """
@@ -62,7 +63,9 @@ end
 """
     adaptive_map(
         f, lower, upper; order = 5, atol = 1.0e-8, rtol = 0,
-        guard_order = 2, max_depth = 20, max_patches = 1024,
+        estimator = GuardedTail(), splitter = :tail,
+        guard_order = estimator isa GuardedTail ? 2 : 0,
+        max_depth = 20, max_patches = 1024,
         check_points = true, strict = true, names = nothing,
         table_bytes = 32 * 1024^2
     )
@@ -73,12 +76,13 @@ It must support both ordinary numbers and [`TaylorPolynomial`](@ref)s and be
 deterministic. Bounds are finite, ordered vectors; equal bounds fix a coordinate.
 Their promoted floating-point type determines the input coefficient type.
 
-Each box is expanded to `order + guard_order`, then truncated to `order`.
-The error estimate combines the L1 norm of discarded coefficients, an
-exponential extrapolation to the next degree, and (by default) discrepancies
-at axis endpoints and selected corners. The split direction maximizes the
-estimated reduction in discarded coefficients, with point checks and relative
-box widths as fallbacks. Both children recompute `f` on their own domains.
+Choose [`GuardedTail`](@ref) (extra degrees), [`ExtrapolatedTail`](@ref)
+(coefficient decay), or [`LastTerms`](@ref) (retained tail). Only `GuardedTail`
+uses a positive `guard_order`. Point checks compare the map with `f` at axis
+endpoints and selected corners. `splitter = :tail` maximizes tolerance-scaled
+tail reduction, with point checks and relative widths as fallbacks;
+`:width` bisects the longest side relative to the original box.
+Both children recompute `f` on their own domains.
 
 Each output must satisfy `error_estimate ≤ atol + rtol * scale`, where `scale`
 is the largest absolute value at the center and checked points. `atol` may be
@@ -96,9 +100,32 @@ caller's configuration and polynomials, including on failure. Do not change
 the algebra or its settings inside `f`, or construct maps concurrently with
 other polynomial calculations. Evaluation of completed maps is independent.
 """
-function adaptive_map(
-        f, lower::AbstractVector{<:Real}, upper::AbstractVector{<:Real};
-        order::Integer = 5, atol = 1.0e-8, rtol::Real = 0, guard_order::Integer = 2,
+function adaptive_map(f, lower::AbstractVector{<:Real}, upper::AbstractVector{<:Real}; kwargs...)
+    return ads_construct(StaticMap(f), lower, upper; kwargs...)
+end
+
+"""
+    adaptive_map(f, previous::PiecewiseTaylorMap; order = max(1, degree(previous)), kwargs...)
+
+Refine an existing partition using the same options as `adaptive_map(f, lower,
+upper)`. Each leaf is reevaluated with `f`; the input map is unchanged. Existing
+boundaries are retained, and `max_depth` and `max_patches` apply to the entire
+tree. Supply the original function, not `previous` as a surrogate: subdividing
+an already truncated polynomial cannot recover missing information.
+"""
+function adaptive_map(f, previous::PiecewiseTaylorMap; order::Integer = max(1, degree(previous)), kwargs...)
+    return ads_construct(StaticMap(f), previous.lower, previous.upper, previous; order, kwargs...)
+end
+
+struct StaticMap{F}
+    f::F
+end
+
+function ads_construct(
+        problem, lower::AbstractVector{<:Real}, upper::AbstractVector{<:Real}, partition = nothing;
+        order::Integer = 5, atol = 1.0e-8, rtol::Real = 0,
+        estimator::ADSEstimator = GuardedTail(), splitter::Symbol = :tail,
+        guard_order::Integer = estimator isa GuardedTail ? 2 : 0,
         max_depth::Integer = 20, max_patches::Integer = 1024,
         check_points::Bool = true, strict::Bool = true, names = nothing,
         table_bytes::Integer = 32 * 1024^2
@@ -106,7 +133,10 @@ function adaptive_map(
     Base.require_one_based_indexing(lower, upper)
     length(lower) == length(upper) || throw(DimensionMismatch("Domain bounds differ in length"))
     isempty(lower) && throw(ArgumentError("The domain must have at least one coordinate"))
-    1 <= order <= 65534 && 1 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid expansion or guard order"))
+    1 <= order <= 65535 && 0 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid expansion or guard order"))
+    (estimator isa GuardedTail ? guard_order > 0 : guard_order == 0) ||
+        throw(ArgumentError("guard_order must be positive for GuardedTail and zero for other estimators"))
+    splitter in (:tail, :width) || throw(ArgumentError("splitter must be :tail or :width"))
     0 <= max_depth <= typemax(Int) && 1 <= max_patches <= typemax(Int) || throw(ArgumentError("Invalid splitting limits"))
     isfinite(rtol) && rtol >= 0 || throw(ArgumentError("rtol must be finite and nonnegative"))
     T = mapreduce(x -> typeof(float(x)), promote_type, Iterators.flatten((lower, upper)))
@@ -114,15 +144,17 @@ function adaptive_map(
     lo, hi = T.(lower), T.(upper)
     all(i -> isfinite(lo[i]) && isfinite(hi[i]) && lo[i] <= hi[i], eachindex(lo)) ||
         throw(ArgumentError("Bounds must be finite and ordered"))
+    if partition !== nothing
+        length(partition.patches) <= max_patches || throw(ArgumentError("max_patches is smaller than the existing partition"))
+        maximum(p -> p.depth, partition.patches) <= max_depth || throw(ArgumentError("max_depth is smaller than the existing partition"))
+    end
+    options = (;
+        order = Int(order), atol, rtol, estimator, splitter, check_points,
+        max_depth = Int(max_depth), max_patches = Int(max_patches), strict,
+    )
     return with_algebra(Int(order + guard_order), length(lo); names, table_bytes) do ctx
         x = [variable(i, T) for i in eachindex(lo)]
-        first_patch = ads_candidate(f, lo, hi, x, Int(order), check_points, ctx)
-        C = eltype(first_patch.errors)
-        tolerances = ads_tolerances(C, atol, rtol, length(first_patch.errors))
-        return ads_build(
-            f, lo, hi, x, Int(order), check_points, ctx, first_patch,
-            tolerances, C(rtol), Int(max_depth), Int(max_patches), strict
-        )
+        return ads_build(problem, lo, hi, x, ctx, options, partition)
     end
 end
 
@@ -144,79 +176,63 @@ function ads_outputs(value)
     return result, value isa Real
 end
 
-# Fit log(norm) against degree, ignoring zero orders. Only extrapolate when
-# discarded terms exist: an exactly represented polynomial needs no splitting.
-function ads_next_norm(norms)
-    R = eltype(norms)
-    count = 0; sx = sy = sxx = sxy = zero(R)
-    for d in 1:(length(norms) - 1)
-        c = norms[d + 1]
-        iszero(c) && continue
-        count += 1
-        y = log(c)
-        sx += d; sy += y; sxx += R(d)^2; sxy += d * y
-    end
-    count < 2 && return zero(R)
-    slope = (count * sxy - sx * sy) / (count * sxx - sx * sx)
-    return exp((sy - slope * sx) / count + slope * length(norms))
-end
-
 function ads_check_context(ctx)
     CURRENT_ALGEBRA[] === ctx && ctx.cutoff == ctx.basis.order && iszero(ctx.epsilon) &&
         ctx.big_epsilon === nothing || throw(ArgumentError("The callback changed the algebra configuration"))
     return nothing
 end
 
-function ads_candidate(f, lo::Vector{T}, hi, x, order, check_points, ctx) where {T}
+function ads_geometry(lo, hi)
     center = lo ./ 2 .+ hi ./ 2
     # Enclose both endpoints even when the midpoint rounds toward one of them.
     radius = max.(center - lo, hi - center)
-    values, scalar = ads_outputs(f(center .+ radius .* x))
+    return (; lo, hi, center, radius)
+end
+
+function ads_analyze(value, box, options, ctx)
+    values, scalar = ads_outputs(value)
     ads_check_context(ctx)
-    C = foldl((R, p) -> promote_type(R, p isa TaylorPolynomial ? coefficient_type(p) : typeof(p)), values; init = T)
+    C = foldl((R, p) -> promote_type(R, p isa TaylorPolynomial ? coefficient_type(p) : typeof(p)), values; init = eltype(box.lo))
     polynomials = TaylorPolynomial{C}.(values)
     all(p -> valid(p) === ctx && all(isfinite, @view(p.coeffs[1:p.len])), polynomials) ||
         throw(ArgumentError("The map returned invalid or nonfinite Taylor coefficients"))
-    compiled = CompiledMap([trim(p, 0, order) for p in polynomials])
+    compiled = CompiledMap([trim(p, 0, options.order) for p in polynomials])
     errors = zeros(C, length(values))
-    contributions = zeros(C, length(values), length(lo))
-    basis = ctx.basis
+    contributions = zeros(C, length(values), length(box.lo))
     for (j, p) in enumerate(polynomials)
-        norms = degree_norms(p, 0, 1)
-        tail = sum(@view norms[(order + 2):end])
-        errors[j] = iszero(tail) ? tail : tail + ads_next_norm(norms)
-        for k in (basis.ends[order + 1] + 1):p.len
-            c = abs(p.coeffs[k])
-            iszero(c) && continue
-            for i in eachindex(lo)
-                # Halving coordinate i reduces this monomial by 2^(-exponent).
-                contributions[j, i] += c * (1 - exp2(-C(basis.exponents[i, k])))
-            end
-        end
+        errors[j] = ads_error(p, options.order, options.estimator)
+        ads_contributions!(contributions, p, j, options.order, options.estimator)
     end
     scale = abs.(constant_term.(polynomials))
-    check_points && ads_check_points!(errors, contributions, scale, f, compiled, lo, hi, center, radius, scalar)
-    ads_check_context(ctx)
-    return (; lo, hi, center, radius, compiled, errors, contributions, scale, scalar)
+    return (; box..., compiled, errors, contributions, scale, scalar)
 end
 
-function ads_check_points!(errors, contributions, scale, f, compiled, lo, hi, center, radius, scalar)
-    C = eltype(errors); n = length(lo)
-    normalized = zeros(eltype(lo), n)
-    point = copy(center)
-    predicted = similar(errors)
-    work = zeros(C, degree(compiled) + 1)
+function ads_probes(box)
+    (; lo, hi, center, radius) = box
+    n = length(lo)
+    probes = Tuple{Vector{eltype(lo)}, Vector{eltype(lo)}, Int}[]
     # Axis endpoints, two opposite corners and two alternating corners. Linear
     # growth in dimension avoids an exponential number of callback evaluations.
     for probe in 1:(2n + 4)
         axis = probe <= 2n ? (probe + 1) ÷ 2 : 0
+        point, normalized = similar(lo), similar(lo)
         for i in 1:n
             sign = axis > 0 ? (i == axis ? (isodd(probe) ? -1 : 1) : 0) :
                 (isodd(probe) ? -1 : 1) * (probe <= 2n + 2 || isodd(i) ? 1 : -1)
             point[i] = sign == 0 ? center[i] : sign < 0 ? lo[i] : hi[i]
             normalized[i] = iszero(radius[i]) ? 0 : (point[i] - center[i]) / radius[i]
         end
-        actual, isscalar = ads_outputs(f(point))
+        any(p -> p[1] == point, probes) || push!(probes, (point, normalized, axis))
+    end
+    return probes
+end
+
+function ads_check_points!(p, probes, values)
+    (; errors, contributions, scale, compiled, scalar) = p
+    predicted = similar(errors)
+    work = zeros(eltype(errors), degree(compiled) + 1)
+    for ((_, normalized, axis), value) in zip(probes, values)
+        actual, isscalar = ads_outputs(value)
         length(actual) == length(errors) && isscalar == scalar || throw(DimensionMismatch("The map changed output shape"))
         all(y -> !(y isa TaylorPolynomial) && isfinite(y), actual) ||
             throw(ArgumentError("Numeric evaluation must return finite numeric values"))
@@ -231,13 +247,30 @@ function ads_check_points!(errors, contributions, scale, f, compiled, lo, hi, ce
     return nothing
 end
 
+function ads_assess(p, options)
+    C = eltype(p.errors)
+    tolerance = ads_tolerances(C, options.atol, options.rtol, length(p.errors)) .+ C(options.rtol) .* p.scale
+    accepted = all(j -> isfinite(p.errors[j]) && p.errors[j] <= tolerance[j], eachindex(tolerance))
+    return (; p..., tolerance, accepted)
+end
+
+function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
+    p = ads_analyze(problem.f(box.center .+ box.radius .* x), box, options, ctx)
+    if options.check_points
+        probes = ads_probes(box)
+        ads_check_points!(p, probes, (problem.f(point) for (point, _, _) in probes))
+    end
+    ads_check_context(ctx)
+    return ads_assess(p, options)
+end
+
 ads_ratio(error, tolerance) = iszero(tolerance) ? (iszero(error) ? zero(error) : oftype(error, Inf)) : error / tolerance
 
-function ads_split_axis(candidate, tolerance, initial_radius)
+function ads_split_axis(candidate, initial_radius, splitter)
     axis = 0; best = -one(eltype(candidate.errors)); widest = zero(eltype(initial_radius))
     for i in eachindex(initial_radius)
         candidate.lo[i] < candidate.center[i] < candidate.hi[i] || continue
-        score = maximum(j -> ads_ratio(candidate.contributions[j, i], tolerance[j]), eachindex(tolerance))
+        score = splitter == :width ? zero(best) : maximum(j -> ads_ratio(candidate.contributions[j, i], candidate.tolerance[j]), eachindex(candidate.tolerance))
         width = candidate.radius[i] / initial_radius[i]
         if score > best || (score == best && width > widest)
             axis, best, widest = i, score, width
@@ -246,25 +279,49 @@ function ads_split_axis(candidate, tolerance, initial_radius)
     return axis
 end
 
-function ads_build(
-        f, lo::Vector{T}, hi, x, order, check_points, ctx, first_patch,
-        atol::Vector{C}, rtol, max_depth, max_patches, strict
-    ) where {T, C}
+function ads_queue(lo::Vector{T}, hi, partition) where {T}
+    partition === nothing && return [DomainNode(T)], [(lo, hi, 0, 1)]
+    nodes = copy(partition.nodes)
+    pending = Tuple{Vector{T}, Vector{T}, Int, Int}[]
+    for (i, node) in enumerate(nodes)
+        node.patch == 0 && continue
+        p = partition.patches[node.patch]
+        push!(pending, (copy(p.lower), copy(p.upper), p.depth, i))
+    end
+    reverse!(pending)
+    return nodes, pending
+end
+
+function ads_can_split(box, depth, leaves, options)
+    return depth < options.max_depth && leaves < options.max_patches &&
+        any(i -> box.lo[i] < box.center[i] < box.hi[i], eachindex(box.lo))
+end
+
+function ads_build(problem, lo::Vector{T}, hi, x, ctx, options, partition) where {T}
+    nodes, pending = ads_queue(lo, hi, partition)
+    leaves = length(pending)
+    lower, upper, depth, _ = last(pending)
+    box = ads_geometry(lower, upper)
+    first_patch = ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, leaves, options))
+    return ads_build!(problem, lo, hi, x, ctx, options, first_patch, nodes, pending)
+end
+
+function ads_build!(problem, lo::Vector{T}, hi, x, ctx, options, first_patch, nodes, pending) where {T}
+    C = eltype(first_patch.errors)
     patches = TaylorPatch{T, C}[]
-    nodes = [DomainNode(T)]
-    pending = [(lo, hi, 0, 1)]
-    leaves = 1
-    initial_radius = first_patch.radius
+    leaves = length(pending)
+    initial_radius = ads_geometry(lo, hi).radius
+    first_node = last(pending)[4]
     while !isempty(pending)
         lower, upper, depth, node = pop!(pending)
-        p = node == 1 ? first_patch : ads_candidate(f, lower, upper, x, order, check_points, ctx)
-        p.scalar == first_patch.scalar && length(p.errors) == length(atol) || throw(DimensionMismatch("The map changed output shape"))
+        box = ads_geometry(lower, upper)
+        p = node == first_node ? first_patch :
+            ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, leaves, options))
+        p.scalar == first_patch.scalar && length(p.errors) == length(first_patch.errors) || throw(DimensionMismatch("The map changed output shape"))
         eltype(p.errors) === C || throw(ArgumentError("The map changed coefficient type between patches"))
-        tolerance = atol .+ rtol .* p.scale
-        accepted = all(j -> isfinite(p.errors[j]) && p.errors[j] <= tolerance[j], eachindex(atol))
-        axis = accepted ? 0 : ads_split_axis(p, tolerance, initial_radius)
-        status = accepted ? :converged : depth >= max_depth ? :max_depth :
-            leaves >= max_patches ? :max_patches : axis == 0 ? :roundoff : :split
+        axis = p.accepted ? 0 : ads_split_axis(p, initial_radius, options.splitter)
+        status = p.accepted ? :converged : depth >= options.max_depth ? :max_depth :
+            leaves >= options.max_patches ? :max_patches : axis == 0 ? :roundoff : :split
         if status == :split
             midpoint = p.center[axis]
             left, right = length(nodes) + 1, length(nodes) + 2
@@ -275,7 +332,7 @@ function ads_build(
             push!(pending, (right_lower, upper, depth + 1, right), (lower, left_upper, depth + 1, left))
             leaves += 1
         else
-            strict && !accepted && throw(ErrorException("Automatic domain splitting reached $status at depth $depth; increase the limit or use strict=false to inspect unresolved patches"))
+            options.strict && !p.accepted && throw(ErrorException("Automatic domain splitting reached $status at depth $depth; increase the limit or use strict=false to inspect unresolved patches"))
             push!(patches, TaylorPatch(lower, upper, p.center, p.radius, p.compiled, p.errors, depth, status))
             nodes[node] = DomainNode(0, zero(T), 0, 0, length(patches))
         end
