@@ -151,12 +151,10 @@ function quotient(a::Real, b::TaylorPolynomial)
     result.coeffs[1] = constant_term(a) / b0
     @inbounds for k in 2:n
         value = convert(T, coefficient_at(a, k))
-        for t in (basis.splits[k] + 1):basis.splits[k + 1]
+        @simd for t in (basis.splits[k] + 1):split_end(basis, k, b.len)
             i, j = Int(basis.left[t]), Int(basis.right[t])
-            i > b.len && break
             bi = b.coeffs[i]
-            iszero(bi) && continue
-            value = muladd(-bi, result.coeffs[j], value)
+            value -= iszero(bi) ? zero(T) : bi * result.coeffs[j]
         end
         result.coeffs[k] = value / b0
     end
@@ -174,9 +172,11 @@ function square_root(a::TaylorPolynomial, c0)
     denominator = c0 + c0
     @inbounds for k in 2:n
         value = coefficient_at(a, k)
-        for t in (basis.splits[k] + 1):basis.splits[k + 1]
+        # Mirrored pairs are ordered oppositely; the first half has i <= j
+        # and excludes the terminal (k, 1) pair.
+        stop = basis.splits[k] + (basis.splits[k + 1] - basis.splits[k]) ÷ 2
+        @simd for t in (basis.splits[k] + 1):stop
             i, j = Int(basis.left[t]), Int(basis.right[t])
-            i > j && break
             term = result.coeffs[i] * result.coeffs[j]
             value -= i == j ? term : term + term
         end

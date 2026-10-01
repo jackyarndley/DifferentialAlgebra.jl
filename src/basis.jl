@@ -17,6 +17,23 @@ struct MonomialBasis
     traversal::Vector{Int}
 end
 
+# Recurrence pairs are sorted by the left monomial. Trim the range once so
+# coefficient reductions have no early exit and can use SIMD for machine floats.
+@inline function split_end(b::MonomialBasis, k::Int, len::Int)
+    hi = b.splits[k + 1]
+    len >= k && return hi
+    lo = b.splits[k] + 1
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        if b.left[mid] <= len
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    return hi
+end
+
 # Rank a reverse-lexicographic monomial without allocating a tuple or dictionary.
 @inline function rank(b::MonomialBasis, exponents, degree::Int)
     index = degree == 0 ? 1 : b.ends[degree] + 1

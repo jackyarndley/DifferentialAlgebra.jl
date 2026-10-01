@@ -4,6 +4,14 @@ using Test
 include("utils.jl")
 
 @testset verbose = true "DifferentialAlgebra tests" begin
+    @testset "Package loading" begin
+        @test !DifferentialAlgebra.isinitialized()
+        @test_throws ArgumentError max_order()
+        initial_map = adaptive_map(x -> 1 + x[1], [-1.0], [1.0])
+        @test !DifferentialAlgebra.isinitialized()
+        @test initial_map([0.3]) ≈ 1.3
+    end
+
     @testset verbose = true "Tutorials" begin
         include("tutorial_tests.jl")
     end
@@ -39,10 +47,12 @@ include("utils.jl")
 
     include("polynomial.jl")
     include("coefficient_types.jl")
+    include("recurrences.jl")
     include("regressions.jl")
     include("constructors.jl")
     include("public_api.jl")
     include("arrays.jl")
     include("display.jl")
-    include("staticarrays.jl")
+    include("sciml.jl")
+    include("domain_splitting.jl")
 end

@@ -9,7 +9,7 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 ```
 
 Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
-Examples and benchmarks have separate dependency environments.
+Examples have a separate dependency environment.
 
 ## Code style and organization
 
@@ -18,7 +18,7 @@ Install it in a separate environment, then format the source and executable exam
 
 ```sh
 julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples benchmark docs/make.jl
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples docs/make.jl
 ```
 
 Replace `--inplace` with `--check` to verify formatting without modifying files.
@@ -32,6 +32,7 @@ The source is organized by responsibility:
 - `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
 - `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
 - `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
+- `domain_splitting.jl` builds and evaluates adaptive piecewise maps; `precompile.jl` holds the package's small compilation workload.
 - `display.jl` handles polynomial output. Public docstrings live immediately beside the definitions they document.
 
 Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`
@@ -51,6 +52,10 @@ Literate.jl executes the example scripts, DocumenterCitations.jl renders referen
 and DocumenterCodeBlocks.jl adds linked and highlighted code blocks.
 
 Keep examples executable and add references to `docs/src/references.bib`.
+Each example is a self-contained Literate script with numerical checks and
+CairoMakie figures. Save figures under `figures/` in the working directory and
+link them using relative paths; Literate executes the scripts inside the generated
+documentation directory. Add new pages to the example list in `docs/make.jl`.
 Generated pages, build output and local manifests are excluded from version control.
 
 ## Publish documentation
