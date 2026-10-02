@@ -24,6 +24,9 @@ scripts with Literate.jl, showing their numerical results and Makie figures.
 - [Adaptive Runge–Kutta](generated/adaptive_integration.md)
 - [Orbit integration and state transition matrices](generated/ode_integration.md)
 - [Taylor integration in time](generated/taylor_integration.md)
+- [Taylor dense output and events](generated/taylor_dense_output.md)
+- [Long-term CR3BP propagation](generated/taylor_cr3bp.md)
+- [CR3BP flow maps and uncertainty propagation](generated/taylor_cr3bp_maps.md)
 - [Monte Carlo with a Taylor map](generated/damc_kepler.md)
 
 ## Automatic domain splitting
