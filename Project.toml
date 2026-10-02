@@ -1,6 +1,6 @@
 name = "DifferentialAlgebra"
 uuid = "413ac9d4-45af-4c75-aec7-2a1db65c23cb"
-authors = ["Jack Yarndley", "Chris Scott <chris.scott@nesi.org.nz>"]
+authors = ["Jack Yarndley"]
 version = "0.1.0"
 
 [deps]
