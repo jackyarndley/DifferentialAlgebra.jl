@@ -72,6 +72,12 @@ The [Taylor integration tutorial](../generated/taylor_integration.md) shows
 forward/backward Kepler propagation, independent validation with Vern9, and a
 polynomial uncertainty map.
 
+Further tutorials cover [dense output, derivatives and continuous events](../generated/taylor_dense_output.md),
+[200-revolution CR3BP propagation and Jacobi drift](../generated/taylor_cr3bp.md),
+and [CR3BP flow maps and uncertainty moments](../generated/taylor_cr3bp_maps.md).
+The latter validates polynomial predictions against independently integrated
+trajectories and distinguishes uncertainty truncation from integration error.
+
 ## Independent time and uncertainty orders
 
 Use multivariate polynomials as time coefficients to propagate uncertainties:
