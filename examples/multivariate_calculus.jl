@@ -7,6 +7,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 x, y = variables((:x, :y); order = 10)
 q = x^2 + y^2
 p = one(q)
@@ -89,7 +91,7 @@ scatter!(surface_axis, [center[1]], [center[2]]; color = :white, strokecolor = :
 axislegend(surface_axis; position = :lb, labelsize = 11, backgroundcolor = (:black, 0.65), labelcolor = :white)
 section_axis = Axis(fig[1, 3]; xlabel = "Distance along gradient", ylabel = "Function value", title = "First-order tangent map")
 lines!(section_axis, distance, section; color = :black, linewidth = 3, label = "Exact section")
-lines!(section_axis, distance, tangent; color = Makie.wong_colors()[1], linewidth = 2, linestyle = :dash, label = "Taylor map")
+lines!(section_axis, distance, tangent; color = Makie.to_colormap(:tab10)[1], linewidth = 2, linestyle = :dash, label = "Taylor map")
 scatter!(section_axis, [0.0], [sombrero(center)]; color = :black, markersize = 10)
 axislegend(section_axis; position = :lt)
 

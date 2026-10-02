@@ -25,6 +25,8 @@ println("Primitive residual: ", coefficient_norm(primitive - (1 - cos(x))))
 using SpecialFunctions: erf
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 x, = variables((:x,); order = 24)
 density = exp(-x^2 / 2) / sqrt(2π)
 primitive = integrate(density, 1)
@@ -40,5 +42,5 @@ inside = range(-1, 1; length = 101)
 fig = Figure(size = (760, 400), fontsize = 15)
 ax = Axis(fig[1, 1]; xlabel = "x", ylabel = "Probability density", title = "Standard normal probability in [-1, 1]")
 lines!(ax, points, exp.(-points .^ 2 ./ 2) ./ sqrt(2π); color = :black, linewidth = 2)
-band!(ax, inside, zeros(length(inside)), density.(inside); color = (Makie.wong_colors()[1], 0.4))
+band!(ax, inside, zeros(length(inside)), density.(inside); color = (Makie.to_colormap(:tab10)[1], 0.4))
 fig

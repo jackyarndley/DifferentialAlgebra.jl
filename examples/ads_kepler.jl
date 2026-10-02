@@ -84,6 +84,8 @@ println((patches = length(split.patches), single_error = single_error, split_err
 # and color scale. Errors include all four state components, not just position.
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab20),))
+
 semimajor_axes = range(lower[1], upper[1]; length = 81)
 eccentricities = range(lower[2], upper[2]; length = 61)
 map_error(map, elements) = maximum(abs, map(elements) - kepler_map(elements))
@@ -94,7 +96,7 @@ split_errors = [map_error(split, [a, e]) for a in semimajor_axes, e in eccentric
 fig = Figure(size = (1150, 850), fontsize = 15)
 domain_axis = Axis(fig[1, 1]; xlabel = "Semimajor axis a", ylabel = "Eccentricity e", title = "ADS: $(length(split.patches)) patches")
 image_axis = Axis(fig[1, 2]; xlabel = "x", ylabel = "y", title = "Propagated uncertainty", aspect = DataAspect())
-colors = Makie.wong_colors()
+colors = Makie.to_colormap(:tab20)
 for (i, patch) in enumerate(split.patches)
     a0, e0 = patch.lower
     a1, e1 = patch.upper

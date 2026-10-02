@@ -37,7 +37,7 @@ the algebra, use [`variable`](@ref).
 
 Polynomials print with Unicode superscripts for powers, such as `x²` and `y¹²`.
 Automatic variable names use subscripts: `x₁`, `x₂`, …, `x₁₀`. With the names
-chosen above, the following expression displays as `2.0 + 3.0x - 1.0y²`:
+chosen above, the following expression displays as `2.0 + 3.0 x - 1.0 y²`:
 
 ```@example basics
 2 + 3x - y^2

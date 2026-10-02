@@ -54,6 +54,14 @@ invert
 eigenpairs
 ```
 
+## Time expansions
+
+```@docs
+TimeSeries
+taylor_expand
+TaylorMethod
+```
+
 ## Automatic domain splitting
 
 ```@docs

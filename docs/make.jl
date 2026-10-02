@@ -51,6 +51,7 @@ makedocs(
         "Manual" => [
             "Getting started" => "manual/getting-started.md",
             "Polynomial maps" => "manual/maps.md",
+            "Time expansions" => "manual/time-expansions.md",
             "Automatic domain splitting" => "manual/domain-splitting.md",
             "Coefficient types" => "manual/coefficient-types.md",
             "Configuration and storage" => "manual/configuration.md",

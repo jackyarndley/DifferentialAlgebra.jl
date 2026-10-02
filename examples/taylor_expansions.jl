@@ -7,6 +7,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 # Initialize a 20th-order algebra with one variable.
 x, = variables((:x,); order = 20)
 p = sin(x)
@@ -51,7 +53,7 @@ fig = Figure(size = (1050, 420), fontsize = 15)
 value_axis = Axis(fig[1, 1]; xlabel = "x", ylabel = "sin(x)", title = "Taylor expansions about zero")
 error_axis = Axis(fig[1, 2]; xlabel = "x", ylabel = "Absolute error", yscale = log10, title = "Accuracy improves with order")
 lines!(value_axis, points, exact; color = :black, linewidth = 3, label = "sin(x)")
-colors = Makie.wong_colors()
+colors = Makie.to_colormap(:tab10)
 for (i, order) in enumerate(orders)
     color = colors[i]
     lines!(value_axis, points, approximations[i]; color, linewidth = 2, label = "Order $order")

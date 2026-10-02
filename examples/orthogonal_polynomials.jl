@@ -8,6 +8,8 @@ using DifferentialAlgebra
 using LinearAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 function legendre(x, degree)
     values = [one(x), x]
     for n in 1:(degree - 1)

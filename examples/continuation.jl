@@ -10,6 +10,8 @@ using DifferentialAlgebra
 using LinearAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 function nominal_root(mean, e)
     E = mean
     for _ in 1:30
