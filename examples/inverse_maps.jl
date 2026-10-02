@@ -7,6 +7,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 x, = variables((:x,); order = 10)
 map = [sin(x)]
 inverse = invert(map)
@@ -52,7 +54,7 @@ fig = Figure(size = (1050, 420), fontsize = 15)
 value_axis = Axis(fig[1, 1]; xlabel = "y", ylabel = "Inverse value", title = "Inverting sin(x) near zero")
 error_axis = Axis(fig[1, 2]; xlabel = "y", ylabel = "Absolute error", yscale = log10, title = "The inverse is local")
 lines!(value_axis, points, exact; color = :black, linewidth = 3, label = "asin(y)")
-colors = Makie.wong_colors()
+colors = Makie.to_colormap(:tab10)
 for (i, order) in enumerate(orders)
     color = colors[i]
     lines!(value_axis, points, approximations[i]; color, linewidth = 2, label = "Order $order")

@@ -8,6 +8,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 function kepler_root(mean, eccentricity)
     E = mean
     for _ in 1:40

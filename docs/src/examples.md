@@ -23,7 +23,7 @@ scripts with Literate.jl, showing their numerical results and Makie figures.
 
 - [Adaptive Runge–Kutta](generated/adaptive_integration.md)
 - [Orbit integration and state transition matrices](generated/ode_integration.md)
-- [Picard iteration in time](generated/picard_integration.md)
+- [Taylor integration in time](generated/taylor_integration.md)
 - [Monte Carlo with a Taylor map](generated/damc_kepler.md)
 
 ## Automatic domain splitting

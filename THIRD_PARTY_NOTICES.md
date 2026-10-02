@@ -6,7 +6,7 @@ The following example scripts include modified material under Apache-2.0:
 taylor_expansions.jl, rational_functions.jl, calculus.jl,
 multivariate_calculus.jl, inverse_maps.jl, linear_algebra.jl,
 orthogonal_polynomials.jl, implicit_maps.jl, continuation.jl,
-implicit_solvers.jl, adaptive_integration.jl, picard_integration.jl,
+implicit_solvers.jl, adaptive_integration.jl, taylor_integration.jl,
 serialization.jl, ads_methods.jl, and ads_flow.jl.
 
 Source: https://github.com/arma1978/DACEjl/tree/c5d062d277a28b02c89e587e4eed098fd3331036/examples

@@ -10,6 +10,8 @@ using OrdinaryDiffEqVerner
 using SciMLBase: successful_retcode, DiscreteCallback, terminate!
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab20),))
+
 function kepler_ode!(du, u, μ, time)
     factor = -μ * (u[1]^2 + u[2]^2)^(-3 / 2)
     du[1], du[2] = u[3], u[4]
@@ -77,7 +79,7 @@ image = Axis(fig[1, 2]; xlabel = "Final x", ylabel = "Final y", title = "Uncerta
 for (i, patch) in enumerate(online_map.patches)
     x0, y0 = patch.lower
     x1, y1 = patch.upper
-    color = Makie.wong_colors()[mod1(i, 7)]
+    color = Makie.to_colormap(:tab20)[mod1(i, 20)]
     lines!(domain, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color, linewidth = 1)
     edge = range(0, 1; length = 21)
     boundary = vcat(

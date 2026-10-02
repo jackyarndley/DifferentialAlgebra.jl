@@ -9,6 +9,8 @@ using OrdinaryDiffEqVerner
 using SciMLBase: successful_retcode
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 # Normalized Kepler equations: acceleration = -μ r / |r|³.
 function kepler_ode!(du, u, μ, _)
     radius2 = u[1]^2 + u[2]^2 + u[3]^2
@@ -86,9 +88,9 @@ end
 
 fig = Figure(size = (1350, 430), fontsize = 15)
 orbit_axis = Axis(fig[1, 1]; xlabel = "x", ylabel = "y", title = "One Kepler revolution", aspect = DataAspect())
-lines!(orbit_axis, getindex.(nominal.u, 1), getindex.(nominal.u, 2); color = Makie.wong_colors()[1], linewidth = 3)
+lines!(orbit_axis, getindex.(nominal.u, 1), getindex.(nominal.u, 2); color = Makie.to_colormap(:tab10)[1], linewidth = 3)
 scatter!(orbit_axis, [0.0], [0.0]; color = :black, markersize = 14, label = "Central body")
-scatter!(orbit_axis, [initial[1]], [initial[2]]; color = Makie.wong_colors()[2], markersize = 12, label = "Initial / final state")
+scatter!(orbit_axis, [initial[1]], [initial[2]]; color = Makie.to_colormap(:tab10)[2], markersize = 12, label = "Initial / final state")
 axislegend(orbit_axis; position = :lb, labelsize = 11)
 labels = ["x", "y", "z", "vx", "vy", "vz"]
 stm_axis = Axis(fig[1, 2]; xlabel = "Initial component", ylabel = "Final component", title = "State transition matrix", xticks = (1:6, labels), yticks = (1:6, labels), yreversed = true, aspect = DataAspect())
@@ -96,8 +98,8 @@ limit = maximum(abs, stm)
 heat = heatmap!(stm_axis, 1:6, 1:6, transpose(stm); colormap = :balance, colorrange = (-limit, limit))
 Colorbar(fig[1, 3], heat)
 error_axis = Axis(fig[1, 4]; xlabel = "Initial radial displacement", ylabel = "Maximum final-state error", title = "Nonlinear terms improve the map", xscale = log10, yscale = log10, xticks = ([1.0e-4, 1.0e-3, 1.0e-2], ["10⁻⁴", "10⁻³", "10⁻²"]), yticks = ([1.0e-8, 1.0e-6, 1.0e-4, 1.0e-2], ["10⁻⁸", "10⁻⁶", "10⁻⁴", "10⁻²"]))
-scatterlines!(error_axis, displacements, linear_errors; color = Makie.wong_colors()[1], linewidth = 2, label = "STM (first order)")
-scatterlines!(error_axis, displacements, quadratic_errors; color = Makie.wong_colors()[2], linewidth = 2, label = "Second-order map")
+scatterlines!(error_axis, displacements, linear_errors; color = Makie.to_colormap(:tab10)[1], linewidth = 2, label = "STM (first order)")
+scatterlines!(error_axis, displacements, quadratic_errors; color = Makie.to_colormap(:tab10)[2], linewidth = 2, label = "Second-order map")
 axislegend(error_axis; position = :lt, labelsize = 11)
 
 fig

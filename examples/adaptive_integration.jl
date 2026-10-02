@@ -8,6 +8,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 function kepler_rhs(u)
     factor = -(u[1]^2 + u[2]^2)^(-3 / 2)
     return [u[3], u[4], factor * u[1], factor * u[2]]
@@ -100,6 +102,6 @@ for (i, map) in enumerate(result.snapshots)
     states = evaluate.(Ref(compile(map)), boundary)
     lines!(ax, first.(states), getindex.(states, 2); color = (i - 1) / (length(times) - 1), colorrange = (0, 1), colormap = :viridis, linewidth = 2)
 end
-scatter!(ax, [0.0], [0.0]; color = :orange, markersize = 14)
+scatter!(ax, [0.0], [0.0]; color = Makie.to_colormap(:tab10)[2], markersize = 14)
 Colorbar(fig[1, 2]; limits = (0, 1), colormap = :viridis, label = "Time / nominal period")
 fig

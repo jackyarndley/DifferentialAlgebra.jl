@@ -8,6 +8,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 function kepler_iterations(mean, e; newton, tolerance = 1.0e-12)
     E = copy(mean)
     errors = Float64[]

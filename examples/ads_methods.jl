@@ -7,6 +7,8 @@
 using DifferentialAlgebra
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 gaussian(x) = exp(-(4x[1]^2 + x[2]^2) / 2)
 lower, upper = [-2.0, -2.0], [2.0, 2.0]
 tolerance = 1.0e-4
@@ -53,7 +55,7 @@ for (column, ((name, _, _), map, error)) in enumerate(zip(methods, maps, errors)
     for patch in map.patches
         x0, y0 = patch.lower
         x1, y1 = patch.upper
-        lines!(domain, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color = :steelblue, linewidth = 0.7)
+        lines!(domain, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color = Makie.to_colormap(:tab10)[1], linewidth = 0.7)
     end
     accuracy = Axis(fig[2, column]; xlabel = "x", ylabel = "y", title = "Independent grid error", aspect = DataAspect())
     heatmap!(accuracy, grid, grid, log10.(max.(error, 1.0e-12)); colormap = :magma, colorrange = (-12, -4))

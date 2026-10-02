@@ -10,6 +10,7 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     # Widen negative integers before negation, including typemin(Int).
     magnitude = negative ? -(coefficient isa Integer ? big(coefficient) : coefficient) : coefficient
     show(io, magnitude)
+    any(!iszero, exponents) && print(io, ' ')
     for (i, power) in enumerate(exponents)
         iszero(power) && continue
         print(io, names[i])

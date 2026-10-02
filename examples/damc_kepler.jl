@@ -11,6 +11,8 @@ using DifferentialAlgebra
 using LinearAlgebra, Random, Statistics
 using CairoMakie
 
+set_theme!(palette = (color = Makie.to_colormap(:tab10),))
+
 # Solve the elliptic or hyperbolic Kepler equation for the anomaly increment.
 # First converge the scalar center, then lift that root in the polynomial algebra.
 # Each Newton step doubles the number of correct Taylor orders.
@@ -125,7 +127,7 @@ escaped = lagrange_propagator(escape_state, 0.25, μ)
 # the maximum component error of each sample; curves farther left are more accurate.
 
 fig = Figure(size = (1100, 800), fontsize = 15)
-colors = Makie.wong_colors()
+colors = Makie.to_colormap(:tab10)
 error_axis = Axis(fig[2, 2]; xlabel = "Maximum component error per sample", ylabel = "Fraction of samples", title = "Accuracy over all 10,000 samples", xscale = log10)
 positions = ((1, 1), (1, 2), (2, 1))
 position_axes = Axis[]
