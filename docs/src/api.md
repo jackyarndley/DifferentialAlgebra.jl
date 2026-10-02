@@ -58,6 +58,10 @@ eigenpairs
 
 ```@docs
 adaptive_map
+adaptive_flow
+GuardedTail
+ExtrapolatedTail
+LastTerms
 PiecewiseTaylorMap
 TaylorPatch
 ```

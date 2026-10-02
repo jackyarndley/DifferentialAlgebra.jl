@@ -1,4 +1,4 @@
-@testset "Tutorial 1 Example 6" begin
+@testset "Gaussian probability integral" begin
     function ErrFunc(x::TaylorPolynomial)::TaylorPolynomial
         my_pi = 4.0 * atan(1.0)
         z = 1.0 / sqrt(2.0 * my_pi) * exp(-x * x / 2)

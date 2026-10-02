@@ -1,7 +1,5 @@
-# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
-# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex01_basic_da.jl #src
-# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
-# # Sine function
+# SPDX-License-Identifier: Apache-2.0; modified examples, see ../THIRD_PARTY_NOTICES.md. #src
+# # Taylor expansions and truncation
 #
 # Construct a Taylor expansion, inspect its coefficients and evaluate it.
 # Install the example environment as described in examples/README.md.
@@ -21,6 +19,17 @@ println("Taylor approximation of sin(1): ", value)
 println("x = ", x)
 println("sin(x) = ", p)
 println("Base.sin(1) = ", sin(1.0))
+
+# ## Arithmetic in a truncated algebra
+#
+# Trigonometric identities hold coefficient by coefficient up to rounding.
+# A polynomial whose minimum degree exceeds the working order is zero.
+identity_residual = coefficient_norm(sin(x)^2 + cos(x)^2 - 1)
+nilpotent = (cos(x) - 1)^11
+@assert identity_residual < 1.0e-14
+@assert iszero(nilpotent)
+println("Identity coefficient residual: ", identity_residual)
+println("(cos(x) - 1)¹¹ at order 20: ", nilpotent)
 
 # ## Approximation across an interval
 #

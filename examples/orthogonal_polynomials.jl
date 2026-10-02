@@ -1,6 +1,4 @@
-# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
-# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex13_legendre_basis.jl #src
-# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
+# SPDX-License-Identifier: Apache-2.0; modified examples, see ../THIRD_PARTY_NOTICES.md. #src
 # # An orthonormal Legendre basis
 #
 # Generate Pₙ by (n+1)Pₙ₊₁=(2n+1)xPₙ-nPₙ₋₁. Products in x and y

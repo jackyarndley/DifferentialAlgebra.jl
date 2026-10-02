@@ -1,6 +1,6 @@
 # # Differential algebra Monte Carlo for Kepler motion
 #
-# Propagate the same uncertain orbit as DACE.jl's DAMC example: 10,000 samples,
+# Propagate an uncertain orbit using 10,000 samples,
 # 30 nominal revolutions, and polynomial orders 2, 4 and 8. The method follows
 # [Valli2013](@citet), DOI: 10.2514/1.58068. The initial covariance is diagonal.
 #

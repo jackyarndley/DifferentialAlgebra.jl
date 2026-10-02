@@ -1,6 +1,4 @@
-# Adapted for DifferentialAlgebra.jl from DACEjl; algorithms, API, plots and checks modified. #src
-# Source: https://github.com/arma1978/DACEjl/blob/c5d062d277a28b02c89e587e4eed098fd3331036/examples/ex12_linearalgebra.jl #src
-# SPDX-License-Identifier: Apache-2.0; see LICENSE-DACEjl and NOTICE-DACEjl. #src
+# SPDX-License-Identifier: Apache-2.0; modified examples, see ../THIRD_PARTY_NOTICES.md. #src
 # # Linear algebra with polynomial entries
 #
 # Factorization, solving, determinants and traces use Julia's LinearAlgebra.
@@ -23,6 +21,13 @@ println("trace(A B) = ", tr(A * B))
 println("det(A) = ", det(A))
 println("Frobenius norm of A B: ", sqrt(sum(abs2, A * B)))
 println((solve_error = solve_error, inverse_error = inverse_error))
+
+# Julia's ordinary arrays preserve matrix-product associativity in the
+# truncated algebra. Numeric evaluation need not commute with multiplication:
+# powers above the working order have already been discarded.
+associativity_error = maximum(coefficient_norm, (A * B) * b - A * (B * b))
+@assert associativity_error < 1.0e-13
+println("Matrix-product associativity residual: ", associativity_error)
 
 # Compose each matrix entry with a shifted coordinate system.
 shifted = [evaluate(p, [x + 0.1, y - 0.2]) for p in A]
