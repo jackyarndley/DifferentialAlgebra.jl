@@ -29,6 +29,10 @@ scripts with Literate.jl, showing their numerical results and Makie figures.
 - [CR3BP flow maps and uncertainty propagation](generated/taylor_cr3bp_maps.md)
 - [Monte Carlo with a Taylor map](generated/damc_kepler.md)
 
+## Orbit determination
+
+- [DAIOD: angles-only orbit maps and uncertainty](generated/daiod.md)
+
 ## Automatic domain splitting
 
 - [Comparing estimators and split directions](generated/ads_methods.md)

@@ -60,6 +60,10 @@ arguments are output coordinates. For a zero-constant map, composition gives
 the identity through the configured order. See the
 [inversion example](../generated/inverse_maps.md).
 
+The [DAIOD tutorial](../generated/daiod.md) uses an augmented inverse map to
+express an implicitly determined orbit in terms of uncertain measured angles.
+It then computes polynomial moments and uses the map in a measurement update.
+
 ## Linear algebra
 
 Use matrix literals, multiplication, solves, and the standard `LinearAlgebra`
