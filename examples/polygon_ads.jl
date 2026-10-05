@@ -74,18 +74,59 @@ fig
 
 # General convex input domains are supported too. The closed polygon domain
 # is retained even though each local expansion uses a parallelogram cover.
-polygon_fig = Figure(size = (630, 480), fontsize = 14)
+polygon_fig = Figure(size = (1200, 450), fontsize = 14)
 ax = Axis(polygon_fig[1, 1]; xlabel = "physical x", ylabel = "physical y", title = "exp(x+y) on a convex triangle", aspect = DataAspect())
 for patch in triangular.patches
     poly!(ax, [Point2f(Float64.(v)) for v in polygon_vertices(domain(patch))]; color = :palegreen, strokecolor = :darkgreen, strokewidth = 1)
 end
+grid = range(0, 1; length = 65)
+point_widths = [x + y <= 1 ? diam(triangular([x, y])) : NaN for x in grid, y in grid]
+ax = Axis(polygon_fig[1, 2]; xlabel = "physical x", ylabel = "physical y", title = "Point enclosure width inside triangle", aspect = DataAspect())
+heat = heatmap!(ax, grid, grid, point_widths; colormap = :viridis)
+Colorbar(polygon_fig[1, 3], heat; label = "Original-function interval width")
+ax = Axis(polygon_fig[1, 4]; xlabel = "polygon leaf", ylabel = "uniform fit-error interval", title = "Fresh leaf certificates")
+triangle_errors = [only(p.error_bounds) for p in triangular.patches]
+rangebars!(ax, eachindex(triangle_errors), inf.(triangle_errors), sup.(triangle_errors); color = :darkgreen, linewidth = 3, whiskerwidth = 6)
+hlines!(ax, [-1 / 1000, 1 / 1000]; color = :black, linestyle = :dash)
 polygon_fig
 
-# The standalone script also saves both displayed figures as shareable PNGs.
+# ## Choosing directions: axis, oblique and diagonal frames
+# Projection rows need not be perpendicular. The exact inverse defines each
+# cover; it is not replaced by a transpose. These three frames solve the same
+# quadratic problem with the same certified tolerance. Good alignment can
+# reduce leaf counts and dependence overestimation, but does not guarantee speed.
+frame_names = ("Axis projection", "Oblique projection", "Diagonal projection")
+frame_fits = (
+    adaptive_map(f, box; estimator = IntervalBound(), splitter = :oriented, directions = :axes, order = 1, atol = tolerance),
+    adaptive_map(f, box; estimator = IntervalBound(), splitter = :oriented, directions = [1 1 // 2; 0 1], order = 1, atol = tolerance),
+    manual,
+)
+@assert all(m -> sum(p -> domain_area(domain(p)), m.patches) == 4, frame_fits)
+direction_fig = Figure(size = (1130, 720), fontsize = 14)
+for (column, (name, fit)) in enumerate(zip(frame_names, frame_fits))
+    ax = Axis(direction_fig[1, column]; xlabel = "physical x", ylabel = "physical y", title = "$name\n$(length(fit.patches)) polygons", aspect = DataAspect())
+    for p in fit.patches
+        poly!(ax, [Point2f(Float64.(v)) for v in polygon_vertices(domain(p))]; color = (:palegreen, 0.4), strokecolor = :darkgreen, strokewidth = 0.8)
+    end
+end
+labels = ["Axis", "Oblique", "Diagonal"]
+ax = Axis(direction_fig[2, 1]; xticks = (1:3, labels), ylabel = "leaf count", title = "Partition size")
+barplot!(ax, 1:3, [length(m.patches) for m in frame_fits]; color = :darkgreen)
+ax = Axis(direction_fig[2, 2]; xticks = (1:3, labels), ylabel = "full-domain enclosure width", title = "Dependence and cover overestimation")
+barplot!(ax, 1:3, [diam(enclose(m)) for m in frame_fits]; color = :darkgreen)
+hlines!(ax, [4]; color = :black, linestyle = :dash, label = "Analytical range width: [0,4]")
+axislegend(ax; position = :rt, labelsize = 10)
+ax = Axis(direction_fig[2, 3]; xticks = (1:3, labels), ylabel = "uniform error upper bound", title = "Each frame retains its certificate")
+scatter!(ax, 1:3, [maximum(p -> sup(abs(only(p.error_bounds))), m.patches) for m in frame_fits]; color = :darkgreen, markersize = 14)
+hlines!(ax, [Float64(tolerance)]; color = :black, linestyle = :dash, label = "Requested atol")
+axislegend(ax; position = :lb, labelsize = 10)
+direction_fig
+
+# The standalone script also saves all three displayed figures as shareable PNGs.
 if abspath(PROGRAM_FILE) == @__FILE__
     directory = joinpath(@__DIR__, "..", "results")
     mkpath(directory)
-    for (name, figure) in (("polygon_ads.png", fig), ("polygon_triangle.png", polygon_fig))
+    for (name, figure) in (("polygon_ads.png", fig), ("polygon_triangle.png", polygon_fig), ("polygon_directions.png", direction_fig))
         path = joinpath(directory, name)
         save(path, figure; px_per_unit = 2)
         println("Saved interval/polygon plot: ", abspath(path))

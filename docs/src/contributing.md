@@ -78,8 +78,14 @@ captures its rich display automatically. Separate printed reports from figure
 blocks with narrative text or `#-`, since a returned figure takes precedence over
 standard output in the same block. Use `println` for reports, or return a value
 as the final expression of its own block, rather than calling `display` explicitly.
-Add new pages to the catalog in `docs/src/examples.md`; the build checks that every
-script is registered. The rendering helper in `docs/literate.jl` converts Makie's
+Use `##` for code comments inside functions and loops so Literate does not split
+an incomplete Julia block. Label sampled errors and log-scale display floors
+separately from certified interval bounds, and use consistent scales for direct
+comparisons. Plot values alongside a useful diagnostic (residual, enclosure
+width, conditioning, conservation or partition size) when it explains the topic.
+Add new pages under a topic heading in `docs/src/examples.md`; these headings also
+generate the sidebar groups. The build checks that every script is registered
+exactly once. The rendering helper in `docs/literate.jl` converts Makie's
 embedded display images to links that work with both local and deployed URLs.
 Generated pages, build output and local manifests are excluded from version control.
 

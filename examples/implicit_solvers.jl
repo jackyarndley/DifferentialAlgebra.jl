@@ -53,3 +53,19 @@ scatterlines!(ax, 0:(length(newton_errors) - 1), max.(newton_errors, eps(Float64
 scatterlines!(ax, 0:(length(fixed_errors) - 1), max.(fixed_errors, eps(Float64)); linewidth = 2, label = "Fixed point")
 axislegend(ax; position = :rt)
 fig
+
+# ## Fixed time and a fixed fraction of the period are different maps
+# Evaluate both solutions in physical (a,e) coordinates. The residual panel
+# substitutes the stored order-five map into the original scalar equation;
+# its samples are a numerical check rather than a uniform error certificate.
+axes_a, axes_e = range(0.9, 1.1; length = 65), range(0.1, 0.5; length = 65)
+fixed_time = [newton([a - 1, e - 0.3]) for a in axes_a, e in axes_e]
+period_fraction = [fractional([a - 1, e - 0.3]) for a in axes_a, e in axes_e]
+residual = [abs(fixed_time[i, j] - e * sin(fixed_time[i, j]) - (π / 2) / (a * sqrt(a))) for (i, a) in enumerate(axes_a), (j, e) in enumerate(axes_e)]
+parameter_fig = Figure(size = (1210, 420), fontsize = 14)
+for (column, values, title, palette) in ((1, fixed_time, "Anomaly at fixed physical time", :viridis), (3, fixed_time - period_fraction, "Fixed time minus quarter-period", :balance), (5, log10.(max.(residual, eps(Float64))), "log₁₀ implicit-equation residual", :magma))
+    ax = Axis(parameter_fig[1, column]; xlabel = "semimajor axis a", ylabel = "eccentricity e", title)
+    heat = heatmap!(ax, axes_a, axes_e, values; colormap = palette)
+    Colorbar(parameter_fig[1, column + 1], heat)
+end
+parameter_fig

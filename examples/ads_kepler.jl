@@ -12,6 +12,7 @@
 
 using DifferentialAlgebra
 using Random
+using ForwardDiff
 
 # Solve E - e sin(E) = M. Newton iteration first finds the scalar root, then
 # lifts it to the active polynomial order. The same function handles numeric
@@ -78,6 +79,7 @@ println((patches = length(split.patches), single_error = single_error, split_err
 
 # ## Inspect the adaptive map
 #
+
 # Plot the partition in parameter space and its image in the orbital plane.
 # The colored curves are images of patch boundaries, not trajectory segments.
 # The lower panels compare a single expansion with the ADS map on the same grid
@@ -124,3 +126,66 @@ fig
 # splitting are heuristic; the plotted errors come from independent pointwise
 # evaluations. Tightening `atol` generally produces more patches.
 #
+
+# ## Oriented ADS and a C2 surrogate on the same orbit map
+# The newer geometry works with the same ordinary polynomial callback. This
+# implicit root lifting is not a verified Kepler solve, so IntervalBound would
+# not certify it. Validated examples use explicit functions in ads_methods.jl
+# and polygon_ads.jl. ODE integration likewise remains a separate error source.
+oriented = adaptive_map(kepler_map, lower, upper; order, atol = tolerance, splitter = :oriented)
+smooth = continuous_map(kepler_map, oriented; continuity = :c2, order)
+@assert oriented.converged
+comparisons = (("Single expansion", single), ("Box ADS", split), ("Oriented ADS", oriented), ("C2 oriented blend", smooth))
+sample_errors = [[maximum(abs, m(p) - q) for (p, q) in zip(samples, reference)] for (_, m) in comparisons]
+println("Box / oriented leaf counts: ", length.((split.patches, oriented.patches)))
+println("Recomputed overlap estimates (heuristic): ", smooth.error_estimate)
+for ((label, _), errors) in zip(comparisons, sample_errors)
+    println((label, maximum_sample_error = maximum(errors)))
+end
+
+# The scalar implicit equation gives dE/da = (-3M/(2a))/(1-e*cos(E)).
+# Differentiate x=a*(cos(E)-e) to compare with ForwardDiff on the numeric
+# surrogate. C2 guarantees surrogate regularity, not derivative accuracy.
+function analytic_dx_da(a, e)
+    mean = 6π / (a * sqrt(a))
+    anomaly = eccentric_anomaly(mean, e)
+    derivative = (-3mean / (2a)) / (1 - e * cos(anomaly))
+    return cos(anomaly) - e - a * sin(anomaly) * derivative
+end
+slice_a = collect(range(lower[1], upper[1]; length = 201))
+slice_e = (lower[2] + upper[2]) / 2
+reference_gradient = [analytic_dx_da(a, slice_e) for a in slice_a]
+surrogate_gradient = [ForwardDiff.jacobian(smooth, [a, slice_e])[1, 1] for a in slice_a]
+println("Largest sampled C2 gradient discrepancy: ", maximum(abs, surrogate_gradient - reference_gradient))
+
+# Compare geometry, sampled accuracy and optimization-relevant smoothness.
+# This figure supplements the original single-versus-box heatmaps above.
+# Here automatic directions give the same leaf count as box ADS. Alignment
+# helps the diagonal examples, but need not improve every problem's partition.
+# Errors below machine epsilon sit at the log-scale display floor.
+methods_fig = Figure(size = (1130, 800), fontsize = 14)
+ax = Axis(methods_fig[1, 1]; xlabel = "semimajor axis a", ylabel = "eccentricity e", title = "Oriented ADS: $(length(oriented.patches)) polygons")
+for patch in oriented.patches
+    poly!(ax, [Point2f(Float64.(v)) for v in polygon_vertices(domain(patch))]; color = (:palegreen, 0.4), strokecolor = :darkgreen, strokewidth = 0.8)
+end
+ax = Axis(methods_fig[1, 2]; xlabel = "maximum state-component error", ylabel = "fraction of validation points", xscale = log10, title = "Same seeded points and boundary grid")
+for ((label, _), errors) in zip(comparisons, sample_errors)
+    sorted = sort(max.(errors, eps(Float64)))
+    lines!(ax, sorted, collect(eachindex(sorted)) ./ length(sorted); label)
+end
+vlines!(ax, [tolerance]; color = :black, linestyle = :dash)
+axislegend(ax; position = :rb, labelsize = 10)
+ax = Axis(methods_fig[2, 1]; xlabel = "semimajor axis a (e=$slice_e)", ylabel = "sampled maximum component error", yscale = log10, title = "A physical-coordinate section")
+for (label, m) in comparisons
+    errors = [maximum(abs, m([a, slice_e]) - kepler_map([a, slice_e])) for a in slice_a]
+    lines!(ax, slice_a, max.(errors, eps(Float64)); label)
+end
+axislegend(ax; position = :lt, labelsize = 10)
+ax = Axis(methods_fig[2, 2]; xlabel = "semimajor axis a (e=$slice_e)", ylabel = "∂ final x / ∂a", title = "Gradient of the C2 numeric surrogate")
+lines!(ax, slice_a, reference_gradient; color = :black, linewidth = 3, label = "Analytic implicit derivative (rounded)")
+lines!(ax, slice_a, surrogate_gradient; color = :orange, linestyle = :dash, linewidth = 2, label = "ForwardDiff on C2 blend")
+axislegend(ax; position = :lb, labelsize = 10)
+methods_fig
+
+# Refining the source partition, increasing local order, or reducing overlap
+# can improve the blend's accuracy. The source atol is not inherited by it.
