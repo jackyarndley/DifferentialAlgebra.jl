@@ -16,6 +16,7 @@ export adaptive_map, adaptive_flow, PiecewiseTaylorMap, TaylorPatch
 export GuardedTail, ExtrapolatedTail, LastTerms, IntervalBound
 export ConvexPolygon, polygon_vertices, domain_area, split_directions
 export PiecewisePolygonMap, PolygonPatch
+export continuous_map, ContinuousTaylorMap, blend_weights
 export TimeSeries, taylor_expand, TaylorMethod
 export TaylorModel, taylor_models, polynomial, remainder, domain, enclose
 export CompiledTaylorModel, validated_adaptive_map, PiecewiseTaylorModel, TaylorModelPatch
@@ -37,6 +38,7 @@ include("domain_splitting.jl")
 include("validated_ads.jl")
 include("polygon_domains.jl")
 include("polygon_ads.jl")
+include("continuous_ads.jl")
 include("adaptive_flow.jl")
 include("time_series.jl")
 include("time_recurrence.jl")

@@ -94,6 +94,9 @@ domain_area
 split_directions
 PiecewisePolygonMap
 PolygonPatch
+continuous_map
+ContinuousTaylorMap
+blend_weights
 ```
 
 ## Statistical moments

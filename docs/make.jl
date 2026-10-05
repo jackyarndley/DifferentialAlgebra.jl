@@ -53,6 +53,7 @@ makedocs(
             "Polynomial maps" => "manual/maps.md",
             "Time expansions" => "manual/time-expansions.md",
             "Automatic domain splitting" => "manual/domain-splitting.md",
+            "Continuous ADS surrogates" => "manual/continuous-ads.md",
             "Coefficient types" => "manual/coefficient-types.md",
             "Intervals and Taylor models" => "manual/interval-models.md",
             "Configuration and storage" => "manual/configuration.md",

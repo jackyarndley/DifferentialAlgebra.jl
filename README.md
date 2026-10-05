@@ -49,6 +49,13 @@ ADS with automatic or supplied projection directions to all four error methods;
 see the [polygon fitting plots](examples/polygon_ads.jl). GuardedTail,
 ExtrapolatedTail, LastTerms and time solvers keep their heuristic contracts.
 
+For smooth optimization objectives, `continuous_map(f, fit; continuity=:c2)`
+optionally blends fresh overlapping fits with C0/C1/C2 continuity and supports
+ForwardDiff gradients/Hessians. Interval sources retain function certificates
+and report the new overlap error bounds. See the [continuity plots](examples/ads_continuity.jl),
+[oriented optimization example](examples/ads_optimization.jl) and
+[accuracy contract](docs/src/manual/continuous-ads.md).
+
 - [Documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
 - [Runnable examples](examples)
 - [Contributing](docs/src/contributing.md)
