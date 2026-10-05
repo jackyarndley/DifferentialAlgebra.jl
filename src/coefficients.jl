@@ -73,7 +73,7 @@ function set_coefficient!(a::TaylorPolynomial{T}, jj::AbstractVector{<:Integer},
     @inbounds for j in (a.len + 1):i
         a.coeffs[j] = zero(T)
     end
-    c = convert(T, value)
+    c = coefficient_convert(T, value)
     a.coeffs[i] = keep(c, ctx) ? c : zero(T)
     return finish!(a, max(i, a.len))
 end
@@ -84,7 +84,7 @@ Return nonzero monomials in increasing total degree, then basis order.
 """
 function monomials(a::TaylorPolynomial)
     b = valid(a).basis
-    return [Monomial(a.coeffs[i], UInt32.(b.exponents[:, i])) for i in 1:a.len if !iszero(a.coeffs[i])]
+    return [Monomial(a.coeffs[i], UInt32.(b.exponents[:, i])) for i in 1:a.len if !coefficient_iszero(a.coeffs[i])]
 end
 """
     monomial(p, index)
@@ -98,7 +98,7 @@ function monomial(a::TaylorPolynomial, pos::Integer)
     b = valid(a).basis
     found = 0
     for i in 1:a.len
-        if !iszero(a.coeffs[i])
+        if !coefficient_iszero(a.coeffs[i])
             found += 1
             found == pos && return Monomial(a.coeffs[i], UInt32.(b.exponents[:, i]))
         end
@@ -128,22 +128,22 @@ end
 function calculus(a::TaylorPolynomial, v::Integer, operation::Symbol, p::Integer = 1)
     ctx = valid(a); b = ctx.basis
     1 <= v <= b.variables && 0 <= p <= b.order || throw(ArgumentError("Invalid variable power"))
-    T = operation === :integrate ? typeof(one(coefficient_type(a)) / 1) : coefficient_type(a)
+    T = operation === :integrate ? typeof(one(coefficient_type(a)) / degree_factor(one(coefficient_type(a)), 1)) : coefficient_type(a)
     out = allocate(ctx, T)
     exponents = zeros(Int, b.variables)
     for i in 1:a.len
         c = a.coeffs[i]
-        iszero(c) && continue
+        coefficient_iszero(c) && continue
         exponents .= @view b.exponents[:, i]
         degree = b.degrees[i]
         if operation === :integrate
             degree >= ctx.cutoff && continue
             exponents[v] += 1
-            out.coeffs[rank(b, exponents, degree + 1)] = c / exponents[v]
+            out.coeffs[rank(b, exponents, degree + 1)] = c / degree_factor(c, exponents[v])
         elseif operation === :differentiate
             exponents[v] == 0 && continue
             power = exponents[v]; exponents[v] -= 1
-            degree - 1 <= ctx.cutoff && (out.coeffs[rank(b, exponents, degree - 1)] = power * c)
+            degree - 1 <= ctx.cutoff && (out.coeffs[rank(b, exponents, degree - 1)] = degree_factor(c, power) * c)
         else
             exponents[v] < p && throw(TaylorError("Polynomial is not divisible by this variable power"))
             exponents[v] -= p
@@ -218,6 +218,15 @@ function estimate_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0, n::
     count = min(length(norms), n + 1)
     return estimates, max.(zero(eltype(norms)), norms[1:count] - estimates[1:count])
 end
+"""
+    bounds(p::TaylorPolynomial)
+
+Heuristic monomial bounds on the implicit box `[-1,1]^n`, using ordinary scalar
+accumulation. Floating rounding is not enclosed, and no generating-function
+truncation error is included. Wrapping its final endpoints in an interval does
+not certify this calculation. Use [`enclose`](@ref) on an explicit interval box
+for an outward-rounded enclosure of the stored polynomial.
+"""
 function bounds(a::TaylorPolynomial)
     b = valid(a).basis
     lo = hi = constant_term(a)

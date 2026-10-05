@@ -38,8 +38,11 @@ scripts with Literate.jl, showing their numerical results and Makie figures.
 - [Comparing estimators and split directions](generated/ads_methods.md)
 - [An analytic Kepler map](generated/ads_kepler.md)
 - [Splitting during orbit propagation](generated/ads_flow.md)
+- [Oriented polygon ADS and interval fitting bands](generated/polygon_ads.md)
 
 ## Storage
+
+- [Interval evaluation and Taylor-model enclosures](generated/interval_models.md)
 
 - [Serializing compiled maps](generated/serialization.md)
 
@@ -58,6 +61,7 @@ For interactive plotting, start Julia with `julia --project=examples` and run:
 include("examples/ads_methods.jl")
 ```
 
-Each plot ends with `fig`, so the interactive frontend or documentation
-renderer displays it. A terminal script runs the calculations and prints
-results without opening a viewer or writing image files.
+Each plotting block ends with its figure, so the interactive frontend or
+documentation renderer displays it. Terminal scripts print their results
+without opening a viewer. The interval and polygon fitting scripts additionally
+save shareable PNGs under `results/`.

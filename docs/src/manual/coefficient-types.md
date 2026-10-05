@@ -42,3 +42,8 @@ An analytic expansion also requires a regular center, such as a nonzero
 constant for a reciprocal. Numerical precision and range are properties of the
 chosen scalar type. For configurable-precision types, construct coefficients
 and perform calculations within that type's precision context.
+
+Loading IntervalArithmetic adds narrow coefficient hooks for exact-zero tests,
+internal integer factors and interval accumulation. See
+[intervals and Taylor models](interval-models.md) for guarantee flags, supported
+operations and the distinction between interval coefficients and function remainders.

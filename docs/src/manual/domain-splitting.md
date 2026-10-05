@@ -1,12 +1,19 @@
 # Automatic domain splitting
 
+Choose the error method with `estimator` and the geometry with `splitter`.
+[`IntervalBound`](@ref) is the optional validated method for static maps; the
+other three methods use coefficient indicators and optional point checks.
+Neither those indicators nor their point checks implicitly perform interval
+arithmetic. `splitter=:oriented` adds a 2D convex polygon partition to all four
+static-map methods. Existing flow methods keep their heuristic box contract.
+
 A single Taylor expansion may lose accuracy over a large input box.
 Automatic domain splitting (ADS) replaces it with a collection of local
 expansions [Wittig2015](@cite). Each patch uses normalized coordinates on
 `[-1, 1]`, while the public map accepts physical coordinates.
 
-The same estimators, tolerances, split directions and result type are used
-for static functions, partition refinement and propagated states:
+The original box methods support static functions, refinement and propagated
+states. The interval and polygon extensions currently support static maps:
 
 | Operation | Interface |
 |:--|:--|
@@ -39,6 +46,7 @@ Select an estimator with `estimator = ...`:
 | `GuardedTail()` (default) | `order + guard_order` | Sum of absolute discarded coefficients plus an extrapolated next degree |
 | `ExtrapolatedTail()` | `order` | Exponential fit to maximum coefficient magnitude by degree |
 | `LastTerms()` | `order` | Maximum absolute coefficient in the last two retained degrees |
+| `IntervalBound()` | `order` | Certified absolute remainder plus retained coefficient uncertainty |
 
 `GuardedTail` defaults to two extra degrees. Their L1 norm bounds their
 contribution on the normalized box, but not the uncomputed remainder.
@@ -51,11 +59,11 @@ back to the maximum in the last two degrees.
 and multiplies the indicator by a safety factor. These two methods require
 `guard_order = 0`, which is selected automatically.
 
-All methods are **heuristic**, not rigorous remainder bounds. Retained-tail
+The first three methods are **heuristic**, not rigorous remainder bounds. Retained-tail
 methods may split an exactly represented polynomial unnecessarily. Any
 coefficient-only method can miss terms absent from the computed expansion.
 
-By default, independent numeric evaluations at axis endpoints and selected
+For those three methods, independent numeric evaluations at axis endpoints and selected
 corners supplement the coefficient indicator. Repeated points are evaluated
 only once. Setting `check_points = false` avoids these evaluations, but also
 removes their ability to detect missing high-degree terms. Always validate
@@ -68,6 +76,28 @@ An output passes when
 where `s_j` is the largest absolute output at the center and checked points.
 `atol` can be a scalar or a vector with one entry per output. Use separate
 absolute tolerances for outputs with different units or scales.
+
+`IntervalBound()` instead reevaluates the original expression with native
+Taylor models and accepts a leaf only when a rigorous uniform absolute error
+bound meets `atol`. It includes coefficient widths as well as the remainder.
+It requires IntervalArithmetic, `rtol=0`, `guard_order=0` and
+`check_points=false` (selected automatically). Its callbacks accept Taylor-model
+inputs, and returned values retain their remainder and domain:
+
+```julia
+using DifferentialAlgebra, IntervalArithmetic
+box = fill(interval(Float64, -1, 1), 2)
+fit = adaptive_map(v -> (v[1]+v[2])^2, box;
+                   estimator=IntervalBound(), order=1, atol=1//16)
+enclose(fit)                     # Original function on the complete domain
+fit([1//2, 1//4])               # Interval at a physical point
+```
+
+Finite ordinary endpoint vectors can also be passed to `adaptive_map` with
+this estimator. `validated_adaptive_map` remains a convenience entry point;
+its default splitter is `:width`, whereas `adaptive_map` defaults to `:tail`.
+Both apply the same acceptance test. See the
+[interval manual](interval-models.md#Certified-domain-splitting) for its proof.
 
 ## Split directions
 
@@ -82,6 +112,45 @@ small coordinates are never selected.
 
 Both children reevaluate the original callback. Translating an already
 truncated polynomial alone would not recover omitted terms.
+
+### Oriented and polygonal splitting
+
+```julia
+fit = adaptive_map(v -> (v[1]+v[2])^2, [-1, -1], [1, 1];
+                   estimator=IntervalBound(), splitter=:oriented,
+                   order=1, atol=1//16)
+split_directions(fit)            # [1 1; -1 1] for this diagonal dependence
+polygon_vertices(domain(first(fit.patches)))
+
+triangle = ConvexPolygon([(0,0), (1,0), (0,1)])
+fit = adaptive_map(v -> exp(v[1]+v[2]), triangle;
+                   estimator=IntervalBound(), order=3, atol=1//1000,
+                   directions=[1 1; -1 1])
+```
+
+Automatic directions come from gradient/Hessian sensitivity of an interior
+degree-two probe. They are a heuristic frame choice, not a search for a global
+optimum. A nonsingular 2x2 `directions` matrix supplies projection rows; it can
+be oblique as well as rotated. `directions=:axes` is an unrotated polygon
+baseline. The selected frame remains fixed during construction; each split
+clips a physical polygon by a line at the midpoint of a projected extent.
+`splitter=:width` on a polygon uses relative projected widths; `:oriented` or
+`:tail` uses coefficient sensitivity to choose between the two frame directions.
+
+Clipping, inverse coordinates, containment and area use exact rational
+geometry. All function expansions cover each polygon's bounding parallelogram.
+Certified arithmetic rounds outward on that cover and requires the function
+to be valid on the entire cover, which can extend beyond the physical polygon.
+No polygon-specific optimization bounder is implemented. Point and subdomain
+queries enforce the original physical polygon. Interval queries hull every
+overlapping leaf, including shared edges. Polygon snapshots survive algebra
+changes, and public geometry accessors own their data.
+
+These methods return `PiecewisePolygonMap`. They support 2D positive-area convex
+domains, scalar/vector outputs and refinement from an existing polygon map.
+Higher-dimensional and fixed-coordinate domains continue to use box ADS.
+The [polygon comparison](../generated/polygon_ads.md) plots the partitions and
+interval bands and reports patch counts, time, allocations and widths separately.
 
 ## Refinement
 

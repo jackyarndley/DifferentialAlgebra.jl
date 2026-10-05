@@ -36,6 +36,19 @@ map([0.1, 0.2])
 `variables(T, n; order)` selects a coefficient type. Creating a new algebra
 invalidates existing polynomials; see the [user guide](https://jackyarndley.github.io/DifferentialAlgebra.jl/manual/getting-started/).
 
+Loading optional IntervalArithmetic enables `enclose(p, box)` for certified
+stored-polynomial ranges and native `taylor_models(box; order)` with absolute
+function remainders. Interval coefficients alone do not certify truncation error.
+See [intervals and Taylor models](docs/src/manual/interval-models.md).
+`adaptive_map(f, box; estimator=IntervalBound(), order, atol)` reevaluates original
+static maps and uses uniform interval error bounds for splitting.
+`validated_adaptive_map` remains a convenience entry point. The
+[interval fitting example](examples/interval_models.jl) plots enclosures,
+partitions, and accepted error bounds. `splitter=:oriented` adds 2D convex polygon
+ADS with automatic or supplied projection directions to all four error methods;
+see the [polygon fitting plots](examples/polygon_ads.jl). GuardedTail,
+ExtrapolatedTail, LastTerms and time solvers keep their heuristic contracts.
+
 - [Documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
 - [Runnable examples](examples)
 - [Contributing](docs/src/contributing.md)
