@@ -175,6 +175,10 @@ end
 Run `f()` with a temporary truncation order, restoring the previous order even
 if `f` throws. Use `with_order(order) do ... end`. Like other algebra settings,
 this is global configuration and must not change during concurrent calculations.
+Arithmetic results, including scalar addition, unary signs and integer powers,
+discard terms above the working order. Copying, coefficient conversion and
+inspection preserve the stored polynomial; changing the order alone does not
+alter existing storage. Discarding terms is not a certified error estimate.
 """
 function with_order(f::F, order::Integer) where {F}
     algebra = ready()
@@ -189,7 +193,16 @@ end
 max_order(p::TaylorPolynomial) = valid(p).basis.order
 nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 
-@inline keep(c::Real, epsilon::Float64) = !iszero(c)
+# Narrow scalar hooks for optional coefficient types. Ordinary real kernels
+# inline to their original operations; extensions must preserve scalar metadata.
+@inline coefficient_iszero(c::Real) = iszero(c)
+@inline coefficient_convert(::Type{T}, c::Real) where {T <: Real} = convert(T, c)
+@inline coefficient_operand(::Type{T}, c::Real) where {T <: Real} = c
+@inline degree_factor(c::Real, n::Integer) = n
+@inline coefficient_muladd(a::Real, b::Real, c::Real) = muladd(a, b, c)
+@inline invertible_constant(c::Real) = !coefficient_iszero(c)
+
+@inline keep(c::Real, epsilon::Float64) = !coefficient_iszero(c)
 @inline keep(c::AbstractFloat, epsilon::Float64) = !(abs(c) <= epsilon)
 @inline keep(c::Real, ctx::Algebra) = keep(c, ctx.epsilon)
 @inline keep(c::AbstractFloat, ctx::Algebra) = ctx.big_epsilon === nothing ? keep(c, ctx.epsilon) : !(abs(c) <= ctx.big_epsilon)
@@ -200,7 +213,7 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
             keep(a.coeffs[i], a.algebra) || (a.coeffs[i] = zero(eltype(a.coeffs)))
         end
     end
-    @inbounds while n > 1 && iszero(a.coeffs[n])
+    @inbounds while n > 1 && coefficient_iszero(a.coeffs[n])
         n -= 1
     end
     a.len = n
@@ -234,14 +247,14 @@ TaylorPolynomial(x::Real) = TaylorPolynomial{typeof(float(x))}(x)
 TaylorPolynomial(a::TaylorPolynomial) = copy(a)
 function TaylorPolynomial{T}(x::Real = zero(T)) where {T <: Real}
     ctx = ready()
-    c = convert(T, x)
+    c = coefficient_convert(T, x)
     return TaylorPolynomial{T}([keep(c, ctx) ? c : zero(T)], 1, ctx)
 end
 function TaylorPolynomial{T}(i::Integer, c::Real) where {T <: Real}
     ctx = ready()
     0 <= i <= ctx.basis.variables || throw(ArgumentError("Variable index out of bounds"))
     a = allocate(ctx, T, Int(i) + 1)
-    a.coeffs[i + 1] = convert(T, c)
+    a.coeffs[i + 1] = coefficient_convert(T, c)
     return finish!(a)
 end
 TaylorPolynomial(i::Integer, c::Real) = TaylorPolynomial{typeof(float(c))}(i, c)

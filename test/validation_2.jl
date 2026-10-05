@@ -308,7 +308,7 @@
             else
                 a_exact = 1 / i
             end
-            # Preserve the reference validation's 1e-12 coefficient tolerance.
+            # Compare the analytic 1/i coefficients with an absolute tolerance.
             @test isapprox(a_da, a_exact, atol = 1.0e-12)
         end
     end

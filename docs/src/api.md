@@ -62,6 +62,21 @@ taylor_expand
 TaylorMethod
 ```
 
+## Intervals and Taylor models
+
+```@docs
+enclose
+TaylorModel
+CompiledTaylorModel
+taylor_models
+polynomial
+remainder
+domain
+validated_adaptive_map
+PiecewiseTaylorModel
+TaylorModelPatch
+```
+
 ## Automatic domain splitting
 
 ```@docs
@@ -70,8 +85,15 @@ adaptive_flow
 GuardedTail
 ExtrapolatedTail
 LastTerms
+IntervalBound
 PiecewiseTaylorMap
 TaylorPatch
+ConvexPolygon
+polygon_vertices
+domain_area
+split_directions
+PiecewisePolygonMap
+PolygonPatch
 ```
 
 ## Statistical moments
@@ -101,7 +123,7 @@ These additional operations use the `DifferentialAlgebra.` prefix:
 | `divide_variable(p, i, power)` | Divide by a variable power when every term is divisible |
 | `nthroot(p, n)` | Expand an integer-order root |
 | `degree_norms(p)` | Group coefficient norms by degree |
-| `bounds(p)` | Return `(lower, upper)` bounds on coordinates in `[-1, 1]` |
+| `bounds(p)` | Heuristic monomial bounds on `[-1, 1]`; floating rounding is not enclosed |
 | `estimate_norms(p)` / `convergence_radius(p, tolerance)` | Estimate growth and convergence heuristically |
 | `coefficient_product(p, q)` / `coefficient_dot(p, q)` | Multiply or sum corresponding coefficients |
 | `filter_terms(p, mask)` | Keep the monomials present in a mask |

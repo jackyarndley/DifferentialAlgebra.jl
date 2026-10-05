@@ -66,7 +66,8 @@ end
         estimator = GuardedTail(), splitter = :tail,
         guard_order = estimator isa GuardedTail ? 2 : 0,
         max_depth = 20, max_patches = 1024,
-        check_points = true, strict = true, names = nothing,
+        check_points = !(estimator isa IntervalBound), strict = true, names = nothing,
+        directions = nothing,
         table_bytes = 32 * 1024^2
     )
 
@@ -99,6 +100,17 @@ Construction temporarily uses a separate global algebra and restores the
 caller's configuration and polynomials, including on failure. Do not change
 the algebra or its settings inside `f`, or construct maps concurrently with
 other polynomial calculations. Evaluation of completed maps is independent.
+
+`estimator=IntervalBound()` selects the optional validated static-map method.
+Its callback accepts Taylor models, and its returned `PiecewiseTaylorModel`
+retains interval coefficients, remainder and domain. It requires positive
+absolute tolerances, zero relative tolerance, no guard degrees or point checks.
+An explicit interval box can replace the two endpoint vectors. The other
+estimators preserve their ordinary polynomial behavior.
+
+`splitter=:oriented` selects exact convex polygon geometry in two dimensions,
+with automatic or supplied 2x2 projection rows in `directions`. It works with
+all four estimators and returns `PiecewisePolygonMap`; see the polygon overload.
 """
 function adaptive_map(f, lower::AbstractVector{<:Real}, upper::AbstractVector{<:Real}; kwargs...)
     return ads_construct(StaticMap(f), lower, upper; kwargs...)
@@ -127,12 +139,31 @@ function ads_construct(
         estimator::ADSEstimator = GuardedTail(), splitter::Symbol = :tail,
         guard_order::Integer = estimator isa GuardedTail ? 2 : 0,
         max_depth::Integer = 20, max_patches::Integer = 1024,
-        check_points::Bool = true, strict::Bool = true, names = nothing,
+        check_points::Bool = !(estimator isa IntervalBound), strict::Bool = true, names = nothing,
+        directions = nothing,
         table_bytes::Integer = 32 * 1024^2
     )
     Base.require_one_based_indexing(lower, upper)
     length(lower) == length(upper) || throw(DimensionMismatch("Domain bounds differ in length"))
     isempty(lower) && throw(ArgumentError("The domain must have at least one coordinate"))
+    if estimator isa IntervalBound
+        problem isa StaticMap || throw(ArgumentError("IntervalBound supports static maps, not time integration"))
+        partition === nothing || throw(ArgumentError("Construct a fresh interval map from the original function"))
+        return interval_ads(
+            problem.f, lower, upper; order, atol, rtol, guard_order, splitter,
+            check_points, strict, names, table_bytes, max_depth, max_patches, directions
+        )
+    elseif splitter == :oriented
+        problem isa StaticMap || throw(ArgumentError("Polygonal splitting supports static maps"))
+        partition === nothing || throw(ArgumentError("Construct a fresh polygon map or refine a PiecewisePolygonMap"))
+        length(lower) == 2 || throw(ArgumentError("Polygonal ADS currently supports two dimensions"))
+        return polygon_construct(
+            problem.f, polygon_box(lower, upper); order, atol, rtol, guard_order,
+            estimator, splitter, check_points, strict, names, table_bytes,
+            max_depth, max_patches, directions
+        )
+    end
+    directions === nothing || throw(ArgumentError("Supply directions with splitter=:oriented"))
     1 <= order <= 65535 && 0 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid expansion or guard order"))
     (estimator isa GuardedTail ? guard_order > 0 : guard_order == 0) ||
         throw(ArgumentError("guard_order must be positive for GuardedTail and zero for other estimators"))
@@ -156,6 +187,15 @@ function ads_construct(
         x = [variable(i, T) for i in eachindex(lo)]
         return ads_build(problem, lo, hi, x, ctx, options, partition)
     end
+end
+
+function interval_ads end
+interval_ads(args...; kwargs...) = throw(ArgumentError("Load IntervalArithmetic to select IntervalBound"))
+
+"Select certified ADS on an explicit interval box with `estimator=IntervalBound()`."
+function adaptive_map(f, box::AbstractVector{<:Real}; estimator::ADSEstimator = IntervalBound(), kwargs...)
+    estimator isa IntervalBound || throw(ArgumentError("Supply lower and upper bounds for ordinary box ADS"))
+    return interval_ads(f, box; kwargs...)
 end
 
 function ads_tolerances(::Type{C}, atol, rtol, n) where {C}

@@ -60,4 +60,8 @@ include("utils.jl")
     include("sciml.jl")
     include("taylor_solver.jl")
     include("domain_splitting.jl")
+    include("polygon_ads.jl")
+    include("interval_models.jl")
+    include("validated_ads.jl")
+    include("interval_polygon_ads.jl")
 end

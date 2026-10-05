@@ -1,4 +1,5 @@
 [deps]
+IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 DifferentialAlgebra = "413ac9d4-45af-4c75-aec7-2a1db65c23cb"
@@ -11,6 +12,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
+IntervalArithmetic = "1.0.12"
 CairoMakie = "0.15"
 DiffEqBase = "6, 7"
 OrdinaryDiffEqVerner = "1, 2"

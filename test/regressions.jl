@@ -1,21 +1,89 @@
-using Test, LinearAlgebra, SpecialFunctions, TOML
+using Test, LinearAlgebra, SpecialFunctions, ForwardDiff, GenericLinearAlgebra, DifferentialAlgebra
 
-@testset "Independent C-core coefficients" begin
-    DifferentialAlgebra.initialize!(6, 3)
-    x, y, z = variable.(1:DifferentialAlgebra.nvariables())
-    p = 2 + 0.1x + 0.2y + 0.05x * z + 0.03y^2
-    data = TOML.parsefile(joinpath(@__DIR__, "data", "c_core_coefficients.toml"))
-    indices = DifferentialAlgebra.multiindices(6, 3)
-    functions = (
-        "SquareRoot" => sqrt, "MultiplicativeInverse" => inv, "Exponential" => exp,
-        "Logarithm" => log, "Sine" => sin, "Cosine" => cos, "Tangent" => tan, "ArcTangent" => atan,
-        "HyperbolicTangent" => tanh, "GammaFunction" => gamma, "LogGammaFunction" => loggamma,
-        "ErrorFunction" => erf,
-    )
-    for (name, f) in functions
-        result = f(p)
-        actual = [DifferentialAlgebra.coefficient(result, jj) for jj in indices]
-        @test maximum(abs.(actual - data[name]["coefficients"])) < 1.0e-12
+@testset "Mixed precision reusable buffers" begin
+    initialize!(1, 1)
+    a, b = TaylorPolynomial(16777217.0), TaylorPolynomial(-16777216.0)
+    out = TaylorPolynomial{Float32}(0)
+    # Preserve operand precision before the final assignment to the buffer.
+    # Narrowing either operand first loses this exactly representable result.
+    DifferentialAlgebra.weighted_sum!(out, a, 1.0, b, 1.0)
+    @test constant_term(out) == 1.0f0
+    DifferentialAlgebra.scale!(out, TaylorPolynomial(1.0e40), 1.0e-40)
+    @test constant_term(out) == 1.0f0
+end
+
+@testset "Working-order arithmetic" begin
+    x, = variables(1; order = 3)
+    p = x^3
+    with_order(1) do
+        @test (degree(p + 1), degree(p + TaylorPolynomial(1.0)), degree(1 * p)) == (0, 0, 0)
+        for q in (1 + p, p - 1, 1 - p, +p, -p, p^1, p / 1, muladd(1, p, one(p)))
+            @test degree(q) <= 1
+        end
+        @test degree(copy(p)) == 3
+        @test degree(TaylorPolynomial{Float32}(p)) == 3
+        @test degree(p) == 3
+    end
+    @test truncation_order() == 3
+    @test degree(p + 1) == 3
+end
+
+# Scalar automatic differentiation supplies f^(k)(c), independently of the DA
+# coefficient recurrences and composition engine. These are numerical regression
+# expectations, not uniform interval inclusion oracles.
+function scalar_derivative(f, x, n)
+    return n == 0 ? f(x) : ForwardDiff.derivative(t -> scalar_derivative(f, t, n - 1), x)
+end
+
+# Expand f(2+h), h = a*x + b*y + c*x*z + d*y^2, directly by the multinomial
+# theorem. Counts of x*z and x are fixed by the target x/z exponents; enumerate
+# the possible y^2 counts. No polynomial multiplication or basis metadata is used.
+function multinomial_composition_coefficient(series, weights, alpha)
+    nxz = alpha[3]
+    nx = alpha[1] - nxz
+    nx < 0 && return zero(BigFloat)
+    value = zero(BigFloat)
+    for nyy in 0:(alpha[2] ÷ 2)
+        ny = alpha[2] - 2nyy
+        counts = (nx, ny, nxz, nyy)
+        k = sum(counts)
+        k < length(series) || continue
+        multiplicity = factorial(big(k)) ÷ prod(n -> factorial(big(n)), counts)
+        weight = prod(w^n for (w, n) in zip(weights, counts))
+        value += BigFloat(series[k + 1]) * BigFloat(multiplicity * weight)
+    end
+    return value
+end
+
+@testset "Multivariate coefficients from scalar derivatives" begin
+    setprecision(256) do
+        @testset "Combinatorial oracle identities" begin
+            series, weights = (1, 2, 3), (2 // 1, 3 // 1, 5 // 1, 7 // 1)
+            @test multinomial_composition_coefficient(series, weights, (0, 0, 0)) == 1
+            @test multinomial_composition_coefficient(series, weights, (0, 0, 1)) == 0
+            @test multinomial_composition_coefficient(series, weights, (1, 0, 1)) == 10
+            @test multinomial_composition_coefficient(series, weights, (0, 2, 0)) == 41
+            @test multinomial_composition_coefficient(series, weights, (1, 1, 1)) == 90
+            @test multinomial_composition_coefficient(series, weights, (2, 0, 2)) == 75
+        end
+        # Float64 inputs denote their stored binary values. Make those values
+        # exact rationals for the combinatorial part of the independent oracle.
+        weights = Rational{BigInt}.((0.1, 0.2, 0.05, 0.03))
+        for budget in (0, 32 * 1024^2)
+            x, y, z = variables(3; order = 6, table_bytes = budget)
+            p = 2 + 0.1x + 0.2y + 0.05x * z + 0.03y^2
+            for f in (sqrt, inv, exp, log, sin, cos, tan, atan, tanh, gamma, loggamma, erf)
+                @testset "$(f), table_bytes=$(budget)" begin
+                    series = [scalar_derivative(f, 2.0, k) / factorial(k) for k in 0:6]
+                    result = f(p)
+                    for i in 0:6, j in 0:(6 - i), k in 0:(6 - i - j)
+                        alpha = (i, j, k)
+                        expected = multinomial_composition_coefficient(series, weights, alpha)
+                        @test coefficient(result, collect(alpha)) ≈ expected atol = 1.0e-12 rtol = 0
+                    end
+                end
+            end
+        end
     end
 end
 

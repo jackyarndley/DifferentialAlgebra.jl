@@ -4,7 +4,7 @@ function Base.copy(a::TaylorPolynomial{T}) where {T <: Real}
 end
 function TaylorPolynomial{T}(a::TaylorPolynomial) where {T <: Real}
     ctx = valid(a)
-    return TaylorPolynomial{T}(T.(a.coeffs[1:a.len]), a.len, ctx)
+    return TaylorPolynomial{T}([coefficient_convert(T, a.coeffs[i]) for i in 1:a.len], a.len, ctx)
 end
 Base.convert(::Type{TaylorPolynomial}, a::TaylorPolynomial) = a
 Base.convert(::Type{TaylorPolynomial}, x::Real) = TaylorPolynomial(x)
@@ -37,12 +37,15 @@ Base.BigFloat(a::TaylorPolynomial) = BigFloat(constant_term(a))
 Base.conj(a::TaylorPolynomial) = a
 Base.real(a::TaylorPolynomial) = a
 Base.abs2(a::TaylorPolynomial) = a * a
-Base.:+(a::TaylorPolynomial) = a
+function Base.:+(a::TaylorPolynomial)
+    ctx = valid(a)
+    return a.len <= ctx.basis.ends[ctx.cutoff + 1] ? a : trim(a, 0, ctx.cutoff)
+end
 Base.:-(a::TaylorPolynomial) = -one(coefficient_type(a)) * a
 Base.signbit(a::TaylorPolynomial) = signbit(constant_term(a))
 Base.sign(a::TaylorPolynomial) = sign(constant_term(a))
 Base.abs(a::TaylorPolynomial) = signbit(a) ? -a : copy(a)
-Base.iszero(a::TaylorPolynomial) = (valid(a); a.len == 1 && iszero(a.coeffs[1]))
+Base.iszero(a::TaylorPolynomial) = (valid(a); a.len == 1 && coefficient_iszero(a.coeffs[1]))
 Base.isnan(a::TaylorPolynomial) = (valid(a); any(isnan, @view a.coeffs[1:a.len]))
 Base.isinf(a::TaylorPolynomial) = (valid(a); any(isinf, @view a.coeffs[1:a.len]))
 Base.isfinite(a::TaylorPolynomial) = !isnan(a) && !isinf(a)
@@ -69,10 +72,12 @@ end
     valid(out) === ctx || throw(ArgumentError("Different output context"))
     n = min(max(a.len, b.len), ctx.basis.ends[order + 1])
     reserve!(out, n)
+    R = coefficient_type(out)
+    alpha, beta = coefficient_operand(R, alpha), coefficient_operand(R, beta)
     @inbounds @simd for i in 1:n
         ac = i <= a.len ? a.coeffs[i] : zero(coefficient_type(a))
         bc = i <= b.len ? b.coeffs[i] : zero(coefficient_type(b))
-        out.coeffs[i] = alpha * ac + beta * bc
+        out.coeffs[i] = alpha * coefficient_operand(R, ac) + beta * coefficient_operand(R, bc)
     end
     return finish!(out, n)
 end
@@ -92,15 +97,17 @@ for (op, sign) in ((:+, 1), (:-, -1))
     @eval function Base.$op(a::TaylorPolynomial{T}, b::TaylorPolynomial{S}) where {T <: Real, S <: Real}
         ctx = compatible(a, b)
         out = allocate_undef(ctx, promote_type(T, S), min(max(a.len, b.len), ctx.basis.ends[ctx.cutoff + 1]))
-        return weighted_sum!(out, a, one(T), b, $sign * one(S))
+        return weighted_sum!(out, a, one(T), b, degree_factor(one(S), $sign) * one(S))
     end
 end
 function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order::Int = a.algebra.cutoff)
     ctx = compatible(out, a)
     n = min(a.len, ctx.basis.ends[order + 1])
     reserve!(out, n)
+    R = coefficient_type(out)
+    factor = coefficient_operand(R, factor)
     @inbounds @simd for i in 1:n
-        out.coeffs[i] = factor * a.coeffs[i]
+        out.coeffs[i] = factor * coefficient_operand(R, a.coeffs[i])
     end
     return finish!(out, n)
 end
@@ -112,18 +119,23 @@ end
 Base.:*(a::Real, b::TaylorPolynomial) = b * a
 function Base.:+(a::TaylorPolynomial{T}, b::Real) where {T <: Real}
     ctx = valid(a)
-    out = TaylorPolynomial{promote_type(T, typeof(b))}(a)
-    out.coeffs[1] += b
-    return finish!(out)
+    R = promote_type(T, typeof(b))
+    n = min(a.len, ctx.basis.ends[ctx.cutoff + 1])
+    out = allocate_undef(ctx, R, n)
+    @inbounds for i in 1:n
+        out.coeffs[i] = coefficient_convert(R, a.coeffs[i])
+    end
+    out.coeffs[1] += coefficient_convert(R, b)
+    return finish!(out, n)
 end
 Base.:+(a::Real, b::TaylorPolynomial) = b + a
 Base.:-(a::TaylorPolynomial, b::Real) = a + (-b)
 Base.:-(a::Real, b::TaylorPolynomial) = (-b) + a
 function Base.:/(a::TaylorPolynomial, b::Real)
-    iszero(b) && throw(TaylorError("Division by zero"))
+    coefficient_iszero(b) && throw(TaylorError("Division by zero"))
     # Invert in the coefficient precision. inv(3) would promote Float32 to
     # Float64 and inject a rounded Float64 reciprocal into BigFloat coefficients.
-    return a * inv(convert(promote_type(coefficient_type(a), typeof(b)), b))
+    return a * inv(coefficient_convert(promote_type(coefficient_type(a), typeof(b)), b))
 end
 Base.:/(a::Real, b::TaylorPolynomial) = quotient(a, b)
 Base.:/(a::TaylorPolynomial, b::TaylorPolynomial) = quotient(a, b)
@@ -133,19 +145,19 @@ function convolve!(out, a, b, basis, cutoff, ::Val{TABLE}, ::Val{SQUARE}) where 
     n = min(a.len, basis.ends[cutoff + 1])
     @inbounds for i in 1:n
         ac = a.coeffs[i]
-        iszero(ac) && continue
+        coefficient_iszero(ac) && continue
         stop = min(b.len, basis.ends[cutoff - basis.degrees[i] + 1])
         first = SQUARE ? i : 1
         offset = basis.offsets[i]
         for j in first:stop
             bc = b.coeffs[j]
-            iszero(bc) && continue
+            coefficient_iszero(bc) && continue
             k = TABLE ? Int(basis.products[offset + j]) : product_rank(basis, i, j)
             if SQUARE && j != i
-                value = ac * bc
+                value = coefficient_operand(eltype(out), ac) * coefficient_operand(eltype(out), bc)
                 out[k] += value + value
             else
-                out[k] = muladd(ac, bc, out[k])
+                out[k] = coefficient_muladd(ac, bc, out[k])
             end
         end
     end
@@ -197,7 +209,7 @@ function Base.:^(a::TaylorPolynomial, n::Integer)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Exponent out of range"))
     valid(a)
     n == 0 && return one(a)
-    n == 1 && return copy(a)
+    n == 1 && return copy(+a)
     n == 2 && return a * a
     n < 0 && return inv(a)^(-n)
     result, power = one(a), a

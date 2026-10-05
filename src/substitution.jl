@@ -6,27 +6,28 @@ function affine_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Rea
     result = allocate(ctx, T)
     powers = zeros(Int, b.variables)
     # Precompute scalar powers once, including 0^0 = 1 for constant terms.
+    a, c = coefficient_convert(T, a), coefficient_convert(T, c)
     ap, cp = ones(T, b.order + 1), ones(T, b.order + 1)
     for k in 1:b.order
         ap[k + 1], cp[k + 1] = ap[k] * a, cp[k] * c
     end
     for i in 1:p.len
-        coefficient = p.coeffs[i]
-        iszero(coefficient) && continue
+        coefficient = coefficient_operand(T, p.coeffs[i])
+        coefficient_iszero(coefficient) && continue
         powers .= @view b.exponents[:, i]
         power = powers[from]
         powers[from] = 0
         target = powers[to]
         remaining = b.degrees[i] - power
         choose = one(T)
-        first, last = iszero(c) ? power : 0, iszero(a) ? 0 : power
+        first, last = coefficient_iszero(c) ? power : 0, coefficient_iszero(a) ? 0 : power
         for k in first:last
             degree = remaining + k
-            if degree <= cutoff && !iszero(ap[k + 1]) && !iszero(cp[power - k + 1])
+            if degree <= cutoff && !coefficient_iszero(ap[k + 1]) && !coefficient_iszero(cp[power - k + 1])
                 powers[to] = target + k
                 result.coeffs[rank(b, powers, degree)] += coefficient * choose * ap[k + 1] * cp[power - k + 1]
             end
-            k < power && (choose = choose * (power - k) / (k + 1))
+            k < power && (choose = choose * degree_factor(choose, power - k) / degree_factor(choose, k + 1))
         end
     end
     return finish!(result)
@@ -58,7 +59,7 @@ function filter_terms(p::TaylorPolynomial, mask::TaylorPolynomial)
     n = min(p.len, mask.len)
     result = allocate(ctx, coefficient_type(p), n)
     @inbounds for i in 1:n
-        !iszero(mask.coeffs[i]) && (result.coeffs[i] = p.coeffs[i])
+        !coefficient_iszero(mask.coeffs[i]) && (result.coeffs[i] = p.coeffs[i])
     end
     return finish!(result, n)
 end
@@ -72,7 +73,7 @@ function filled(value::Real = 1.0)
     return finish!(result)
 end
 "Number of nonzero coefficients (Julia's size(p) retains scalar semantics)."
-nterms(p::TaylorPolynomial) = (valid(p); count(!iszero, @view p.coeffs[1:p.len]))
+nterms(p::TaylorPolynomial) = (valid(p); count(!coefficient_iszero, @view p.coeffs[1:p.len]))
 
 "Estimated radius where the first omitted order has norm tolerance; this is not a rigorous bound."
 function convergence_radius(p::TaylorPolynomial, tolerance::Real, type::Integer = 1)

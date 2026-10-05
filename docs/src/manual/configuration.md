@@ -26,6 +26,12 @@ When creating mutable work buffers, a comprehension such as
 `DifferentialAlgebra.set_truncation_order!(order)` changes the working order without changing the
 maximum order chosen at initialization. It returns the previous working order.
 `with_order(order) do ... end` restores the previous order even when the calculation throws.
+Ordinary arithmetic results discard terms above the working order, including
+scalar addition, unary signs and `p^1`. This fixes the earlier scalar-addition
+exception. `copy`, coefficient conversion and inspection preserve stored terms;
+changing the order alone does not mutate existing polynomials. Taylor models
+instead record their retained order and reject arithmetic at a different working
+order; enclosure and evaluation retain all their stored terms and remainder.
 
 `DifferentialAlgebra.set_coefficient_tolerance!(tolerance)` discards sufficiently small floating-point
 coefficients. The default threshold is zero. Filtering and truncation are

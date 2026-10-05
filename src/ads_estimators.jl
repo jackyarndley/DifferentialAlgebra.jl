@@ -1,6 +1,18 @@
 abstract type ADSEstimator end
 
 """
+    IntervalBound()
+
+Use outward-rounded Taylor-model remainders and retained coefficient widths as
+uniform absolute error bounds in `adaptive_map`. Requires IntervalArithmetic.
+The original function is reevaluated on every child. Supports static maps,
+positive absolute tolerances and no guard degrees or sampled acceptance checks.
+The returned map retains its interval coefficients, remainder and domain.
+Domain shape and split direction are independent of the error method.
+"""
+struct IntervalBound <: ADSEstimator end
+
+"""
     GuardedTail()
 
 Estimate truncation error using extra Taylor degrees in [`adaptive_map`](@ref)

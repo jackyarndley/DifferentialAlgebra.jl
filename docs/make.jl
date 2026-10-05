@@ -54,6 +54,7 @@ makedocs(
             "Time expansions" => "manual/time-expansions.md",
             "Automatic domain splitting" => "manual/domain-splitting.md",
             "Coefficient types" => "manual/coefficient-types.md",
+            "Intervals and Taylor models" => "manual/interval-models.md",
             "Configuration and storage" => "manual/configuration.md",
         ],
         "Examples" => [

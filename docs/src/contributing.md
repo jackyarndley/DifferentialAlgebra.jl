@@ -11,6 +11,24 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
 Examples have a separate dependency environment.
 
+The test suite uses Julia code and inline inputs. Function-coefficient tests
+combine scalar derivatives from ForwardDiff with an independent multinomial
+expansion. Gaussian moment tests use exact rational integration-by-parts/Wick
+formulas, and small Cartesian enumerations check the monomial ordering. These
+expectations are computed during the tests, so regenerating coefficient or
+moment fixture files is unnecessary.
+
+Prefer closed-form expectations, exact rational arithmetic, and independent
+Julia calculations when adding tests. Keep small input matrices and numerical
+regression constants inline with their mathematical meaning and provenance.
+For larger fixtures, use CSV with descriptive headers and document the input
+semantics, provenance, and any Julia regeneration command.
+
+Floating-point coefficient comparisons are numerical regression checks.
+Interval-model inclusion tests separately use exact rational polynomial oracles
+and analytical remainder bounds; scalar automatic differentiation and sampled
+agreement do not establish a uniform enclosure.
+
 ## Code style and organization
 
 Use [Runic.jl](https://github.com/fredrikekre/Runic.jl) for Julia source formatting.

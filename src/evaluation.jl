@@ -63,7 +63,7 @@ end
 function compile_map(::Type{T}, owners, ctx, basis) where {T}
     used = falses(last(basis.ends)); used[1] = true
     for a in owners, i in 2:a.len
-        iszero(a.coeffs[i]) && continue
+        coefficient_iszero(a.coeffs[i]) && continue
         k = i
         while !used[k]
             used[k] = true
@@ -73,7 +73,7 @@ function compile_map(::Type{T}, owners, ctx, basis) where {T}
     nodes = filter(i -> used[i], basis.traversal)
     coefficients = zeros(T, length(owners), length(nodes))
     @inbounds for (column, k) in enumerate(nodes), (row, a) in enumerate(owners)
-        k <= a.len && (coefficients[row, column] = a.coeffs[k])
+        k <= a.len && (coefficients[row, column] = coefficient_convert(T, a.coeffs[k]))
     end
     levels, indices = basis.degrees[nodes], basis.factors[nodes]
     return CompiledMap(coefficients, levels, indices, maximum(levels), maximum(indices), ctx)
@@ -112,13 +112,13 @@ function evaluate_numeric!(out::AbstractVector{T}, map, args, work, ::Val{COMPLE
     n = noutputs(map)
     work[1] = one(T)
     @inbounds for j in 1:n
-        out[j] = map.coefficients[j, 1]
+        out[j] = coefficient_operand(T, map.coefficients[j, 1])
     end
     @inbounds for i in 2:length(map.levels)
         depth, var = map.levels[i], map.indices[i]
-        work[depth + 1] = COMPLETE || var <= length(args) ? work[depth] * args[var] : zero(T)
+        work[depth + 1] = COMPLETE || var <= length(args) ? work[depth] * coefficient_operand(T, args[var]) : zero(T)
         for j in 1:n
-            out[j] += work[depth + 1] * map.coefficients[j, i]
+            out[j] += work[depth + 1] * coefficient_operand(T, map.coefficients[j, i])
         end
     end
     return out
@@ -168,7 +168,7 @@ function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where
     work = [allocate(ctx, T, capacity) for _ in 0:map.depth]
     work[1].coeffs[1] = one(T)
     active = [Int[] for _ in 0:map.depth]; push!(active[1], 1)
-    input_active = [findall(!iszero, @view a.coeffs[1:a.len]) for a in args]
+    input_active = [findall(!coefficient_iszero, @view a.coeffs[1:a.len]) for a in args]
     marks = zeros(Int, capacity)
     missing = allocate(ctx, T, 1)
     missing_active = Int[]
@@ -179,7 +179,7 @@ function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where
         sparse_multiply!(work[depth + 1], active[depth + 1], work[depth], active[depth], arg, indices, marks, i, cutoff, table)
         for j in 1:n
             c = map.coefficients[j, i]
-            iszero(c) && continue
+            coefficient_iszero(c) && continue
             for k in active[depth + 1]
                 value = result[j].coeffs[k] + c * work[depth + 1].coeffs[k]
                 result[j].coeffs[k] = keep(value, ctx) ? value : zero(T)
@@ -240,7 +240,7 @@ function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:Taylor
     result = [allocate(ctx, T) for _ in axes(A, 1)]
     for j in eachindex(x), i in eachindex(result)
         c = A[i, j]
-        iszero(c) && continue
+        coefficient_iszero(c) && continue
         weighted_sum!(result[i], result[i], one(T), x[j], c)
     end
     return result
