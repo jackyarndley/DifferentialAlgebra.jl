@@ -78,6 +78,108 @@ its uniform fit-error bound was `4.083095687002589e-7`. The ordinary stored-poly
 enclosure had width `0.062307000000003665`; it omits the original function's
 truncation error and earlier floating coefficient rounding.
 
+## Optional C0/C1/C2 continuous ADS
+
+`continuous_map(f, fit; continuity=:c2, overlap=1//4)` constructs an owned
+partition-of-unity surrogate from fresh fits on overlapping covers of the
+source leaves. It accepts ordinary boxes, interval boxes and oriented polygons.
+Linear/cubic/quintic taper endpoint jets give C0/C1/C2 respectively. ForwardDiff
+can differentiate the numeric surrogate; an absolute function remainder does
+not certify original-function derivatives or a minimizer. Default ADS is
+unchanged. Construction restores the caller's algebra, and snapshots survive
+reinitialization. The optional ForwardDiff weak extension does not load it when
+DifferentialAlgebra is loaded alone.
+
+For an interval source, midpoint coefficients define the explicitly requested
+numeric surrogate. Fresh certificates preserve coefficient widths, normalization,
+domains and all remainders. Convex blending of the per-support function errors
+proves the reported uniform `error_bounds`. `enclose` retains original-function
+certificates, rather than discarding metadata or treating the numeric surrogate
+as an exact function. Errors on enlarged supports are checked anew if `atol`
+is supplied. The original source tolerance is not inherited. Numeric evaluation
+roundoff is separate; enclosure endpoints need not be continuous.
+
+Run:
+
+```powershell
+julia --startup-file=no --project=docs examples/ads_continuity.jl
+julia --startup-file=no --project=docs examples/ads_optimization.jl
+julia --startup-file=no --project=docs benchmark/continuous_ads.jl
+julia +1.10 --startup-file=no --project=C:/Users/jyar540/AppData/Local/Temp/da-interval-julia110 --check-bounds=yes test/continuous_ads.jl
+```
+
+The new examples save four PNGs under `results/`: `ads_continuity.png`,
+`ads_continuity_intervals.png`, `ads_optimization.png`, and
+`ads_optimization_intervals.png`. They are also executed and embedded by Literate.
+The first compares raw/C0/C1/C2 values, gradients and Hessians. Its deliberately
+coarse cubic fit shows that continuity is separate from derivative accuracy.
+The quadratic interval example has original leaf error `[0,1/64]`; enlarged
+supports and convex blending give `[0,9/256]`, checked against `atol=1/16`.
+The optimization example uses a C2 objective, ForwardDiff gradient/Hessian and
+damped Newton with an in-domain line search. Its analytical minimizer is an
+independent comparison; the displayed value intervals do not certify an optimum.
+Its oriented frame produces more leaves than the box frame, demonstrating that
+direction selection does not guarantee a performance improvement.
+
+`benchmark/continuous_ads.jl` measures source/overlap construction, numeric
+evaluation, ForwardDiff gradient/Hessian, original-function enclosure, bytes
+and widths separately, with both multiplication settings. The six-variable
+uncertainty case uses `[-1/100,1/100]^6`; an initial `[-1/4,1/4]^6` run exhausted
+the default patch budget at `atol=1e-5`. This simple interval bounder can be
+conservative in many dimensions; increasing limits is not a performance fix.
+Overlapping queries currently scan supports, allocate and use exact geometry
+for branch decisions. Existing ordinary polynomial buffer guarantees are
+preserved; the new wrapper does not promise allocation-free evaluation.
+
+The completed warmed benchmark on Julia 1.13.1 / IntervalArithmetic 1.0.12,
+with a 32 MiB multiplication table budget, reported:
+
+| Case | Leaves | Overlap construction / bytes | Numeric query / bytes | Gradient / bytes | Hessian / bytes | Original-function point width |
+|:--|--:|--:|--:|--:|--:|--:|
+| 2D boxes | 29 | 4.685 ms / 1,535,175 | 139.8 μs / 396,664 | 221.8 μs / 398,904 | 243.3 μs / 403,551 | `1.23337e-6` |
+| 2D oriented polygons | 20 | 3.063 ms / 1,189,671 | 73.8 μs / 207,760 | 82.1 μs / 209,904 | 92.8 μs / 214,592 | `1.68542e-7` |
+| Six-variable box | 1 | 1.528 ms / 787,392 | 44.9 μs / 37,360 | 46.9 μs / 39,840 | 67.1 μs / 55,884 | `1.02190e-10` |
+
+The six-variable full-domain enclosure width was `0.02069200590077569`, with
+uniform blend-error upper bound `5.1092549499346795e-11`. Source construction
+took 0.362 ms / 216,647 bytes; full original-function enclosure took
+88.8 μs / 18,432 bytes. Both multiplication settings completed. Timings ran
+alongside validation and are machine/load dependent. The 2D box and polygon
+full-domain widths were respectively `1.062009` and `1.117271`; the tighter
+point width of polygons does not imply a tighter full-domain bound.
+
+The current continuity changes started from `19f9900`, which already contained
+the interval foundation, common ADS estimator, polygon geometry and test-fixture
+migration. The focused continuity file passed **444/444 on Julia 1.10.12**:
+66 exact taper/one-sided jet oracles, 226 geometry/ownership/AD checks and
+152 certified function-bound checks. Endpoint regularity checks use exact
+rational polynomial/derivative identities; the quadratic inclusion checks use
+the analytical Taylor remainder. Samples and plot smoothness are supplementary.
+
+The final full `Pkg.test` command listed below passed **8,853/8,853** on
+Julia 1.13.1 (11m52.7s), including all 444 continuity checks and the existing
+Float32/Float64 reusable-buffer allocation tests. The full suite on Julia 1.10
+was not repeated; its focused continuity file passed. Runic and `git diff --check`
+passed. `docs/test_literate.jl` passed 6/6. An initial documentation run exposed
+Literate treating indented single-hash comments inside the new loops as Markdown;
+they now use escaped code comments. The corrected two pages executed with both
+figures embedded, and all four saved PNGs were visually checked.
+All **26 registered examples** then executed successfully and the complete
+Documenter build passed, including doctests, cross-references and exported API
+coverage. Already successful examples were retained while the corrected pages
+and remaining interval/storage examples were rerun. The exact recovery commands
+were:
+
+```powershell
+julia --startup-file=no --project=docs -e 'using Literate; include("docs/literate.jl"); for name in ("ads_continuity", "ads_optimization"); Literate.markdown("examples/" * name * ".jl", "docs/src/generated"; flavor=Literate.DocumenterFlavor(), execute=true, postprocess=m->example_images(m,"docs/src/generated",name)); end'
+julia --startup-file=no --project=docs C:/Users/jyar540/AppData/Local/Temp/da-continuity-finish-docs.jl
+```
+
+The temporary recovery script reran `interval_models` and `serialization`,
+asserted all pages existed and both new pages had two PNGs each, then executed
+the unchanged `DocMeta`/`makedocs` body of `docs/make.jl`. A fresh build uses the
+ordinary `docs/make.jl` command below; no recovery mode was added to the package.
+
 ## Verification commands
 
 The initial checkout was `c01d589019a53ef7d2c8b87ac0ba448a49a5a56a` on `cleanup`,

@@ -39,6 +39,8 @@ scripts with Literate.jl, showing their numerical results and Makie figures.
 - [An analytic Kepler map](generated/ads_kepler.md)
 - [Splitting during orbit propagation](generated/ads_flow.md)
 - [Oriented polygon ADS and interval fitting bands](generated/polygon_ads.md)
+- [C0, C1 and C2 continuity across ADS fits](generated/ads_continuity.md)
+- [Optimization with a C2 oriented ADS surrogate](generated/ads_optimization.md)
 
 ## Storage
 
@@ -63,5 +65,5 @@ include("examples/ads_methods.jl")
 
 Each plotting block ends with its figure, so the interactive frontend or
 documentation renderer displays it. Terminal scripts print their results
-without opening a viewer. The interval and polygon fitting scripts additionally
+without opening a viewer. The interval, polygon and continuous fitting scripts additionally
 save shareable PNGs under `results/`.

@@ -152,6 +152,19 @@ Higher-dimensional and fixed-coordinate domains continue to use box ADS.
 The [polygon comparison](../generated/polygon_ads.md) plots the partitions and
 interval bands and reports patch counts, time, allocations and widths separately.
 
+## Optional continuity for optimization
+
+`continuous_map(f, fit; continuity=:c2)` (also `:c0` or `:c1`) reevaluates the original
+function on overlapping box or projected polygon covers and blends the local
+fits. C0 gives continuous values, C1 adds continuous gradients, and C2 adds
+continuous Hessians of the surrogate. This is separate from ADS error-method
+selection and preserves the original map. With IntervalBound sources it retains
+function certificates and recomputes uniform errors on the overlaps. The source
+tolerance is not inherited; optional `atol` checks the new bounds.
+See [continuous ADS](continuous-ads.md) for the partition-of-unity proof,
+ForwardDiff usage, accuracy contract and optimization examples. Absolute function
+remainders do not certify original-function derivatives or an optimum.
+
 ## Refinement
 
 An existing map can supply the starting partition for a tighter tolerance,

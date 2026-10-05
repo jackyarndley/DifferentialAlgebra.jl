@@ -11,11 +11,13 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [weakdeps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 OrdinaryDiffEqCore = "bbf590c4-e513-4bbe-9b18-05decba2e5d8"
 
 [extensions]
+DifferentialAlgebraForwardDiffExt = "ForwardDiff"
 DifferentialAlgebraIntervalArithmeticExt = "IntervalArithmetic"
 DifferentialAlgebraDiffEqBaseExt = "DiffEqBase"
 DifferentialAlgebraOrdinaryDiffEqExt = ["DiffEqBase", "OrdinaryDiffEqCore"]

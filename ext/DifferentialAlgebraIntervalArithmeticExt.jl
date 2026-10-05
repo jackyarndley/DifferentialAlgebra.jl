@@ -518,4 +518,6 @@ function Base.sqrt(a::TaylorPolynomial{I}) where {I <: Interval}
     return isempty(a.algebra.basis.products) ? DA.power_series(a, IA.interval(IA.numtype(I), 1 // 2), c0) : DA.square_root(a, c0)
 end
 
+include("interval_continuity.jl")
+
 end
