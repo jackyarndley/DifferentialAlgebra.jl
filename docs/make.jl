@@ -5,16 +5,15 @@ include("literate.jl")
 
 # The overview is the single ordered catalog for both navigation and execution.
 overview = read(joinpath(@__DIR__, "src", "examples.md"), String)
-examples = [
-    String(m.captures[1]) => String(m.captures[2])
-        for m in eachmatch(r"\[([^\]]+)\]\(generated/([^.)]+)\.md\)", overview)
-]
+groups = example_groups(overview)
+examples = reduce(vcat, last.(groups))
 
 # Every standalone script must be executed and linked in the documentation.
 example_directory = joinpath(@__DIR__, "..", "examples")
 registered = Set(name * ".jl" for (_, name) in examples)
 available = Set(filter(name -> endswith(name, ".jl"), readdir(example_directory)))
 registered == available || error("Example registration does not match examples/")
+length(examples) == length(registered) || error("Each example must be registered exactly once")
 destination = joinpath(@__DIR__, "src", "generated")
 # This directory contains only generated Literate pages and display assets.
 isdir(destination) && rm(destination; recursive = true)
@@ -58,9 +57,9 @@ makedocs(
             "Intervals and Taylor models" => "manual/interval-models.md",
             "Configuration and storage" => "manual/configuration.md",
         ],
-        "Examples" => [
+        "Tutorials" => [
             "Overview" => "examples.md",
-            [title => "generated/$name.md" for (title, name) in examples]...,
+            [topic => [title => "generated/$name.md" for (title, name) in entries] for (topic, entries) in groups]...,
         ],
         "API reference" => "api.md",
         "Mathematical background" => "background.md",

@@ -2,6 +2,19 @@ using Test
 using Literate
 include("literate.jl")
 
+@testset "Tutorial topic navigation and registration" begin
+    overview = read(joinpath(@__DIR__, "src/examples.md"), String)
+    groups = example_groups(overview)
+    names = [name for (_, entries) in groups for (_, name) in entries]
+    @test length(groups) == 9
+    @test length(names) == length(unique(names))
+    @test Set(name * ".jl" for name in names) == Set(filter(n -> endswith(n, ".jl"), readdir(joinpath(@__DIR__, "../examples"))))
+    intervals = only(entries for (topic, entries) in groups if topic == "Validated intervals and Taylor models")
+    @test last.(intervals) == ["interval_models"]
+    @test !any(g -> first(g) == "Run locally", groups)
+    @test_throws ErrorException example_groups("[Uncategorized](generated/missing.md)")
+end
+
 @testset "Literate numerical reports and rich figures" begin
     mktempdir() do directory
         source = joinpath(directory, "rendering.jl")

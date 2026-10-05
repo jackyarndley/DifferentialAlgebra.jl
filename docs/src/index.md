@@ -30,4 +30,4 @@ Here `x` and `y` are independent perturbations about zero. The algebra retains
 monomials through total degree six.
 
 Start with [Getting started](manual/getting-started.md), then explore the
-[examples](examples.md) or the [API reference](api.md).
+[tutorials grouped by topic](examples.md) or the [API reference](api.md).

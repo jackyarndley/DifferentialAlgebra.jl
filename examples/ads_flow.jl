@@ -5,6 +5,9 @@
 # Both return the same PiecewiseTaylorMap interface in initial-position
 # coordinates. Vern9 chooses its internal ODE steps adaptively; ADS checks
 # the initial state and the supplied checkpoint times.
+# IntervalBound, polygon geometry and C0/C1/C2 blends are covered in the static
+# ADS tutorials. These propagated maps use heuristic spatial indicators and
+# an ordinary ODE solver; they do not certify time integration error.
 using DifferentialAlgebra
 using OrdinaryDiffEqVerner
 using SciMLBase: successful_retcode, DiscreteCallback, terminate!
@@ -63,8 +66,9 @@ points = [
         y in range(lower[2], upper[2]; length = 13)
 ]
 reference = terminal.(points)
-for (name, map) in (("Final-time splitting", endpoint_map), ("Checkpoint splitting", flow_map), ("Accepted-step splitting", online_map))
-    errors = [maximum(abs, map(x) - truth) for (x, truth) in zip(points, reference)]
+comparisons = (("Final-time", endpoint_map), ("Checkpoints", flow_map), ("Accepted steps", online_map))
+validation_errors = [[maximum(abs, map(x) - truth) for (x, truth) in zip(points, reference)] for (_, map) in comparisons]
+for ((name, map), errors) in zip(comparisons, validation_errors)
     @assert maximum(errors) < tolerance
     @assert sum(prod(p.upper - p.lower) for p in map.patches) ≈ prod(upper - lower)
     println((method = name, patches = length(map.patches), maximum_error = maximum(errors)))
@@ -73,20 +77,44 @@ println("Nominal orbit closure error: ", maximum(abs, flow_map([1.0, 0.0]) - ini
 
 # Each patch is indexed by its initial-position box, even though its map
 # evaluates the final orbital state. The boundary images show nonlinear shear.
-fig = Figure(size = (1080, 480), fontsize = 15)
-domain = Axis(fig[1, 1]; xlabel = "Initial x", ylabel = "Initial y", title = "Accepted-step ADS partition", aspect = DataAspect())
-image = Axis(fig[1, 2]; xlabel = "Final x", ylabel = "Final y", title = "Uncertainty after one orbit", aspect = 1)
-for (i, patch) in enumerate(online_map.patches)
-    x0, y0 = patch.lower
-    x1, y1 = patch.upper
-    color = Makie.to_colormap(:tab20)[mod1(i, 20)]
-    lines!(domain, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color, linewidth = 1)
-    edge = range(0, 1; length = 21)
-    boundary = vcat(
-        [[x0 + t * (x1 - x0), y0] for t in edge], [[x1, y0 + t * (y1 - y0)] for t in edge],
-        [[x1 - t * (x1 - x0), y1] for t in edge], [[x0, y1 - t * (y1 - y0)] for t in edge]
-    )
-    states = online_map.(boundary)
-    lines!(image, first.(states), getindex.(states, 2); color, linewidth = 1)
+fig = Figure(size = (1250, 800), fontsize = 14)
+for (column, (name, map)) in enumerate(comparisons)
+    domain_axis = Axis(fig[1, column]; xlabel = "initial x", ylabel = "initial y", title = "$name: $(length(map.patches)) leaves", aspect = DataAspect())
+    image_axis = Axis(fig[2, column]; xlabel = "final x", ylabel = "final y", title = "Mapped patch boundaries\nAxes scaled independently", aspect = 1)
+    for (i, patch) in enumerate(map.patches)
+        x0, y0 = patch.lower
+        x1, y1 = patch.upper
+        color = Makie.to_colormap(:tab20)[mod1(i, 20)]
+        lines!(domain_axis, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color, linewidth = 1)
+        edge = range(0, 1; length = 21)
+        boundary = vcat(
+            [[x0 + t * (x1 - x0), y0] for t in edge], [[x1, y0 + t * (y1 - y0)] for t in edge],
+            [[x1 - t * (x1 - x0), y1] for t in edge], [[x0, y1 - t * (y1 - y0)] for t in edge]
+        )
+        states = map.(boundary)
+        lines!(image_axis, first.(states), getindex.(states, 2); color, linewidth = 1)
+    end
 end
 fig
+
+# Compare every method on the same independently propagated grid. Pointwise
+# discrepancy includes numerical solver effects; it is not a uniform bound.
+# The empirical CDF retains all grid errors instead of displaying only a maximum.
+# Errors below machine epsilon sit at the log-scale display floor.
+accuracy_fig = Figure(size = (1250, 410), fontsize = 14)
+ax = Axis(accuracy_fig[1, 1]; xlabel = "maximum state-component error", ylabel = "fraction of validation points", xscale = log10, title = "Independent numeric trajectories")
+for ((name, _), errors) in zip(comparisons, validation_errors)
+    values = sort(vec(max.(errors, eps(Float64))))
+    lines!(ax, values, collect(eachindex(values)) ./ length(values); label = name)
+end
+vlines!(ax, [tolerance]; color = :black, linestyle = :dash, label = "Spatial atol (heuristic)")
+axislegend(ax; position = :rb, labelsize = 10)
+ax = Axis(accuracy_fig[1, 2]; xticks = (1:3, collect(first.(comparisons))), ylabel = "leaf count", title = "Partition size, not integration cost")
+barplot!(ax, 1:3, [length(m.patches) for (_, m) in comparisons]; color = Makie.to_colormap(:tab10)[1:3])
+ax = Axis(accuracy_fig[1, 3]; xlabel = "initial x (initial y=0)", ylabel = "sampled maximum component error", yscale = log10, title = "Shared physical-coordinate section")
+for ((name, _), errors) in zip(comparisons, validation_errors)
+    section = reshape(errors, 13, 13)[:, 7]
+    lines!(ax, range(lower[1], upper[1]; length = 13), max.(section, eps(Float64)); label = name)
+end
+axislegend(ax; position = :rt, labelsize = 10)
+accuracy_fig

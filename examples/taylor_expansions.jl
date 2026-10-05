@@ -63,3 +63,19 @@ axislegend(value_axis; position = :lt, labelsize = 12)
 
 fig
 #
+
+# ## Coefficients and the effect of working order
+# Zero even-degree coefficients reflect odd symmetry. The degree sweep below
+# reevaluates the original sine expression, rather than inventing missing terms.
+coefficient_fig = Figure(size = (1050, 400), fontsize = 14)
+ax = Axis(coefficient_fig[1, 1]; xlabel = "monomial degree", ylabel = "absolute coefficient", yscale = log10, title = "Odd coefficients of sine")
+odd_degrees = 1:2:19
+scatterlines!(ax, odd_degrees, [abs(coefficient(p, [d])) for d in odd_degrees]; color = :dodgerblue)
+ax = Axis(coefficient_fig[1, 2]; xlabel = "working order", ylabel = "sampled absolute error", yscale = log10, title = "Accuracy at fixed distances")
+degree_sweep = 1:20
+for distance in (0.5, 1.0, 3.0)
+    error = [abs(with_order(() -> sin(x), n)(distance) - sin(distance)) for n in degree_sweep]
+    scatterlines!(ax, degree_sweep, max.(error, eps(Float64)); label = "x=$distance")
+end
+axislegend(ax; position = :rt, labelsize = 11)
+coefficient_fig

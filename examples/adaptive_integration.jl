@@ -105,3 +105,24 @@ end
 scatter!(ax, [0.0], [0.0]; color = Makie.to_colormap(:tab10)[2], markersize = 14)
 Colorbar(fig[1, 2]; limits = (0, 1), colormap = :viridis, label = "Time / nominal period")
 fig
+
+# ## Numerical accuracy and retained sensitivity
+# Energy drift diagnoses the numeric propagation, while changing the tolerance
+# checks retained coefficients. Neither is a certified time-error bound.
+energy(u) = (u[3]^2 + u[4]^2) / 2 - inv(hypot(u[1], u[2]))
+energy0 = energy([1.0, 0.0, 0.0, 1.1])
+nominal_times = range(0, period; length = length(nominal.snapshots))
+coefficient_changes = [maximum(abs(coefficient(p, exp)) for p in result.snapshots[end] - tighter.snapshots[end] for exp in DifferentialAlgebra.multiindices(d, 2) if sum(exp) == d) for d in 0:3]
+physical_jacobian = constant_term.(jacobian(result.snapshots[end])) / 0.01
+accuracy_fig = Figure(size = (1200, 420), fontsize = 14)
+ax = Axis(accuracy_fig[1, 1]; xlabel = "time / period", ylabel = "absolute energy drift", yscale = log10, title = "Nominal orbit conservation")
+lines!(ax, nominal_times ./ period, max.(abs.(energy.(nominal.snapshots) .- energy0), eps(Float64)); label = "Scalar integration")
+scatter!(ax, times ./ period, max.([abs(energy(constant_term.(u)) - energy0) for u in result.snapshots], eps(Float64)); label = "Taylor-map constant part")
+axislegend(ax; position = :lt, labelsize = 10)
+ax = Axis(accuracy_fig[1, 2]; xlabel = "uncertainty degree", ylabel = "maximum coefficient change", yscale = log10, title = "Tolerance 10⁻¹¹ versus 10⁻¹²")
+scatterlines!(ax, 0:3, max.(coefficient_changes, eps(Float64)); color = :dodgerblue)
+ax = Axis(accuracy_fig[1, 3]; xlabel = "initial position", ylabel = "final state", xticks = (1:2, ["x₀", "y₀"]), yticks = (1:4, ["x", "y", "vx", "vy"]), yreversed = true, title = "Physical first-order sensitivity")
+limit = maximum(abs, physical_jacobian)
+heat = heatmap!(ax, 1:2, 1:4, transpose(physical_jacobian); colormap = :balance, colorrange = (-limit, limit))
+Colorbar(accuracy_fig[1, 4], heat)
+accuracy_fig

@@ -46,3 +46,20 @@ ax = Axis(fig[1, 1]; xlabel = "Basis index", ylabel = "Basis index", title = "In
 heat = heatmap!(ax, gram; colormap = :viridis, colorrange = (0, 1))
 Colorbar(fig[1, 2], heat; label = "Inner product")
 fig
+
+# ## What the basis functions look like
+# The signed surfaces show how mixed degrees resolve different shapes, while
+# the Gram matrix above checks their orthonormality under the box integral.
+grid = range(-1, 1; length = 65)
+selected = (2, 3, 5, 6, 7, 9)
+surfaces = [[basis[k]([a, b]) for a in grid, b in grid] for k in selected]
+limit = maximum(v -> maximum(abs, v), surfaces)
+basis_fig = Figure(size = (1110, 680), fontsize = 14)
+for (panel, (k, values)) in enumerate(zip(selected, surfaces))
+    i, j = indices[k]
+    row, column = divrem(panel - 1, 3) .+ 1
+    ax = Axis(basis_fig[row, column]; xlabel = "x", ylabel = "y", title = "Normalized L$i(x) L$j(y)", aspect = DataAspect())
+    heatmap!(ax, grid, grid, values; colormap = :balance, colorrange = (-limit, limit))
+end
+Colorbar(basis_fig[1:2, 4]; colormap = :balance, limits = (-limit, limit), label = "Basis value (shared scale)")
+basis_fig
