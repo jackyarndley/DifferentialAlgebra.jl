@@ -108,7 +108,7 @@ edges = collect(range(-0.5, 0.5; length = 81))
 plot_x = [x for i in 1:(length(edges) - 1) for x in (edges[i], edges[i + 1])]
 for (column, ((label, _, splitter, certified), fit)) in enumerate(zip(settings, fits))
     color = certified ? :darkgreen : :dodgerblue
-    ax = Axis(comparison_fig[1, column]; xlabel = "physical x", ylabel = "physical y", title = "$label\n$(length(fit.patches)) leaves", aspect = DataAspect())
+    ax = Axis(comparison_fig[1, column]; xlabel = "physical x", ylabel = "physical y", title = "$label\n$(length(fit.patches)) patches", aspect = DataAspect())
     for patch in fit.patches
         if splitter == :oriented
             poly!(ax, [Point2f(Float64.(v)) for v in polygon_vertices(domain(patch))]; color = (color, 0.12), strokecolor = color, strokewidth = 0.8)
@@ -132,7 +132,7 @@ comparison_fig
 
 # ## What the partition count and acceptance indicator mean
 # The shared tolerance has different evidence behind it: blue indicators are
-# heuristic; green indicators are uniform error bounds. Leaf counts measure
+# heuristic; green indicators are uniform error bounds. Patch counts measure
 # partition size, not construction time or allocation cost. Separate benchmark
 # scripts measure those costs. The C0/C1/C2 and optimization tutorials add smooth
 # overlapping surrogates without treating the source tolerance as inherited.
@@ -140,7 +140,7 @@ comparison_fig
 labels = ["Guard\nboxes", "Guard\npolygons", "Interval\nboxes", "Interval\npolygons"]
 colors = [:dodgerblue, :dodgerblue, :darkgreen, :darkgreen]
 summary_fig = Figure(size = (1050, 410), fontsize = 14)
-ax = Axis(summary_fig[1, 1]; xticks = (1:4, labels), ylabel = "leaf count", title = "Same function, order and tolerance")
+ax = Axis(summary_fig[1, 1]; xticks = (1:4, labels), ylabel = "patch count", title = "Same function, order and tolerance")
 barplot!(ax, 1:4, [length(m.patches) for m in fits]; color = colors)
 ax = Axis(summary_fig[1, 2]; xticks = (1:4, labels), ylabel = "acceptance indicator", yscale = log10, title = "Bound only for interval methods (green)")
 indicators = [certified ? maximum(p -> sup(abs(only(p.error_bounds))), m.patches) : maximum(p -> maximum(p.error_estimate), m.patches) for ((_, _, _, certified), m) in zip(settings, fits)]

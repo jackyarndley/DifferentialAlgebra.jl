@@ -2,7 +2,7 @@
 # The B-plane is perpendicular to the incoming hyperbolic asymptote; see
 # [JPL's definition](https://cneos.jpl.nasa.gov/glossary/b_plane.html).
 # A point-mass flyby turns an incoming velocity into a curved outgoing cone.
-# Compare all ADS estimators and bound periapsis altitude over complete leaves.
+# Compare all ADS estimators and bound periapsis altitude over entire subdomains.
 # These are explicit patched-conic formulas, not a verified encounter integrator.
 using DifferentialAlgebra, IntervalArithmetic, CairoMakie, LinearAlgebra, Random
 
@@ -29,9 +29,9 @@ fits = [adaptive_map(flyby, lower, upper; estimator, order, atol = tolerance) fo
 oriented = adaptive_map(flyby, lower, upper; estimator = IntervalBound(), order, atol = tolerance, splitter = :oriented, directions = [1 1; -1 1])
 @assert all(m -> m.converged, fits) && oriented.converged
 for ((label, _), fit) in zip(methods, fits)
-    println((label, leaves = length(fit.patches)))
+    println((label, patches = length(fit.patches)))
 end
-println("IntervalBound / diagonal polygons: ", length(oriented.patches), " leaves")
+println("IntervalBound / diagonal polygons: ", length(oriented.patches), " patches")
 
 # An independent exact oracle: at (B_T,B_R)=(2,2), b²=8, rp=2 and
 # vout/v∞=(7/9,-4/9,-4/9). The speed identity holds symbolically because
@@ -48,10 +48,10 @@ states = flyby.(points)
 # Only IntervalBound supplies a uniform fit-error certificate. The first three
 # methods produce approximate numbers; all four IntervalBound outputs include
 # absolute remainders. The velocity projections below illustrate the original
-# function, with each input leaf boundary mapped into the outgoing cone.
+# function, with each input subdomain boundary mapped into the outgoing cone.
 methods_fig = Figure(size = (1370, 730), fontsize = 13)
 for (column, ((label, _), fit)) in enumerate(zip(methods, fits))
-    ax = Axis(methods_fig[1, column]; xlabel = "B_T / 1,189 km", ylabel = "B_R / 1,189 km", title = "$label\n$(length(fit.patches)) leaves", aspect = DataAspect())
+    ax = Axis(methods_fig[1, column]; xlabel = "B_T / 1,189 km", ylabel = "B_R / 1,189 km", title = "$label\n$(length(fit.patches)) patches", aspect = DataAspect())
     image_axis = Axis(methods_fig[2, column]; xlabel = "v_y / v∞", ylabel = "v_z / v∞", title = "Mapped boundary curves (samples)", aspect = DataAspect())
     for patch in fit.patches
         lo, hi = column == 4 ? (inf.(domain(patch)), sup.(domain(patch))) : (patch.lower, patch.upper)
@@ -66,7 +66,7 @@ end
 methods_fig
 
 # ## Whole-polygon altitude classification and the outgoing cone
-# Each classification uses the whole leaf enclosure, not a point or midpoint.
+# Each classification uses the enclosure over the entire subdomain.
 # Green is above the surface, red is below, and orange is unresolved. A red
 # region represents a collision in this finite-radius planet model: the virtual
 # point-mass outgoing asymptote is not an actual post-impact spacecraft path.
@@ -96,14 +96,14 @@ end
 Colorbar(classification_fig[1, 3], cloud; label = "Virtual periapsis altitude (km)")
 classification_fig
 
-# Counts distinguish a proven whole-leaf sign from cells whose enclosures still
+# Counts distinguish a sign proved throughout a subdomain from cells whose enclosures still
 # cross zero. Splitting them more finely can resolve some, but not all, cells
 # at a physical boundary. The count alone is not a probability of impact.
-println("Guaranteed above-surface / below-surface / unresolved leaves: ", counts)
+println("Guaranteed above-surface / below-surface / unresolved patches: ", counts)
 
 # ## Interval altitude bands and the price of validation
 # Cell enclosures include physical B_T variation, coefficient rounding and
-# approximation remainder. The sampled scalar curve is supplementary. Leaf
+# approximation remainder. The sampled scalar curve is supplementary. Patch
 # counts are reported separately from construction timing and allocations.
 bands_fig = Figure(size = (1180, 440), fontsize = 14)
 ax = Axis(bands_fig[1, 1]; xlabel = "B_T / 1,189 km (B_R=2)", ylabel = "periapsis altitude (km)", title = "Original altitude enclosed on complete cells")
@@ -116,6 +116,6 @@ lines!(ax, edges, [flyby([b, 2.0])[4] * length_unit - radius for b in edges]; co
 hlines!(ax, [0]; color = :firebrick, linestyle = :dash, label = "Planet surface")
 axislegend(ax; position = :lt, labelsize = 10)
 labels = ["Guarded", "Decay", "LastTerms", "Interval\nboxes", "Interval\npolygons"]
-ax = Axis(bands_fig[1, 2]; xticks = (1:5, labels), ylabel = "leaf count", title = "Same function, domain, order and tolerance")
+ax = Axis(bands_fig[1, 2]; xticks = (1:5, labels), ylabel = "patch count", title = "Same function, domain, order and tolerance")
 barplot!(ax, 1:5, [length(f.patches) for f in vcat(fits, [oriented])]; color = [:steelblue, :steelblue, :steelblue, :darkgreen, :darkgreen])
 bands_fig

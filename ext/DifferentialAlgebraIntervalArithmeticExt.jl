@@ -450,7 +450,7 @@ function DA.validated_adaptive_map(
     return DA.with_algebra(Int(order), length(box); names, table_bytes) do ctx
         pending = [(original, 0)]
         patches = DA.TaylorModelPatch{I}[]
-        leaves = 1
+        patch_count = 1
         scalar = nothing
         count = 0
         tolerances = T[]
@@ -468,13 +468,13 @@ function DA.validated_adaptive_map(
             accepted = all(j -> IA.sup(abs(errors[j])) <= tolerances[j], eachindex(errors))
             axis = accepted ? 0 : validated_split_axis(child, original, values, tolerances, splitter)
             status = accepted ? :converged : depth >= max_depth ? :max_depth :
-                leaves >= max_patches ? :max_patches : axis == 0 ? :roundoff : :split
+                patch_count >= max_patches ? :max_patches : axis == 0 ? :roundoff : :split
             if status == :split
                 midpoint = IA.mid(child[axis])
                 left = ntuple(i -> i == axis ? IA.intersect_interval(child[i], IA.interval(T, IA.inf(child[i]), midpoint); dec = :auto) : child[i], length(child))
                 right = ntuple(i -> i == axis ? IA.intersect_interval(child[i], IA.interval(T, midpoint, IA.sup(child[i])); dec = :auto) : child[i], length(child))
                 push!(pending, (right, depth + 1), (left, depth + 1))
-                leaves += 1
+                patch_count += 1
             else
                 strict && !accepted && throw(ErrorException("Certified box ADS reached $status at depth $depth; increase limits or use strict=false"))
                 push!(patches, DA.TaylorModelPatch(Tuple(DA.compile(m) for m in values), deepcopy(errors), depth, status))

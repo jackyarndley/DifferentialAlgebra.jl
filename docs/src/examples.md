@@ -61,7 +61,11 @@ cover integrated trajectories.
 - [B-plane flyby uncertainty and interval safety classification](generated/flyby_uncertainty.md)
 
 Compare heuristic coefficient methods with `IntervalBound`, and box partitions
-with oriented/polygon geometry. The implicit Kepler and ODE tutorials explain
+with oriented/polygon geometry. Each input subdomain carries a local Taylor-map
+patch; together these patches represent the mapped uncertainty set. See the
+[ADS terminology](manual/domain-splitting.md#ADS-terminology)
+for the distinction between a subdomain partition and a DA manifold representation.
+The implicit Kepler and ODE tutorials explain
 why their numerical solvers remain outside the validated static-function layer.
 Both now compare all four estimators on related explicit orbital calculations.
 The inclined-orbit example compares all four estimators with both geometries
