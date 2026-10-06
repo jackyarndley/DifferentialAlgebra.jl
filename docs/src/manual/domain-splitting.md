@@ -7,6 +7,14 @@ Neither those indicators nor their point checks implicitly perform interval
 arithmetic. `splitter=:oriented` adds a 2D convex polygon partition to all four
 static-map methods. Existing flow methods keep their heuristic box contract.
 
+| Example calculation | Estimator comparison | Geometry and evidence |
+|:--|:--|:--|
+| [Gaussian and diagonal functions](../generated/ads_methods.md) | All four methods | Same-domain partitions; sampled discrepancies and separate interval bounds |
+| [Explicit orbital phase states](../generated/ads_kepler.md#All-four-estimators-on-an-explicit-orbital-phase-map) | All four methods | Boxes; complete-cell interval bands, separate from the unverified implicit Kepler solve |
+| [Initial-epoch energy and apses](../generated/ads_flow.md#Interval-ADS-on-initial-epoch-orbit-diagnostics) | All four methods | Boxes; static diagnostic certificates, separate from numerical time propagation |
+| [Inclined orbital ribbon](../generated/orbit_polygon_ads.md) | All four methods × two geometries | Boxes and diagonal polygons; correlated hexagonal prior and original-state enclosures |
+| [Mars B-plane flyby](../generated/flyby_uncertainty.md) | All four box methods plus interval polygons | Whole-cell altitude classification; guaranteed clear, intersecting, or unresolved cells |
+
 A single Taylor expansion may lose accuracy over a large input box.
 Automatic domain splitting (ADS) replaces it with a collection of local
 expansions [Wittig2015](@cite). Each patch uses normalized coordinates on
@@ -151,6 +159,11 @@ domains, scalar/vector outputs and refinement from an existing polygon map.
 Higher-dimensional and fixed-coordinate domains continue to use box ADS.
 The [polygon comparison](../generated/polygon_ads.md) plots the partitions and
 interval bands and reports patch counts, time, allocations and widths separately.
+The [orbital ribbon](../generated/orbit_polygon_ads.md) and
+[flyby](../generated/flyby_uncertainty.md) give astrodynamics applications.
+Their explicit callbacks avoid an unverified root solve or time integrator.
+The Mars example bounds the stated point-mass scattering formula; it is not a
+full atmospheric or mission-specific safety analysis.
 
 ## Optional continuity for optimization
 

@@ -118,3 +118,53 @@ for ((name, _), errors) in zip(comparisons, validation_errors)
 end
 axislegend(ax; position = :rt, labelsize = 10)
 accuracy_fig
+
+# ## Interval ADS on initial-epoch orbit diagnostics
+# An ordinary ODE callback cannot acquire a validated time-error bound by
+# changing its ADS estimator. Instead compare all four estimators on related
+# explicit two-body diagnostics of the same initial-position box. These are
+# initial energy, periapsis, apoapsis and period/(2π), with μ=1. The 1.1 literal
+# denotes its stored binary value throughout, including validated calculations.
+using IntervalArithmetic
+function orbit_diagnostics(v)
+    x, y = v
+    speed = zero(x) + 1.1
+    radius = sqrt(x^2 + y^2)
+    energy = speed^2 / 2 - 1 / radius
+    h = x * speed
+    a = -1 / (2energy)
+    e = sqrt(1 + 2energy * h^2)
+    return [energy, a * (1 - e), a * (1 + e), a * sqrt(a)]
+end
+diagnostic_methods = (("GuardedTail", GuardedTail()), ("ExtrapolatedTail", ExtrapolatedTail()), ("LastTerms", LastTerms()), ("IntervalBound", IntervalBound()))
+diagnostic_maps = [adaptive_map(orbit_diagnostics, lower, upper; order = 3, atol = 1 // 100000, estimator) for (_, estimator) in diagnostic_methods]
+@assert all(m -> m.converged, diagnostic_maps)
+@assert maximum(p -> maximum(sup.(abs.(p.error_bounds))), last(diagnostic_maps).patches) <= 1 / 100000
+println("Static orbit diagnostic leaf counts: ", [(label, length(m.patches)) for ((label, _), m) in zip(diagnostic_methods, diagnostic_maps)])
+
+# Green intervals bound the original apoapsis expression on complete x cells
+# at y=0. Every leaf verifies the square-root and reciprocal assumptions on
+# its whole cover. Numerical curves are illustrations; these certificates
+# cover the static diagnostics and do not bound any propagated state above.
+diagnostics_fig = Figure(size = (1320, 700), fontsize = 13)
+diagnostic_edges = collect(range(lower[1], upper[1]; length = 65))
+diagnostic_x = [x for k in 1:(length(diagnostic_edges) - 1) for x in (diagnostic_edges[k], diagnostic_edges[k + 1])]
+for (column, ((label, estimator), m)) in enumerate(zip(diagnostic_methods, diagnostic_maps))
+    certified = estimator isa IntervalBound
+    color = certified ? :darkgreen : :dodgerblue
+    ax = Axis(diagnostics_fig[1, column]; xlabel = "initial x", ylabel = "initial y", title = "$label: $(length(m.patches)) leaves")
+    for p in m.patches
+        lo, hi = certified ? (inf.(domain(p)), sup.(domain(p))) : (p.lower, p.upper)
+        poly!(ax, Rect2f(lo[1], lo[2], hi[1] - lo[1], hi[2] - lo[2]); color = (color, 0.1), strokecolor = color, strokewidth = 0.8)
+    end
+    ax = Axis(diagnostics_fig[2, column]; xlabel = "initial x (y=0)", ylabel = "initial osculating apoapsis", title = certified ? "Original-function cell enclosure" : "Ordinary polynomial fit")
+    if certified
+        cells = [enclose(m, [interval(diagnostic_edges[k], diagnostic_edges[k + 1]), interval(0)])[3] for k in 1:(length(diagnostic_edges) - 1)]
+        @assert all(isguaranteed, cells)
+        band!(ax, diagnostic_x, [inf(v) for v in cells for _ in 1:2], [sup(v) for v in cells for _ in 1:2]; color = (:green, 0.35))
+    else
+        lines!(ax, diagnostic_edges, [m([x, 0])[3] for x in diagnostic_edges]; color, linewidth = 3)
+    end
+    lines!(ax, diagnostic_edges, [orbit_diagnostics([x, 0])[3] for x in diagnostic_edges]; color = :black, linestyle = :dash)
+end
+diagnostics_fig

@@ -27,4 +27,4 @@ jobs:
         if: matrix.julia-version == '1'
         run: |
           julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-          julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --check --diff --docstrings src test ext examples docs/make.jl docs/literate.jl docs/test_literate.jl
+          julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --check --diff --docstrings src test ext examples docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl

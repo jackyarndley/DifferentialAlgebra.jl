@@ -130,8 +130,8 @@ fig
 # ## Oriented ADS and a C2 surrogate on the same orbit map
 # The newer geometry works with the same ordinary polynomial callback. This
 # implicit root lifting is not a verified Kepler solve, so IntervalBound would
-# not certify it. Validated examples use explicit functions in ads_methods.jl
-# and polygon_ads.jl. ODE integration likewise remains a separate error source.
+# not certify it. The next section compares all estimators on an explicit
+# related orbital calculation. ODE integration remains a separate error source.
 oriented = adaptive_map(kepler_map, lower, upper; order, atol = tolerance, splitter = :oriented)
 smooth = continuous_map(kepler_map, oriented; continuity = :c2, order)
 @assert oriented.converged
@@ -189,3 +189,50 @@ methods_fig
 
 # Refining the source partition, increasing local order, or reducing overlap
 # can improve the blend's accuracy. The source atol is not inherited by it.
+
+# ## All four estimators on an explicit orbital phase map
+# Supply eccentric anomaly E directly instead of solving Kepler's equation.
+# For a=μ=1, this expression gives the same planar state formulas with no
+# implicit numerical root. IntervalBound can therefore validate this static
+# expression on the whole box. This comparison does not certify the time-to-E
+# solve used earlier. See the orbital polygon tutorial for inclined 3D states.
+using IntervalArithmetic
+function phase_state(v)
+    E, e = v
+    s, c = sincos(E)
+    beta = sqrt(1 - e^2)
+    r = 1 - e * c
+    return [c - e, beta * s, -s / r, beta * c / r]
+end
+phase_methods = (("GuardedTail", GuardedTail()), ("ExtrapolatedTail", ExtrapolatedTail()), ("LastTerms", LastTerms()), ("IntervalBound", IntervalBound()))
+phase_maps = [adaptive_map(phase_state, [0.0, 0.25], [1.0, 0.5]; order = 4, atol = 1 // 10000, estimator) for (_, estimator) in phase_methods]
+@assert all(m -> m.converged, phase_maps)
+@assert maximum(p -> maximum(sup.(abs.(p.error_bounds))), last(phase_maps).patches) <= 1 / 10000
+println("Explicit phase-state leaf counts: ", [(label, length(m.patches)) for ((label, _), m) in zip(phase_methods, phase_maps)])
+
+# The top panels share the same phase/eccentricity domain, order and tolerance.
+# Below, ordinary fits are curves; the green band covers each complete E cell
+# at fixed e=3/8, including the validated function remainder. Its width also
+# includes the original function's variation within that cell.
+phase_fig = Figure(size = (1320, 700), fontsize = 13)
+phase_edges = collect(range(0, 1; length = 65))
+phase_x = [x for k in 1:(length(phase_edges) - 1) for x in (phase_edges[k], phase_edges[k + 1])]
+for (column, ((label, estimator), m)) in enumerate(zip(phase_methods, phase_maps))
+    certified = estimator isa IntervalBound
+    color = certified ? :darkgreen : :dodgerblue
+    ax = Axis(phase_fig[1, column]; xlabel = "eccentric anomaly E (rad)", ylabel = "eccentricity e", title = "$label: $(length(m.patches)) leaves")
+    for p in m.patches
+        lo, hi = certified ? (inf.(domain(p)), sup.(domain(p))) : (p.lower, p.upper)
+        poly!(ax, Rect2f(lo[1], lo[2], hi[1] - lo[1], hi[2] - lo[2]); color = (color, 0.1), strokecolor = color, strokewidth = 0.8)
+    end
+    ax = Axis(phase_fig[2, column]; xlabel = "E (e=3/8)", ylabel = "orbital-plane y", title = certified ? "Original-function cell enclosure" : "Ordinary polynomial fit")
+    if certified
+        cells = [enclose(m, [interval(phase_edges[k], phase_edges[k + 1]), interval(3 // 8)])[2] for k in 1:(length(phase_edges) - 1)]
+        @assert all(isguaranteed, cells)
+        band!(ax, phase_x, [inf(v) for v in cells for _ in 1:2], [sup(v) for v in cells for _ in 1:2]; color = (:green, 0.35))
+    else
+        lines!(ax, phase_edges, [m([E, 3 / 8])[2] for E in phase_edges]; color, linewidth = 3)
+    end
+    lines!(ax, phase_edges, [phase_state([E, 3 / 8])[2] for E in phase_edges]; color = :black, linestyle = :dash)
+end
+phase_fig

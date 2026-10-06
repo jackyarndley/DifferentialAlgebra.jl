@@ -20,6 +20,7 @@ methods = [
     ("Coefficient decay", ExtrapolatedTail(), :tail),
     ("Last two degrees", LastTerms(), :tail),
     ("Longest relative side", GuardedTail(), :width),
+    ("Interval bounds", IntervalBound(), :tail),
 ]
 maps = [
     adaptive_map(gaussian, lower, upper; order = 5, atol = tolerance, estimator, splitter)
@@ -30,15 +31,24 @@ maps = [
 # decay to retained coefficient maxima, and LastTerms inspects the last two
 # degrees without fitting. The :tail splitter favors directions that reduce
 # large coefficients; :width provides a simple geometric alternative.
-# These are heuristic indicators. Measure error independently of their probes.
+# The first four cases use heuristic indicators. IntervalBound instead bounds
+# retained coefficient uncertainty and the absolute remainder of fresh child
+# Taylor models. Only that fifth acceptance test is a uniform error certificate.
+# Compare scalar polynomial values with interval midpoints on an independent
+# grid; midpoint discrepancy is a numerical diagnostic, not the interval proof.
 grid = range(-2, 2; length = 101)
 reference = [gaussian([x, y]) for x in grid, y in grid]
-errors = [abs.([map([x, y]) for x in grid, y in grid] - reference) for map in maps]
+grid_values = [[map([x, y]) for x in grid, y in grid] for map in maps]
+@assert all(isguaranteed, grid_values[end])
+plot_value(x) = x isa Interval ? mid(x) : x
+errors = [abs.(plot_value.(values) - reference) for values in grid_values]
 for ((name, _, _), map, error) in zip(methods, maps, errors)
     @assert map.converged
     @assert maximum(error) < tolerance
     println((method = name, patches = length(map.patches), maximum_error = maximum(error)))
 end
+@assert maximum(p -> sup(abs(only(p.error_bounds))), maps[end].patches) <= tolerance
+println("Largest guaranteed point-enclosure width: ", maximum(diam, grid_values[end]))
 
 # Existing partitions can be refined without merging their boundaries.
 # Always provide the original function so new expansions recover missing terms.
@@ -48,22 +58,25 @@ refined_error = maximum(abs(refined([x, y]) - gaussian([x, y])) for x in grid, y
 println((refined_patches = length(refined.patches), maximum_error = refined_error))
 
 # The upper row shows partitions in physical coordinates. The lower row uses
-# the same color scale for independently measured errors in all four methods.
-fig = Figure(size = (1300, 710), fontsize = 14)
-for (column, ((name, _, _), map, error)) in enumerate(zip(methods, maps, errors))
-    domain = Axis(
+# the same color scale for numerical discrepancies in all five cases. The last
+# column plots interval midpoint discrepancy; its certified error is reported
+# separately above. Bounds and sampled discrepancies answer different questions.
+fig = Figure(size = (1530, 710), fontsize = 12)
+for (column, ((name, estimator, _), map, error)) in enumerate(zip(methods, maps, errors))
+    partition_axis = Axis(
         fig[1, column]; xlabel = "x", ylabel = "y",
         title = "$name\n$(length(map.patches)) patches", aspect = DataAspect()
     )
     for patch in map.patches
-        x0, y0 = patch.lower
-        x1, y1 = patch.upper
-        lines!(domain, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color = Makie.to_colormap(:tab10)[1], linewidth = 0.7)
+        lo, hi = estimator isa IntervalBound ? (inf.(domain(patch)), sup.(domain(patch))) : (patch.lower, patch.upper)
+        x0, y0 = lo
+        x1, y1 = hi
+        lines!(partition_axis, [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color = estimator isa IntervalBound ? :darkgreen : Makie.to_colormap(:tab10)[1], linewidth = 0.7)
     end
-    accuracy = Axis(fig[2, column]; xlabel = "x", ylabel = "y", title = "Independent grid error", aspect = DataAspect())
+    accuracy = Axis(fig[2, column]; xlabel = "x", ylabel = "y", title = estimator isa IntervalBound ? "Grid midpoint discrepancy" : "Independent grid discrepancy", aspect = DataAspect())
     heatmap!(accuracy, grid, grid, log10.(max.(error, 1.0e-12)); colormap = :magma, colorrange = (-12, -4))
 end
-Colorbar(fig[3, 1:4]; colormap = :magma, limits = (-12, -4), vertical = false, label = "log₁₀ absolute error")
+Colorbar(fig[3, 1:5]; colormap = :magma, limits = (-12, -4), vertical = false, label = "log₁₀ numerical absolute discrepancy")
 fig
 
 # ## The new interval method and non-axis-aligned geometry
