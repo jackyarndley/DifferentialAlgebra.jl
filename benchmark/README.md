@@ -21,7 +21,7 @@ The example saves `results/interval_models.png` and `results/interval_fit_errors
 and is also executed by Literate
 in the documentation. Its bands enclose entire displayed physical cells; sampled
 function curves are illustrations only. At order three and tolerance `1e-5`, the
-two-variable example used 16 leaves. Its uniform fit-error bound decreased from
+two-variable example used 16 patches. Its uniform fit-error bound decreased from
 `0.001203788916394627` on the parent to at most `8.217570041330492e-6` on a child.
 
 ## Oriented polygons
@@ -35,10 +35,10 @@ the physical partition. Every expansion covers its polygon's parallelogram.
 The interval method validates on that complete cover and retains its remainder.
 
 `polygon_ads.jl` compares warmed construction, allocations, enclosure costs,
-leaf counts and widths separately. The following run used Julia 1.13.1,
+patch counts and widths separately. The following run used Julia 1.13.1,
 IntervalArithmetic 1.0.12 and a 32 MiB multiplication-table budget:
 
-| Case / geometry | Leaves | Construction | Construction bytes | Full width | Point width at (1/4,1/4) |
+| Case / geometry | Patches | Construction | Construction bytes | Full width | Point width at (1/4,1/4) |
 |:--|--:|--:|--:|--:|--:|
 | `(x+y)^2`, axis boxes | 64 | 2.074 ms | 933,183 | 4.09375 | 0.15625 |
 | `(x+y)^2`, oriented polygons | 8 | 4.281 ms | 816,280 | 4.0625 | 0.0625 |
@@ -73,7 +73,7 @@ Julia 1.13.1, Windows, IntervalArithmetic 1.0.12, Float64 endpoints:
 | Reusable ordinary evaluation | 0.1 μs / **0 B** | 0.1 μs / **0 B** |
 
 Both model/ADS enclosures had width `0.062307791912239896`, with absolute remainder
-width `7.919122357670971e-7`. The six-variable ADS case needed one leaf at `atol=1e-6`;
+width `7.919122357670971e-7`. The six-variable ADS case needed one patch at `atol=1e-6`;
 its uniform fit-error bound was `4.083095687002589e-7`. The ordinary stored-polynomial
 enclosure had width `0.062307000000003665`; it omits the original function's
 truncation error and earlier floating coefficient rounding.
@@ -82,7 +82,7 @@ truncation error and earlier floating coefficient rounding.
 
 `continuous_map(f, fit; continuity=:c2, overlap=1//4)` constructs an owned
 partition-of-unity surrogate from fresh fits on overlapping covers of the
-source leaves. It accepts ordinary boxes, interval boxes and oriented polygons.
+source patches. It accepts ordinary boxes, interval boxes and oriented polygons.
 Linear/cubic/quintic taper endpoint jets give C0/C1/C2 respectively. ForwardDiff
 can differentiate the numeric surrogate; an absolute function remainder does
 not certify original-function derivatives or a minimizer. Default ADS is
@@ -113,12 +113,12 @@ The new examples save four PNGs under `results/`: `ads_continuity.png`,
 `ads_optimization_intervals.png`. They are also executed and embedded by Literate.
 The first compares raw/C0/C1/C2 values, gradients and Hessians. Its deliberately
 coarse cubic fit shows that continuity is separate from derivative accuracy.
-The quadratic interval example has original leaf error `[0,1/64]`; enlarged
+The quadratic interval example has original patch error `[0,1/64]`; enlarged
 supports and convex blending give `[0,9/256]`, checked against `atol=1/16`.
 The optimization example uses a C2 objective, ForwardDiff gradient/Hessian and
 damped Newton with an in-domain line search. Its analytical minimizer is an
 independent comparison; the displayed value intervals do not certify an optimum.
-Its oriented frame produces more leaves than the box frame, demonstrating that
+Its oriented frame produces more patches than the box frame, demonstrating that
 direction selection does not guarantee a performance improvement.
 
 `benchmark/continuous_ads.jl` measures source/overlap construction, numeric
@@ -134,7 +134,7 @@ preserved; the new wrapper does not promise allocation-free evaluation.
 The completed warmed benchmark on Julia 1.13.1 / IntervalArithmetic 1.0.12,
 with a 32 MiB multiplication table budget, reported:
 
-| Case | Leaves | Overlap construction / bytes | Numeric query / bytes | Gradient / bytes | Hessian / bytes | Original-function point width |
+| Case | Patches | Overlap construction / bytes | Numeric query / bytes | Gradient / bytes | Hessian / bytes | Original-function point width |
 |:--|--:|--:|--:|--:|--:|--:|
 | 2D boxes | 29 | 4.685 ms / 1,535,175 | 139.8 μs / 396,664 | 221.8 μs / 398,904 | 243.3 μs / 403,551 | `1.23337e-6` |
 | 2D oriented polygons | 20 | 3.063 ms / 1,189,671 | 73.8 μs / 207,760 | 82.1 μs / 209,904 | 92.8 μs / 214,592 | `1.68542e-7` |

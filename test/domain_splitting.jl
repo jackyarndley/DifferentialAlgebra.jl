@@ -254,7 +254,7 @@ end
     @test !limited.converged && length(limited.patches) == 2
     for p in limited.patches
         c = only(p.center)
-        @test limited([c]) ≈ c / (1 - c) atol = 1.0e-13 # Each leaf reaches final time.
+        @test limited([c]) ≈ c / (1 - c) atol = 1.0e-13 # Each patch reaches final time.
     end
     # Check the endpoint even if the propagator omits its last callback.
     endpoint(u, span, monitor) = (; state = u / (1 - (span[2] - span[1]) * u), time = last(span))

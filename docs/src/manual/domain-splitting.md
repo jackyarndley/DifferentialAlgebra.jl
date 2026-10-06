@@ -30,6 +30,32 @@ states. The interval and polygon extensions currently support static maps:
 | Check a flow at specified times | `adaptive_flow(advance, initial, lower, upper, times; ...)` |
 | Check a flow after accepted solver steps | `adaptive_flow(advance, initial, lower, upper, (t0, tf); ...)` |
 
+## ADS terminology
+
+Use **subdomain** for an input region produced by splitting and **patch** for
+the local Taylor map or Taylor model together with its subdomain and coordinate
+normalization. Splitting a subdomain replaces its patch with two child patches.
+The input subdomains form a **partition**: they cover the original domain and
+have disjoint relative interiors, with shared boundaries. `map.patches` is the patch
+collection; `max_patches` limits its size.
+
+In astrodynamics and DA set propagation, a collection of local maps representing
+a parameterized set is also called a **DA manifold representation**. The patches
+describe portions of the mapped set, such as an orbital uncertainty ribbon.
+[Wittig's introduction to DA](https://indico.esa.int/event/98/attachments/2928/3393/IntroductionToDA.pdf)
+describes this connection between local DA maps and manifold charts (slides
+21–22). This terminology describes the representation; a patch collection alone
+does not establish that its image is a smooth manifold. Independently computed
+ADS maps can disagree on shared boundaries, and arbitrary callbacks need not
+parameterize a regular manifold.
+
+For [`continuous_map`](@ref), enlarged supports overlap and form a **cover**
+of the physical domain. The original ADS subdomains still form a partition.
+The optional C0/C1/C2 blend controls continuity of the surrogate; it does not
+establish manifold geometry or original-function derivative accuracy. Existing
+`PiecewiseTaylorMap`, `PiecewiseTaylorModel` and `PiecewisePolygonMap` names
+refer to the corresponding patch collections.
+
 ## Static maps
 
 ```@example ads
@@ -86,7 +112,7 @@ where `s_j` is the largest absolute output at the center and checked points.
 absolute tolerances for outputs with different units or scales.
 
 `IntervalBound()` instead reevaluates the original expression with native
-Taylor models and accepts a leaf only when a rigorous uniform absolute error
+Taylor models and accepts a patch only when a rigorous uniform absolute error
 bound meets `atol`. It includes coefficient widths as well as the remainder.
 It requires IntervalArithmetic, `rtol=0`, `guard_order=0` and
 `check_points=false` (selected automatically). Its callbacks accept Taylor-model
@@ -151,7 +177,7 @@ Certified arithmetic rounds outward on that cover and requires the function
 to be valid on the entire cover, which can extend beyond the physical polygon.
 No polygon-specific optimization bounder is implemented. Point and subdomain
 queries enforce the original physical polygon. Interval queries hull every
-overlapping leaf, including shared edges. Polygon snapshots survive algebra
+overlapping patch, including shared edges. Polygon snapshots survive algebra
 changes, and public geometry accessors own their data.
 
 These methods return `PiecewisePolygonMap`. They support 2D positive-area convex
@@ -266,7 +292,7 @@ work = zeros(degree(map) + 1)
 evaluate!(result, map, [0.2, -0.1], normalized, work)
 ```
 
-`max_depth` limits splits along a path; `max_patches` limits all leaves.
+`max_depth` limits splits along a path; `max_patches` limits all patches.
 The default `strict = true` raises an error at an unresolved limit.
 With `strict = false`, the map covers the entire box and reports
 `:max_depth`, `:max_patches` or `:roundoff` on unresolved patches.

@@ -137,7 +137,7 @@ smooth = continuous_map(kepler_map, oriented; continuity = :c2, order)
 @assert oriented.converged
 comparisons = (("Single expansion", single), ("Box ADS", split), ("Oriented ADS", oriented), ("C2 oriented blend", smooth))
 sample_errors = [[maximum(abs, m(p) - q) for (p, q) in zip(samples, reference)] for (_, m) in comparisons]
-println("Box / oriented leaf counts: ", length.((split.patches, oriented.patches)))
+println("Box / oriented patch counts: ", length.((split.patches, oriented.patches)))
 println("Recomputed overlap estimates (heuristic): ", smooth.error_estimate)
 for ((label, _), errors) in zip(comparisons, sample_errors)
     println((label, maximum_sample_error = maximum(errors)))
@@ -160,7 +160,7 @@ println("Largest sampled C2 gradient discrepancy: ", maximum(abs, surrogate_grad
 
 # Compare geometry, sampled accuracy and optimization-relevant smoothness.
 # This figure supplements the original single-versus-box heatmaps above.
-# Here automatic directions give the same leaf count as box ADS. Alignment
+# Here automatic directions give the same patch count as box ADS. Alignment
 # helps the diagonal examples, but need not improve every problem's partition.
 # Errors below machine epsilon sit at the log-scale display floor.
 methods_fig = Figure(size = (1130, 800), fontsize = 14)
@@ -208,7 +208,7 @@ phase_methods = (("GuardedTail", GuardedTail()), ("ExtrapolatedTail", Extrapolat
 phase_maps = [adaptive_map(phase_state, [0.0, 0.25], [1.0, 0.5]; order = 4, atol = 1 // 10000, estimator) for (_, estimator) in phase_methods]
 @assert all(m -> m.converged, phase_maps)
 @assert maximum(p -> maximum(sup.(abs.(p.error_bounds))), last(phase_maps).patches) <= 1 / 10000
-println("Explicit phase-state leaf counts: ", [(label, length(m.patches)) for ((label, _), m) in zip(phase_methods, phase_maps)])
+println("Explicit phase-state patch counts: ", [(label, length(m.patches)) for ((label, _), m) in zip(phase_methods, phase_maps)])
 
 # The top panels share the same phase/eccentricity domain, order and tolerance.
 # Below, ordinary fits are curves; the green band covers each complete E cell
@@ -220,7 +220,7 @@ phase_x = [x for k in 1:(length(phase_edges) - 1) for x in (phase_edges[k], phas
 for (column, ((label, estimator), m)) in enumerate(zip(phase_methods, phase_maps))
     certified = estimator isa IntervalBound
     color = certified ? :darkgreen : :dodgerblue
-    ax = Axis(phase_fig[1, column]; xlabel = "eccentric anomaly E (rad)", ylabel = "eccentricity e", title = "$label: $(length(m.patches)) leaves")
+    ax = Axis(phase_fig[1, column]; xlabel = "eccentric anomaly E (rad)", ylabel = "eccentricity e", title = "$label: $(length(m.patches)) patches")
     for p in m.patches
         lo, hi = certified ? (inf.(domain(p)), sup.(domain(p))) : (p.lower, p.upper)
         poly!(ax, Rect2f(lo[1], lo[2], hi[1] - lo[1], hi[2] - lo[2]); color = (color, 0.1), strokecolor = color, strokewidth = 0.8)

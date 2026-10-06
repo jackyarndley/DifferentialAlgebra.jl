@@ -195,7 +195,7 @@ interval coefficient, the uniform error bound is
 E=R+\sum_k (C_k-[m_k,m_k])\,\operatorname{bound}(\xi^{\alpha_k}).
 ```
 
-All operations in this bound round outward. A leaf is accepted only when
+All operations in this bound round outward. A patch is accepted only when
 `sup(abs(E)) ≤ atol` for every output. Checking `R` alone would omit coefficient
 uncertainty. Midpoints here define the comparison polynomial for acceptance;
 there is no midpoint-coefficient model arithmetic backend. Scalar or per-output
@@ -215,13 +215,13 @@ not assume validity at the center or automatically retry a failed expansion.
 `compile(model)` produces an owned `CompiledTaylorModel` containing coefficients,
 monomial exponents, normalization, domain and remainder. It supports numeric
 enclosure/evaluation, not arithmetic or composition. Certified ADS stores these
-snapshots in its leaves, uses a temporary algebra during construction, and restores
+snapshots in its patches, uses a temporary algebra during construction, and restores
 the caller's configuration on success or failure. Returned maps and snapshots
 remain usable after global algebra changes. Public domain/remainder accessors
 return independent copies; internal arrays are read-only. Queries intersect
-every overlapping leaf and hull their enclosures with preserved interval flags,
-so faces and subboxes spanning several leaves are covered. Initial lookup is
-linear in the number of leaves.
+every overlapping patch and hull their enclosures with preserved interval flags,
+so faces and subboxes spanning several patches are covered. Initial lookup is
+linear in the number of patches.
 
 GuardedTail, ExtrapolatedTail, LastTerms and `adaptive_flow`
 retain their heuristic contracts. They do not acquire certified error bounds by
@@ -251,7 +251,7 @@ subboxes must lie entirely inside the original physical polygon.
 
 Automatic directions use midpoint coefficients only for a heuristic choice of
 frame. This does not enter certified coefficients, errors or acceptance. There
-is no guarantee of an optimal direction or improved speed: fewer leaves may
+is no guarantee of an optimal direction or improved speed: fewer patches may
 still cost more because exact geometry is more expensive. Frames stay fixed
 during a construction. General nonconvex polygons, changing local frames,
 higher-dimensional polyhedra, polygon-constrained range optimization and verified

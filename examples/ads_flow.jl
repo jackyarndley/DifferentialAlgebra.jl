@@ -79,7 +79,7 @@ println("Nominal orbit closure error: ", maximum(abs, flow_map([1.0, 0.0]) - ini
 # evaluates the final orbital state. The boundary images show nonlinear shear.
 fig = Figure(size = (1250, 800), fontsize = 14)
 for (column, (name, map)) in enumerate(comparisons)
-    domain_axis = Axis(fig[1, column]; xlabel = "initial x", ylabel = "initial y", title = "$name: $(length(map.patches)) leaves", aspect = DataAspect())
+    domain_axis = Axis(fig[1, column]; xlabel = "initial x", ylabel = "initial y", title = "$name: $(length(map.patches)) patches", aspect = DataAspect())
     image_axis = Axis(fig[2, column]; xlabel = "final x", ylabel = "final y", title = "Mapped patch boundaries\nAxes scaled independently", aspect = 1)
     for (i, patch) in enumerate(map.patches)
         x0, y0 = patch.lower
@@ -109,7 +109,7 @@ for ((name, _), errors) in zip(comparisons, validation_errors)
 end
 vlines!(ax, [tolerance]; color = :black, linestyle = :dash, label = "Spatial atol (heuristic)")
 axislegend(ax; position = :rb, labelsize = 10)
-ax = Axis(accuracy_fig[1, 2]; xticks = (1:3, collect(first.(comparisons))), ylabel = "leaf count", title = "Partition size, not integration cost")
+ax = Axis(accuracy_fig[1, 2]; xticks = (1:3, collect(first.(comparisons))), ylabel = "patch count", title = "Partition size, not integration cost")
 barplot!(ax, 1:3, [length(m.patches) for (_, m) in comparisons]; color = Makie.to_colormap(:tab10)[1:3])
 ax = Axis(accuracy_fig[1, 3]; xlabel = "initial x (initial y=0)", ylabel = "sampled maximum component error", yscale = log10, title = "Shared physical-coordinate section")
 for ((name, _), errors) in zip(comparisons, validation_errors)
@@ -140,10 +140,10 @@ diagnostic_methods = (("GuardedTail", GuardedTail()), ("ExtrapolatedTail", Extra
 diagnostic_maps = [adaptive_map(orbit_diagnostics, lower, upper; order = 3, atol = 1 // 100000, estimator) for (_, estimator) in diagnostic_methods]
 @assert all(m -> m.converged, diagnostic_maps)
 @assert maximum(p -> maximum(sup.(abs.(p.error_bounds))), last(diagnostic_maps).patches) <= 1 / 100000
-println("Static orbit diagnostic leaf counts: ", [(label, length(m.patches)) for ((label, _), m) in zip(diagnostic_methods, diagnostic_maps)])
+println("Static orbit diagnostic patch counts: ", [(label, length(m.patches)) for ((label, _), m) in zip(diagnostic_methods, diagnostic_maps)])
 
 # Green intervals bound the original apoapsis expression on complete x cells
-# at y=0. Every leaf verifies the square-root and reciprocal assumptions on
+# at y=0. Every patch verifies the square-root and reciprocal assumptions on
 # its whole cover. Numerical curves are illustrations; these certificates
 # cover the static diagnostics and do not bound any propagated state above.
 diagnostics_fig = Figure(size = (1320, 700), fontsize = 13)
@@ -152,7 +152,7 @@ diagnostic_x = [x for k in 1:(length(diagnostic_edges) - 1) for x in (diagnostic
 for (column, ((label, estimator), m)) in enumerate(zip(diagnostic_methods, diagnostic_maps))
     certified = estimator isa IntervalBound
     color = certified ? :darkgreen : :dodgerblue
-    ax = Axis(diagnostics_fig[1, column]; xlabel = "initial x", ylabel = "initial y", title = "$label: $(length(m.patches)) leaves")
+    ax = Axis(diagnostics_fig[1, column]; xlabel = "initial x", ylabel = "initial y", title = "$label: $(length(m.patches)) patches")
     for p in m.patches
         lo, hi = certified ? (inf.(domain(p)), sup.(domain(p))) : (p.lower, p.upper)
         poly!(ax, Rect2f(lo[1], lo[2], hi[1] - lo[1], hi[2] - lo[2]); color = (color, 0.1), strokecolor = color, strokewidth = 0.8)

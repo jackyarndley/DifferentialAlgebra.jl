@@ -29,7 +29,8 @@ Base.deepcopy_internal(a::CompiledTaylorModel, copies::IdDict) = get!(() -> copy
 """
     TaylorModelPatch
 
-A certified box-ADS leaf. `models` is a tuple of owned `CompiledTaylorModel`s;
+A Taylor-model patch with certified enclosures on a box subdomain.
+`models` is a tuple of owned `CompiledTaylorModel`s;
 `error_bounds` encloses each original output minus its polynomial with stored
 midpoint coefficients, uniformly on this patch. It includes both the absolute
 remainder and retained coefficient widths. `depth` counts bisections; `status`
@@ -47,9 +48,10 @@ domain(p::TaylorModelPatch) = domain(first(p.models))
 """
     PiecewiseTaylorModel
 
-A box partition produced by `validated_adaptive_map`. `patches` is an immutable
-tuple of `TaylorModelPatch`s. `converged` means every uniform absolute error
-bound met the requested tolerance. Even unresolved leaves retain valid model
+A collection of Taylor-model patches on a box subdomain partition, produced by
+`validated_adaptive_map`. `patches` is an immutable tuple of `TaylorModelPatch`s.
+`converged` means every uniform absolute error
+bound met the requested tolerance. Even unresolved patches retain valid model
 enclosures. Numeric point and subbox queries include remainders, reject queries
 outside the physical domain and remain valid after algebra reinitialization.
 """
@@ -99,7 +101,7 @@ not shrink its remainder. Invalid function domains throw, including when a
 loose whole-model enclosure cannot establish validity. No time integration or
 verified inversion is performed. The callback must not change algebra settings.
 
-Resource limits throw by default. `strict=false` retains valid unresolved leaves
+Resource limits throw by default. `strict=false` retains valid unresolved patches
 with their status and `converged=false`. Construction uses a temporary algebra
 and restores the caller's algebra, including on failure. Returned snapshots own
 their data and remain numerically valid independently of the global algebra.

@@ -31,8 +31,8 @@ can help. No original-function derivative error is certified.
 
 ## Construction and continuity proof
 
-In box coordinates, each old leaf is a core rectangle. For polygons, the core
-is its bounding rectangle in the source's fixed projected frame `z=B*x`.
+Each original box subdomain is a core rectangle. For a polygon subdomain, the
+core is its bounding rectangle in the source's fixed projected frame `z=B*x`.
 `overlap=1//4` adds a quarter of the **full core width** on either side,
 clipped to the projected root rectangle. The callback is reevaluated on each
 new support, using the native polynomial engine. The same frame is retained;
@@ -52,7 +52,7 @@ S(x)=\sum_i\lambda_i(x)P_i(x).
 The tapers are nonnegative. For Ck, their first k derivatives vanish at both
 endpoints; their values join the constant-one plateau and constant-zero exterior.
 Their products therefore are Ck. Every physical point lies in an original
-leaf, and hence in a core with weight one, so the denominator is at least one.
+subdomain, and hence in a core with weight one, so the denominator is at least one.
 Normalization by this positive Ck function and multiplication by polynomials
 preserve Ck regularity, including shared faces, T-junctions and polygon corners.
 Continuity is relative to the declared physical domain, including one-sided

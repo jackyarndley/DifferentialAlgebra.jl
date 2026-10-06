@@ -14,7 +14,7 @@ using Test, DifferentialAlgebra, IntervalArithmetic, LinearAlgebra
         @test sum(p -> domain_area(domain(p)), a.patches) == 4
         @test all(p -> IA.isguaranteed(only(p.error_bounds)) && IA.decoration(only(p.error_bounds)) == IA.com, a.patches)
         # Independent exact identity f(x)=z1² and dyadic normalization. Each
-        # leaf has r1=1/4, so the full discarded polynomial is (1/16)*xi1².
+        # patch has r1=1/4, so the full discarded polynomial is (1/16)*xi1².
         for patch in a.patches
             @test sameinterval(only(patch.error_bounds), IA.interval(T, 0, 1 // 16))
             @test sameinterval(remainder(only(patch._patch.models)), IA.interval(T, 0, 1 // 16))

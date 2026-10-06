@@ -11,7 +11,7 @@ f(v) = v[1]^3
 raw = adaptive_map(f, [-1.0], [1.0]; order = 2, atol = 1 // 2)
 @assert length(raw.patches) == 2
 surrogates = [continuous_map(f, raw; continuity = k) for k in (:c0, :c1, :c2)]
-println("Raw leaves: ", length(raw.patches))
+println("Raw patches: ", length(raw.patches))
 println("Recomputed overlap estimates: ", [s.error_estimate for s in surrogates])
 
 # The two core boxes meet at x=0. An overlap of 1/4 extends their supports
@@ -53,7 +53,7 @@ println("Core error bound: ", maximum(p -> sup(abs(only(p.error_bounds))), certi
 println("Blended surrogate uniform error interval: ", only(smooth.error_bounds))
 @assert sup(abs(only(smooth.error_bounds))) <= 1 // 16
 
-# Enlarged fits have a new accuracy contract: the original leaf tolerance is
+# Enlarged fits have a new accuracy contract: the original patch tolerance is
 # not inherited. For x², Taylor's exact identity f-P_c=(x-c)² proves the error
 # interval [0,r²] for each cover; nonnegative normalized blending preserves the
 # hull of those intervals. The band below instead encloses the original
@@ -67,7 +67,7 @@ band!(ax, plot_x, [inf(v) for v in values for _ in 1:2], [sup(v) for v in values
 lines!(ax, edges, edges .^ 2; color = :black, label = "Original function (samples)")
 lines!(ax, edges, [smooth([x]) for x in edges]; color = :orange, label = "C2 numeric surrogate")
 axislegend(ax; position = :ct, labelsize = 11)
-ax = Axis(band_fig[1, 2]; xlabel = "core leaf / overlap fit", ylabel = "uniform error interval", title = "Overlap error is checked again")
+ax = Axis(band_fig[1, 2]; xlabel = "core patch / overlap fit", ylabel = "uniform error interval", title = "Overlap error is checked again")
 errors = [only(p.error_bounds) for p in certified.patches]
 rangebars!(ax, eachindex(errors), inf.(errors), sup.(errors); color = :dodgerblue, linewidth = 3, whiskerwidth = 8, label = "Original core fits")
 hlines!(ax, [inf(only(smooth.error_bounds)), sup(only(smooth.error_bounds))]; color = :orange, label = "Blended uniform bound")

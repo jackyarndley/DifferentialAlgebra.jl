@@ -14,9 +14,9 @@ manual = adaptive_map(f, box; estimator = IntervalBound(), splitter = :oriented,
 @assert axis.converged && oriented.converged && manual.converged
 @assert sum(p -> domain_area(domain(p)), oriented.patches) == 4
 println("Automatically chosen projection rows: ", split_directions(oriented))
-println("Axis / automatic / manual leaf counts: ", length.((axis.patches, oriented.patches, manual.patches)))
+println("Axis / automatic / manual patch counts: ", length.((axis.patches, oriented.patches, manual.patches)))
 
-# The exact analytical identity is f=z1² for z1=x+y. In a leaf with
+# The exact analytical identity is f=z1² for z1=x+y. In a patch with
 # z1=c1+r1*xi1, the omitted term is r1²*xi1², enclosed by [0,r1²].
 # This proves a uniform error bound. Sample curves below illustrate the fit;
 # they are not used to decide inclusion or acceptance.
@@ -33,7 +33,7 @@ for estimator in (GuardedTail(), ExtrapolatedTail(), LastTerms())
 end
 triangle = ConvexPolygon([(0, 0), (1, 0), (0, 1)])
 triangular = adaptive_map(v -> exp(v[1] + v[2]), triangle; estimator = IntervalBound(), order = 3, atol = 1 // 1000, directions = [1 1; -1 1])
-println("Convex triangle leaves: ", length(triangular.patches))
+println("Convex triangle patches: ", length(triangular.patches))
 
 # # Plot physical domains and whole-cell interval bands
 # Both partitions cover exactly the same square. Polygon clipping and inverse
@@ -63,7 +63,7 @@ band!(ax, plot_x, lower(axis_values), upper(axis_values); color = (:dodgerblue, 
 band!(ax, plot_x, lower(oriented_values), upper(oriented_values); color = (:green, 0.35), label = "Oriented interval ADS")
 lines!(ax, edges, edges .^ 2; color = :black, label = "Original function (samples)")
 axislegend(ax; position = :ct, labelsize = 11)
-ax = Axis(fig[2, 2]; xlabel = "leaf index (different local fits)", ylabel = "uniform fit-error interval", title = "Certified splitting criterion")
+ax = Axis(fig[2, 2]; xlabel = "patch index (different local fits)", ylabel = "uniform fit-error interval", title = "Certified splitting criterion")
 for (map, color, offset, label) in ((axis, :dodgerblue, -0.15, "Axis"), (oriented, :green, 0.15, "Oriented"))
     errors = [only(p.error_bounds) for p in map.patches]
     rangebars!(ax, collect(eachindex(errors)) .+ offset, inf.(errors), sup.(errors); color, label, linewidth = 2, whiskerwidth = 5)
@@ -84,7 +84,7 @@ point_widths = [x + y <= 1 ? diam(triangular([x, y])) : NaN for x in grid, y in 
 ax = Axis(polygon_fig[1, 2]; xlabel = "physical x", ylabel = "physical y", title = "Point enclosure width inside triangle", aspect = DataAspect())
 heat = heatmap!(ax, grid, grid, point_widths; colormap = :viridis)
 Colorbar(polygon_fig[1, 3], heat; label = "Original-function interval width")
-ax = Axis(polygon_fig[1, 4]; xlabel = "polygon leaf", ylabel = "uniform fit-error interval", title = "Fresh leaf certificates")
+ax = Axis(polygon_fig[1, 4]; xlabel = "polygon patch", ylabel = "uniform fit-error interval", title = "Fresh patch certificates")
 triangle_errors = [only(p.error_bounds) for p in triangular.patches]
 rangebars!(ax, eachindex(triangle_errors), inf.(triangle_errors), sup.(triangle_errors); color = :darkgreen, linewidth = 3, whiskerwidth = 6)
 hlines!(ax, [-1 / 1000, 1 / 1000]; color = :black, linestyle = :dash)
@@ -94,7 +94,7 @@ polygon_fig
 # Projection rows need not be perpendicular. The exact inverse defines each
 # cover; it is not replaced by a transpose. These three frames solve the same
 # quadratic problem with the same certified tolerance. Good alignment can
-# reduce leaf counts and dependence overestimation, but does not guarantee speed.
+# reduce patch counts and dependence overestimation, but does not guarantee speed.
 frame_names = ("Axis projection", "Oblique projection", "Diagonal projection")
 frame_fits = (
     adaptive_map(f, box; estimator = IntervalBound(), splitter = :oriented, directions = :axes, order = 1, atol = tolerance),
@@ -110,7 +110,7 @@ for (column, (name, fit)) in enumerate(zip(frame_names, frame_fits))
     end
 end
 labels = ["Axis", "Oblique", "Diagonal"]
-ax = Axis(direction_fig[2, 1]; xticks = (1:3, labels), ylabel = "leaf count", title = "Partition size")
+ax = Axis(direction_fig[2, 1]; xticks = (1:3, labels), ylabel = "patch count", title = "Partition size")
 barplot!(ax, 1:3, [length(m.patches) for m in frame_fits]; color = :darkgreen)
 ax = Axis(direction_fig[2, 2]; xticks = (1:3, labels), ylabel = "full-domain enclosure width", title = "Dependence and cover overestimation")
 barplot!(ax, 1:3, [diam(enclose(m)) for m in frame_fits]; color = :darkgreen)
@@ -150,7 +150,7 @@ catch err
     println("Rejected invalid whole-domain logarithm: ", err.msg)
 end
 
-# Fewer leaves do not guarantee faster construction: exact clipping has a cost.
+# Fewer patches do not guarantee faster construction: exact clipping has a cost.
 # Run benchmark/polygon_ads.jl for warmed timing, allocations and interval widths
 # separately. Polygon geometry currently supports 2D static maps; six-variable
 # uncertainty maps continue to use box ADS. Time integration is not validated.

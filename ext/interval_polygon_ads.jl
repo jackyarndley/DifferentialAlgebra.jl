@@ -38,7 +38,7 @@ const IntervalPolygonCandidate = NamedTuple{
         :tolerance, :accepted, :directions, :snapshots, :interval_bound,
     ),
 }
-DA.polygon_leaf(p::IntervalPolygonCandidate, depth, status) = DA.TaylorModelPatch(p.snapshots, deepcopy(p.errors), depth, status)
+DA.polygon_patch(p::IntervalPolygonCandidate, depth, status) = DA.TaylorModelPatch(p.snapshots, deepcopy(p.errors), depth, status)
 
 function polygon_query_constraints(p::DA.ConvexPolygon)
     v = p._vertices

@@ -20,7 +20,7 @@ tolerance = 1 // 10000
 boxes = adaptive_map(objective, box; estimator = IntervalBound(), order = 3, atol = tolerance)
 polygons = adaptive_map(objective, box; estimator = IntervalBound(), splitter = :oriented, directions = [1 1; -1 1], order = 3, atol = tolerance)
 smooth = continuous_map(objective, polygons; continuity = :c2, order = 4, atol = 1 // 1000)
-println("Box / oriented leaves: ", length.((boxes.patches, polygons.patches)))
+println("Box / oriented patches: ", length.((boxes.patches, polygons.patches)))
 println("C2 surrogate uniform function-error interval: ", only(smooth.error_bounds))
 
 # Fresh overlap fits are computed at order four. This separate retained order
@@ -66,13 +66,13 @@ println("Original objective / enclosure there: ", (objective(solution.point), en
 grid = collect(range(-1, 1; length = 81))
 levels = [objective([x, y]) for x in grid, y in grid]
 fig = Figure(size = (1100, 490), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel = "physical x", ylabel = "physical y", title = "Box ADS: $(length(boxes.patches)) leaves", aspect = DataAspect())
+ax = Axis(fig[1, 1]; xlabel = "physical x", ylabel = "physical y", title = "Box ADS: $(length(boxes.patches)) patches", aspect = DataAspect())
 for p in boxes.patches
     x, y = domain(p)
     poly!(ax, Rect2f(inf(x), inf(y), diam(x), diam(y)); color = (:lightblue, 0.6), strokecolor = :steelblue, strokewidth = 1)
 end
 contour!(ax, grid, grid, levels; levels = [0.1, 1, 4, 10, 20], color = :gray, linewidth = 1)
-ax = Axis(fig[1, 2]; xlabel = "physical x", ylabel = "physical y", title = "C2 oriented fit: $(length(polygons.patches)) leaves", aspect = DataAspect())
+ax = Axis(fig[1, 2]; xlabel = "physical x", ylabel = "physical y", title = "C2 oriented fit: $(length(polygons.patches)) patches", aspect = DataAspect())
 for p in polygons.patches
     poly!(ax, [Point2f(Float64.(v)) for v in polygon_vertices(domain(p))]; color = (:palegreen, 0.6), strokecolor = :darkgreen, strokewidth = 1)
 end

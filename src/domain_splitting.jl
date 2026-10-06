@@ -1,8 +1,9 @@
 """
     TaylorPatch
 
-One box in a [`PiecewiseTaylorMap`](@ref). `lower` and `upper` are physical
-coordinate bounds; `map` is a [`CompiledMap`](@ref) on normalized coordinates
+One local Taylor map with its box subdomain in a [`PiecewiseTaylorMap`](@ref).
+`lower` and `upper` are physical coordinate bounds; `map` is a [`CompiledMap`](@ref)
+on normalized coordinates
 `(point - center) ./ radius`. A fixed coordinate has normalized value zero.
 `error_estimate` contains one absolute error indicator per output (the maximum
 over checkpoints for a flow). Its meaning depends on the selected estimator.
@@ -33,6 +34,7 @@ DomainNode(::Type{T}) where {T} = DomainNode(0, zero(T), 0, 0, 0)
     PiecewiseTaylorMap
 
 A piecewise Taylor approximation built by [`adaptive_map`](@ref).
+Its input subdomains form a partition, with one local Taylor map per patch.
 Call `map(point)` with physical coordinates to select and evaluate a patch.
 `patches` holds its [`TaylorPatch`](@ref)s; `converged` is true only if every
 patch meets the requested error estimate. `lower` and `upper` bound the domain.
@@ -94,7 +96,7 @@ uniform error guarantees; validate on independent points. Disabling
 The returned [`PiecewiseTaylorMap`](@ref) covers the whole input box. By default,
 resource limits or unsplittable boxes throw an error. With `strict = false`,
 unresolved patches are retained with their status and `converged = false`.
-`max_depth` counts splits along a path; `max_patches` bounds the number of leaves.
+`max_depth` counts splits along a path; `max_patches` bounds the number of patches.
 
 Construction temporarily uses a separate global algebra and restores the
 caller's configuration and polynomials, including on failure. Do not change
@@ -120,7 +122,7 @@ end
     adaptive_map(f, previous::PiecewiseTaylorMap; order = max(1, degree(previous)), kwargs...)
 
 Refine an existing partition using the same options as `adaptive_map(f, lower,
-upper)`. Each leaf is reevaluated with `f`; the input map is unchanged. Existing
+upper)`. Each patch is reevaluated with `f`; the input map is unchanged. Existing
 boundaries are retained, and `max_depth` and `max_patches` apply to the entire
 tree. Supply the original function, not `previous` as a surrogate: subdividing
 an already truncated polynomial cannot recover missing information.
@@ -332,36 +334,36 @@ function ads_queue(lo::Vector{T}, hi, partition) where {T}
     return nodes, pending
 end
 
-function ads_can_split(box, depth, leaves, options)
-    return depth < options.max_depth && leaves < options.max_patches &&
+function ads_can_split(box, depth, patch_count, options)
+    return depth < options.max_depth && patch_count < options.max_patches &&
         any(i -> box.lo[i] < box.center[i] < box.hi[i], eachindex(box.lo))
 end
 
 function ads_build(problem, lo::Vector{T}, hi, x, ctx, options, partition) where {T}
     nodes, pending = ads_queue(lo, hi, partition)
-    leaves = length(pending)
+    patch_count = length(pending)
     lower, upper, depth, _ = last(pending)
     box = ads_geometry(lower, upper)
-    first_patch = ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, leaves, options))
+    first_patch = ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, patch_count, options))
     return ads_build!(problem, lo, hi, x, ctx, options, first_patch, nodes, pending)
 end
 
 function ads_build!(problem, lo::Vector{T}, hi, x, ctx, options, first_patch, nodes, pending) where {T}
     C = eltype(first_patch.errors)
     patches = TaylorPatch{T, C}[]
-    leaves = length(pending)
+    patch_count = length(pending)
     initial_radius = ads_geometry(lo, hi).radius
     first_node = last(pending)[4]
     while !isempty(pending)
         lower, upper, depth, node = pop!(pending)
         box = ads_geometry(lower, upper)
         p = node == first_node ? first_patch :
-            ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, leaves, options))
+            ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, patch_count, options))
         p.scalar == first_patch.scalar && length(p.errors) == length(first_patch.errors) || throw(DimensionMismatch("The map changed output shape"))
         eltype(p.errors) === C || throw(ArgumentError("The map changed coefficient type between patches"))
         axis = p.accepted ? 0 : ads_split_axis(p, initial_radius, options.splitter)
         status = p.accepted ? :converged : depth >= options.max_depth ? :max_depth :
-            leaves >= options.max_patches ? :max_patches : axis == 0 ? :roundoff : :split
+            patch_count >= options.max_patches ? :max_patches : axis == 0 ? :roundoff : :split
         if status == :split
             midpoint = p.center[axis]
             left, right = length(nodes) + 1, length(nodes) + 2
@@ -370,7 +372,7 @@ function ads_build!(problem, lo::Vector{T}, hi, x, ctx, options, first_patch, no
             left_upper, right_lower = copy(upper), copy(lower)
             left_upper[axis] = right_lower[axis] = midpoint
             push!(pending, (right_lower, upper, depth + 1, right), (lower, left_upper, depth + 1, left))
-            leaves += 1
+            patch_count += 1
         else
             options.strict && !p.accepted && throw(ErrorException("Automatic domain splitting reached $status at depth $depth; increase the limit or use strict=false to inspect unresolved patches"))
             push!(patches, TaylorPatch(lower, upper, p.center, p.radius, p.compiled, p.errors, depth, status))

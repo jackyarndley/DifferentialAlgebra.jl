@@ -1,8 +1,9 @@
 """
     PolygonPatch
 
-One physical convex polygon in a `PiecewisePolygonMap`. `domain(patch)` owns a
-copy of its exact vertices. `error_estimate`, `depth` and `status` describe the
+One local map patch on a physical convex polygon subdomain of a `PiecewisePolygonMap`.
+`domain(patch)` owns a copy of its exact vertices.
+`error_estimate`, `depth` and `status` describe the
 selected ADS error method. `error_bounds` is available only for `IntervalBound`.
 The internal box snapshot is in projected coordinates, not physical coordinates.
 """
@@ -23,8 +24,8 @@ Base.propertynames(::PolygonPatch) = (:_domain, :_patch, :depth, :status, :error
 """
     PiecewisePolygonMap
 
-Static ADS on an exact convex polygon partition. Physical point queries enforce
-the polygon domain; shared edges are included. With `IntervalBound`, evaluation
+Static ADS patches on an exact convex polygon subdomain partition. Physical point
+queries enforce the polygon domain; shared edges are included. With `IntervalBound`, evaluation
 and enclosure include the remainders. Other estimators return ordinary numeric
 approximations. Snapshots survive algebra reinitialization. Public geometry
 accessors and `copy` own their data; internal arrays are read-only.
@@ -197,7 +198,7 @@ function polygon_axis(p, original, options)
     return axis
 end
 polygon_splittable(p, i) = p.lo[i] < p.center[i] < p.hi[i]
-polygon_leaf(p, depth, status) = TaylorPatch(p.lo, p.hi, p.center, p.radius, p.compiled, p.errors, depth, status)
+polygon_patch(p, depth, status) = TaylorPatch(p.lo, p.hi, p.center, p.radius, p.compiled, p.errors, depth, status)
 
 function polygon_construct(
         f, polygon::ConvexPolygon{T}; order::Integer = 5, atol = 1.0e-8, rtol::Real = 0,
@@ -229,7 +230,7 @@ function polygon_construct(
         end
         original = polygon_projection_bounds(polygon, B)
         pending = partition === nothing ? [(copy(polygon), 0)] : [(domain(p), p.depth) for p in reverse(partition.patches)]
-        leaves = length(pending)
+        patch_count = length(pending)
         patches = nothing
         shape = nothing
         with_order(options.working_order) do
@@ -239,7 +240,7 @@ function polygon_construct(
                 newshape = (p.scalar, length(p.errors))
                 shape === nothing ? (shape = newshape) : shape == newshape || throw(DimensionMismatch("Callback changed output shape"))
                 axis = p.accepted ? 0 : polygon_axis(p, original, options)
-                status = p.accepted ? :converged : depth >= max_depth ? :max_depth : leaves >= max_patches ? :max_patches : axis == 0 ? :roundoff : :split
+                status = p.accepted ? :converged : depth >= max_depth ? :max_depth : patch_count >= max_patches ? :max_patches : axis == 0 ? :roundoff : :split
                 if status == :split
                     cut = (p.projection[1][axis] + p.projection[2][axis]) / 2
                     normal = (B[axis, 1], B[axis, 2])
@@ -247,13 +248,13 @@ function polygon_construct(
                     right = polygon_clip(child, (-normal[1], -normal[2]), -cut)
                     left === nothing || right === nothing ? throw(ArgumentError("Degenerate polygon split")) : nothing
                     push!(pending, (right, depth + 1), (left, depth + 1))
-                    leaves += 1
+                    patch_count += 1
                 else
                     strict && !p.accepted && throw(ErrorException("Polygon ADS reached $status; increase limits or use strict=false"))
-                    leaf = PolygonPatch(child, polygon_leaf(p, depth, status))
-                    patches === nothing && (patches = typeof(leaf)[])
-                    leaf isa eltype(patches) || throw(ArgumentError("Callback changed coefficient type"))
-                    push!(patches, leaf)
+                    patch = PolygonPatch(child, polygon_patch(p, depth, status))
+                    patches === nothing && (patches = typeof(patch)[])
+                    patch isa eltype(patches) || throw(ArgumentError("Callback changed coefficient type"))
+                    push!(patches, patch)
                 end
             end
         end

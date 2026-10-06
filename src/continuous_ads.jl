@@ -127,10 +127,10 @@ end
     )
 
 Reevaluate the original static function on overlapping covers of the box or
-polygon ADS leaves and blend their local polynomials. `overlap` is a positive
-fraction (at most one) of each leaf's full width added on either side, clipped
+polygon ADS subdomains and blend their local polynomials. `overlap` is a positive
+fraction (at most one) of each core subdomain's full width added on either side, clipped
 to the projected root cover. `:c0`, `:c1` and `:c2` select linear, cubic and
-quintic compact tapers. Each weight is one on its original leaf's cover and
+quintic compact tapers. Each weight is one on its original core subdomain's cover and
 zero outside its support; normalized weights are nonnegative and sum to one.
 The denominator is at least one throughout the original physical domain.
 
