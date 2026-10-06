@@ -56,6 +56,12 @@ and report the new overlap error bounds. See the [continuity plots](examples/ads
 [oriented optimization example](examples/ads_optimization.jl) and
 [accuracy contract](docs/src/manual/continuous-ads.md).
 
+Astrodynamics tutorials include [six-variable orbital-element uncertainty](examples/six_variable_ephemeris.jl),
+[J2 injection uncertainty and ground tracks](examples/j2_uncertainty.jl),
+[polygon ADS on an inclined orbital ribbon](examples/orbit_polygon_ads.jl), and
+[B-plane flyby uncertainty](examples/flyby_uncertainty.jl). Their plots distinguish
+static interval certificates from sampled clouds and numerical time integration.
+
 - [Documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
 - [Runnable examples](examples)
 - [Contributing](docs/src/contributing.md)

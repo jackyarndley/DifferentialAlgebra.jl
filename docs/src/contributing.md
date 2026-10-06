@@ -36,7 +36,7 @@ Install it in a separate environment, then format the source and executable exam
 
 ```sh
 julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples docs/make.jl docs/literate.jl docs/test_literate.jl
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl
 ```
 
 Replace `--inplace` with `--check` to verify formatting without modifying files.
@@ -85,7 +85,12 @@ comparisons. Plot values alongside a useful diagnostic (residual, enclosure
 width, conditioning, conservation or partition size) when it explains the topic.
 Add new pages under a topic heading in `docs/src/examples.md`; these headings also
 generate the sidebar groups. The build checks that every script is registered
-exactly once. The rendering helper in `docs/literate.jl` converts Makie's
+exactly once. `collapselevel=3` keeps every tutorial topic and its links expanded
+on every page, including direct links into another topic. After rendering,
+`docs/test_navigation.jl` checks every HTML sidebar, resolves all tutorial links,
+and checks each tutorial's linked PNG assets. Run it separately after a build
+with `julia --project=docs docs/test_navigation.jl`; it supports both local flat
+URLs and CI's directory URLs. The rendering helper in `docs/literate.jl` converts Makie's
 embedded display images to links that work with both local and deployed URLs.
 Generated pages, build output and local manifests are excluded from version control.
 

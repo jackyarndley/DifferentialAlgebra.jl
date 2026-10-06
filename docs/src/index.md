@@ -31,3 +31,18 @@ monomials through total degree six.
 
 Start with [Getting started](manual/getting-started.md), then explore the
 [tutorials grouped by topic](examples.md) or the [API reference](api.md).
+
+## Astrodynamics examples
+
+Explore [six-variable orbital-element uncertainty](generated/six_variable_ephemeris.md)
+with linear and cubic maps, analytic polynomial moments and interval enclosures.
+Follow [injection uncertainty under J2 gravity](generated/j2_uncertainty.md) through
+inclined orbits, ground tracks and local-frame dispersion.
+
+For ADS, compare the four error methods on an
+[inclined orbital ribbon with polygon splitting](generated/orbit_polygon_ads.md),
+or classify [B-plane flyby uncertainty](generated/flyby_uncertainty.md) using
+guaranteed altitude bounds. Static-function certificates and numerical orbit
+propagation have separate error contracts throughout these tutorials.
+
+![Polygon uncertainty mapped into an inclined orbital ribbon](generated/orbit_polygon_ads-figure-2.png)

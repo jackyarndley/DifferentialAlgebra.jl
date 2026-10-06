@@ -43,6 +43,8 @@ makedocs(
     ],
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
+        # Keep the same tutorial topics and links visible on every page.
+        collapselevel = 3,
         canonical = "https://jackyarndley.github.io/DifferentialAlgebra.jl/",
     ),
     pages = [
@@ -67,3 +69,5 @@ makedocs(
         "Contributing" => "contributing.md",
     ],
 )
+
+include(joinpath(@__DIR__, "test_navigation.jl"))
