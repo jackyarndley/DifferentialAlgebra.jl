@@ -20,8 +20,10 @@ Automatic domain splitting (ADS) replaces it with a collection of local
 expansions [Wittig2015](@cite). Each patch uses normalized coordinates on
 `[-1, 1]`, while the public map accepts physical coordinates.
 
-The original box methods support static functions, refinement and propagated
-states. The interval and polygon extensions currently support static maps:
+All estimators and geometries use one ADS construction lifecycle. Local fitting,
+error assessment and splitting/intersection operations supply the numerical and
+geometric differences. Ordinary box methods also support propagated states;
+IntervalBound and polygon construction support static maps:
 
 | Operation | Interface |
 |:--|:--|
@@ -70,6 +72,9 @@ The callback accepts a vector and returns a real scalar or a nonempty vector
 of reals. It must work for numeric and polynomial coordinates. Equal lower
 and upper bounds fix a coordinate. The promoted floating-point type of the
 bounds determines the input coefficient type.
+
+Construction and refinement own their domain endpoints, including BigFloat data.
+`domain(map)` returns independent bounds; treat stored patch data as read-only.
 
 ## Error estimators
 
@@ -129,7 +134,8 @@ fit([1//2, 1//4])               # Interval at a physical point
 
 Finite ordinary endpoint vectors can also be passed to `adaptive_map` with
 this estimator. `validated_adaptive_map` remains a convenience entry point;
-its default splitter is `:width`, whereas `adaptive_map` defaults to `:tail`.
+its preserved defaults are `order=3`, `atol=1e-6`, `splitter=:width`, whereas
+`adaptive_map` defaults to `order=5`, `atol=1e-8`, `splitter=:tail`.
 Both apply the same acceptance test. See the
 [interval manual](interval-models.md#Certified-domain-splitting) for its proof.
 
@@ -138,6 +144,13 @@ Both apply the same acceptance test. See the
 `splitter = :tail` scores each coordinate by its predicted reduction in
 tail coefficients when halved, scaled by each output's tolerance. Axis
 point discrepancies supplement the scores; ties use relative box widths.
+
+For IntervalBound, only unsatisfied outputs contribute to direction scores.
+The heuristic focuses on the last two nonlinear retained degrees and
+lower-degree coefficient uncertainty, excluding large exact affine variation.
+It cannot attribute a scalar remainder exactly; absent directional information
+falls back to relative widths. Complete rigorous fitting errors still decide
+acceptance. Different estimators can therefore produce different partitions.
 
 `splitter = :width` bisects the longest side relative to the original
 domain. This simple geometric alternative is useful as a baseline, though
@@ -218,6 +231,25 @@ Existing boundaries are preserved and the input map is unchanged. Supply the
 original function as `f`. Using the old map itself would only approximate its
 existing polynomials. Depth and patch limits apply to the complete tree,
 including the starting partition.
+
+The same construction/refinement pattern applies to interval boxes:
+
+```@example ads
+using IntervalArithmetic
+certified = adaptive_map(f, [-0.5, -0.5], [0.5, 0.5];
+                         estimator = IntervalBound(), order = 4, atol = 1e-5)
+certified_fine = adaptive_map(f, certified; atol = 1e-6)
+(max_order(certified_fine), enclose(certified_fine, [interval(0.2), interval(-0.1)]))
+```
+
+Refinement defaults to the saved estimator and requested retained order.
+`max_order(map)` reports that order; `degree(map)` reports the largest actual
+stored degree. `domain`, `nvariables`, `noutputs`, `max_order`, `degree` and
+patch `status` apply consistently across the box and polygon result types.
+Ordinary `error_estimate` is heuristic; interval `error_bounds` is certified.
+Point lookup uses the partition tree. Ordinary queries select the lower side
+of a shared face; validated queries hull all closed patches touching the query,
+including every branch intersecting a subbox.
 
 ## Checkpointed propagation
 

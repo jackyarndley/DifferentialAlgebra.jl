@@ -65,4 +65,5 @@ include("utils.jl")
     include("validated_ads.jl")
     include("interval_polygon_ads.jl")
     include("continuous_ads.jl")
+    include("ads_contracts.jl")
 end

@@ -15,15 +15,25 @@ struct CompiledTaylorModel{T <: Real}
     _remainder::T
     _coordinates::ModelCoordinates{T}
     _order::Int
+    _degree::Int
 end
 domain(a::CompiledTaylorModel) = collect(deepcopy(a._coordinates.box))
 remainder(a::CompiledTaylorModel) = deepcopy(a._remainder)
 coefficient_type(::CompiledTaylorModel{T}) where {T} = T
 nvariables(a::CompiledTaylorModel) = length(a._coordinates.box)
 max_order(a::CompiledTaylorModel) = a._order
-degree(a::CompiledTaylorModel) = maximum(sum(@view(a._exponents[:, k])) for k in axes(a._exponents, 2))
-Base.copy(a::CompiledTaylorModel) = CompiledTaylorModel(deepcopy(a._coefficients), copy(a._exponents), deepcopy(a._remainder), deepcopy(a._coordinates), a._order)
-Base.deepcopy_internal(a::CompiledTaylorModel, copies::IdDict) = get!(() -> copy(a), copies, a)
+degree(a::CompiledTaylorModel) = a._degree
+Base.copy(a::CompiledTaylorModel) = CompiledTaylorModel(deepcopy(a._coefficients), copy(a._exponents), deepcopy(a._remainder), deepcopy(a._coordinates), a._order, a._degree)
+function Base.deepcopy_internal(a::CompiledTaylorModel, copies::IdDict)
+    return get!(copies, a) do
+        CompiledTaylorModel(
+            Base.deepcopy_internal(a._coefficients, copies),
+            Base.deepcopy_internal(a._exponents, copies),
+            Base.deepcopy_internal(a._remainder, copies),
+            Base.deepcopy_internal(a._coordinates, copies), a._order, a._degree
+        )
+    end
+end
 (a::CompiledTaylorModel)(point) = evaluate(a, point)
 
 """
@@ -44,22 +54,31 @@ struct TaylorModelPatch{T <: Real}
     status::Symbol
 end
 domain(p::TaylorModelPatch) = domain(first(p.models))
+nvariables(p::TaylorModelPatch) = nvariables(first(p.models))
+noutputs(p::TaylorModelPatch) = length(p.models)
+max_order(p::TaylorModelPatch) = max_order(first(p.models))
+degree(p::TaylorModelPatch) = maximum(degree, p.models)
 
 """
     PiecewiseTaylorModel
 
 A collection of Taylor-model patches on a box subdomain partition, produced by
-`validated_adaptive_map`. `patches` is an immutable tuple of `TaylorModelPatch`s.
+`adaptive_map(...; estimator=IntervalBound())`. `patches` is an immutable tuple of `TaylorModelPatch`s.
 `converged` means every uniform absolute error
 bound met the requested tolerance. Even unresolved patches retain valid model
 enclosures. Numeric point and subbox queries include remainders, reject queries
 outside the physical domain and remain valid after algebra reinitialization.
+Queries use a partition tree and include both closed sides of shared faces.
+Refinement reevaluates the original callback and defaults to the saved estimator
+and requested retained order, which can exceed `degree(map)`.
 """
-struct PiecewiseTaylorModel{T <: Real}
+struct PiecewiseTaylorModel{T <: Real, N, E <: ADSEstimator}
     _domain::Tuple{Vararg{T}}
     patches::Tuple{Vararg{TaylorModelPatch{T}}}
+    nodes::Vector{N}
     _order::Int
     _scalar::Bool
+    _estimator::E
     converged::Bool
 end
 domain(a::PiecewiseTaylorModel) = collect(deepcopy(a._domain))
@@ -68,7 +87,7 @@ noutputs(a::PiecewiseTaylorModel) = length(first(a.patches).models)
 max_order(a::PiecewiseTaylorModel) = a._order
 degree(a::PiecewiseTaylorModel) = maximum(degree(m) for p in a.patches for m in p.models)
 (a::PiecewiseTaylorModel)(point) = evaluate(a, point)
-Base.copy(a::PiecewiseTaylorModel) = PiecewiseTaylorModel(deepcopy(a._domain), Tuple(TaylorModelPatch(Tuple(copy(m) for m in p.models), deepcopy(p.error_bounds), p.depth, p.status) for p in a.patches), a._order, a._scalar, a.converged)
+Base.copy(a::PiecewiseTaylorModel) = PiecewiseTaylorModel(deepcopy(a._domain), deepcopy(a.patches), deepcopy(a.nodes), a._order, a._scalar, a._estimator, a.converged)
 Base.deepcopy_internal(a::PiecewiseTaylorModel, copies::IdDict) = get!(() -> copy(a), copies, a)
 function Base.show(io::IO, a::PiecewiseTaylorModel)
     return print(io, "PiecewiseTaylorModel(", length(a.patches), " patches, ", noutputs(a), " outputs, ", nvariables(a), " variables, ", a.converged ? "converged" : "unresolved", ")")
@@ -91,9 +110,13 @@ error relative to its retained midpoint polynomial must be at most `atol`
 retained coefficient rounding and the absolute remainder; samples and ordinary
 DA tail estimates are not used for acceptance.
 
-The same method is selectable through `adaptive_map(...; estimator=IntervalBound())`.
+This is a thin compatibility wrapper for `adaptive_map(...; estimator=IntervalBound())`.
+Its preserved defaults are `order=3`, `atol=1e-6`, `splitter=:width`; the canonical
+interface defaults to `order=5`, `atol=1e-8`, `splitter=:tail`.
 `:width` bisects the longest side relative to the initial box, skipping fixed
-coordinates. `:tail` uses retained coefficient sensitivity to select an axis.
+coordinates. `:tail` uses nonlinear retained tails and coefficient uncertainty
+from unsatisfied outputs to select an axis, falling back to relative widths.
+The scalar remainder has no exact directional attribution.
 `:oriented` selects a 2D exact convex polygon partition with automatic or supplied
 projection directions. Direction scores are heuristic; acceptance remains rigorous.
 Recompute `f` on both children: restricting a previously constructed model does
@@ -106,5 +129,16 @@ with their status and `converged=false`. Construction uses a temporary algebra
 and restores the caller's algebra, including on failure. Returned snapshots own
 their data and remain numerically valid independently of the global algebra.
 """
-function validated_adaptive_map end
-validated_adaptive_map(args...; kwargs...) = throw(ArgumentError("Load IntervalArithmetic to construct certified box ADS"))
+function validated_adaptive_map(
+        f, box; order::Integer = 3, atol = 1.0e-6, splitter::Symbol = :width, kwargs...
+    )
+    return adaptive_map(f, box; estimator = IntervalBound(), order, atol, splitter, kwargs...)
+end
+
+function adaptive_map(
+        f, previous::PiecewiseTaylorModel; order::Integer = max_order(previous),
+        estimator::ADSEstimator = previous._estimator, kwargs...
+    )
+    estimator isa IntervalBound || throw(ArgumentError("Validated box refinement requires IntervalBound"))
+    return interval_ads(f, domain(previous); partition = previous, order, kwargs...)
+end

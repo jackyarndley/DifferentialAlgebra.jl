@@ -19,7 +19,13 @@ struct TaylorPatch{T <: AbstractFloat, C <: Real}
     error_estimate::Vector{C}
     depth::Int
     status::Symbol
+    _order::Int
 end
+domain(p::TaylorPatch) = (lower = deepcopy(p.lower), upper = deepcopy(p.upper))
+nvariables(p::TaylorPatch) = length(p.lower)
+noutputs(p::TaylorPatch) = noutputs(p.map)
+degree(p::TaylorPatch) = degree(p.map)
+max_order(p::TaylorPatch) = p._order
 
 struct DomainNode{T}
     axis::Int
@@ -39,20 +45,32 @@ Call `map(point)` with physical coordinates to select and evaluate a patch.
 `patches` holds its [`TaylorPatch`](@ref)s; `converged` is true only if every
 patch meets the requested error estimate. `lower` and `upper` bound the domain.
 Numeric evaluation remains valid after the global algebra is reinitialized.
+Construction and refinement own the domain endpoints, including BigFloat data;
+`domain(map)` returns independent bounds.
 Shared faces belong to the lower child of a split. Extrapolation is rejected.
+`max_order(map)` is the requested retained order; `degree(map)` is the largest
+actual stored polynomial degree. Refinement defaults to the saved order and estimator.
 """
-struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real}
+struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator}
     lower::Vector{T}
     upper::Vector{T}
     patches::Vector{TaylorPatch{T, C}}
     nodes::Vector{DomainNode{T}}
     max_degree::Int
+    _order::Int
     scalar::Bool
+    _estimator::E
     converged::Bool
 end
 nvariables(map::PiecewiseTaylorMap) = length(map.lower)
 noutputs(map::PiecewiseTaylorMap) = noutputs(first(map.patches).map)
 degree(map::PiecewiseTaylorMap) = map.max_degree
+max_order(map::PiecewiseTaylorMap) = map._order
+domain(map::PiecewiseTaylorMap) = (lower = deepcopy(map.lower), upper = deepcopy(map.upper))
+Base.copy(map::PiecewiseTaylorMap) = PiecewiseTaylorMap(
+    deepcopy(map.lower), deepcopy(map.upper), deepcopy(map.patches), deepcopy(map.nodes),
+    map.max_degree, map._order, map.scalar, map._estimator, map.converged
+)
 
 function Base.show(io::IO, map::PiecewiseTaylorMap)
     return print(
@@ -119,16 +137,21 @@ function adaptive_map(f, lower::AbstractVector{<:Real}, upper::AbstractVector{<:
 end
 
 """
-    adaptive_map(f, previous::PiecewiseTaylorMap; order = max(1, degree(previous)), kwargs...)
+    adaptive_map(f, previous::PiecewiseTaylorMap; order = max_order(previous), estimator = previous._estimator, kwargs...)
 
 Refine an existing partition using the same options as `adaptive_map(f, lower,
 upper)`. Each patch is reevaluated with `f`; the input map is unchanged. Existing
 boundaries are retained, and `max_depth` and `max_patches` apply to the entire
 tree. Supply the original function, not `previous` as a surrogate: subdividing
 an already truncated polynomial cannot recover missing information.
+The retained order defaults to the originally requested order, even if an output
+has accidentally lower degree; the estimator defaults to the saved selection.
 """
-function adaptive_map(f, previous::PiecewiseTaylorMap; order::Integer = max(1, degree(previous)), kwargs...)
-    return ads_construct(StaticMap(f), previous.lower, previous.upper, previous; order, kwargs...)
+function adaptive_map(
+        f, previous::PiecewiseTaylorMap; order::Integer = max_order(previous),
+        estimator::ADSEstimator = previous._estimator, kwargs...
+    )
+    return ads_construct(StaticMap(f), previous.lower, previous.upper, previous; order, estimator, kwargs...)
 end
 
 struct StaticMap{F}
@@ -150,9 +173,8 @@ function ads_construct(
     isempty(lower) && throw(ArgumentError("The domain must have at least one coordinate"))
     if estimator isa IntervalBound
         problem isa StaticMap || throw(ArgumentError("IntervalBound supports static maps, not time integration"))
-        partition === nothing || throw(ArgumentError("Construct a fresh interval map from the original function"))
         return interval_ads(
-            problem.f, lower, upper; order, atol, rtol, guard_order, splitter,
+            problem.f, lower, upper; partition, order, atol, rtol, guard_order, splitter,
             check_points, strict, names, table_bytes, max_depth, max_patches, directions
         )
     elseif splitter == :oriented
@@ -166,28 +188,19 @@ function ads_construct(
         )
     end
     directions === nothing || throw(ArgumentError("Supply directions with splitter=:oriented"))
-    1 <= order <= 65535 && 0 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid expansion or guard order"))
-    (estimator isa GuardedTail ? guard_order > 0 : guard_order == 0) ||
-        throw(ArgumentError("guard_order must be positive for GuardedTail and zero for other estimators"))
-    splitter in (:tail, :width) || throw(ArgumentError("splitter must be :tail or :width"))
-    0 <= max_depth <= typemax(Int) && 1 <= max_patches <= typemax(Int) || throw(ArgumentError("Invalid splitting limits"))
-    isfinite(rtol) && rtol >= 0 || throw(ArgumentError("rtol must be finite and nonnegative"))
+    options = ads_options(;
+        order, atol, rtol, estimator, splitter, guard_order,
+        max_depth, max_patches, check_points, strict
+    )
     T = mapreduce(x -> typeof(float(x)), promote_type, Iterators.flatten((lower, upper)))
     T <: AbstractFloat && isconcretetype(T) || throw(ArgumentError("Bounds must convert to a concrete floating-point type"))
-    lo, hi = T.(lower), T.(upper)
+    # Conversion alone can reuse BigFloat endpoint storage, including on refinement.
+    lo, hi = deepcopy.(T.(lower)), deepcopy.(T.(upper))
     all(i -> isfinite(lo[i]) && isfinite(hi[i]) && lo[i] <= hi[i], eachindex(lo)) ||
         throw(ArgumentError("Bounds must be finite and ordered"))
-    if partition !== nothing
-        length(partition.patches) <= max_patches || throw(ArgumentError("max_patches is smaller than the existing partition"))
-        maximum(p -> p.depth, partition.patches) <= max_depth || throw(ArgumentError("max_depth is smaller than the existing partition"))
-    end
-    options = (;
-        order = Int(order), atol, rtol, estimator, splitter, check_points,
-        max_depth = Int(max_depth), max_patches = Int(max_patches), strict,
-    )
     return with_algebra(Int(order + guard_order), length(lo); names, table_bytes) do ctx
         x = [variable(i, T) for i in eachindex(lo)]
-        return ads_build(problem, lo, hi, x, ctx, options, partition)
+        return ads_build(problem, BoxADS(ads_geometry(lo, hi), x), ctx, options, partition)
     end
 end
 
@@ -195,7 +208,7 @@ function interval_ads end
 interval_ads(args...; kwargs...) = throw(ArgumentError("Load IntervalArithmetic to select IntervalBound"))
 
 "Select certified ADS on an explicit interval box with `estimator=IntervalBound()`."
-function adaptive_map(f, box::AbstractVector{<:Real}; estimator::ADSEstimator = IntervalBound(), kwargs...)
+function adaptive_map(f, box::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}}; estimator::ADSEstimator = IntervalBound(), kwargs...)
     estimator isa IntervalBound || throw(ArgumentError("Supply lower and upper bounds for ordinary box ADS"))
     return interval_ads(f, box; kwargs...)
 end
@@ -218,14 +231,15 @@ function ads_outputs(value)
     return result, value isa Real
 end
 
-function ads_check_context(ctx)
-    CURRENT_ALGEBRA[] === ctx && ctx.cutoff == ctx.basis.order && iszero(ctx.epsilon) &&
+function ads_check_context(ctx, order = ctx.basis.order)
+    CURRENT_ALGEBRA[] === ctx && ctx.cutoff == order && iszero(ctx.epsilon) &&
         ctx.big_epsilon === nothing || throw(ArgumentError("The callback changed the algebra configuration"))
     return nothing
 end
 
 function ads_geometry(lo, hi)
-    center = lo ./ 2 .+ hi ./ 2
+    # Preserve fixed subnormal coordinates: halving each endpoint can underflow.
+    center = map((a, b) -> a == b ? copy(a) : a / 2 + b / 2, lo, hi)
     # Enclose both endpoints even when the midpoint rounds toward one of them.
     radius = max.(center - lo, hi - center)
     return (; lo, hi, center, radius)
@@ -233,8 +247,9 @@ end
 
 function ads_analyze(value, box, options, ctx)
     values, scalar = ads_outputs(value)
-    ads_check_context(ctx)
+    ads_check_context(ctx, options.working_order)
     C = foldl((R, p) -> promote_type(R, p isa TaylorPolynomial ? coefficient_type(p) : typeof(p)), values; init = eltype(box.lo))
+    C <: AbstractFloat || throw(ArgumentError("Ordinary ADS requires floating coefficients; select IntervalBound for interval validation"))
     polynomials = TaylorPolynomial{C}.(values)
     all(p -> valid(p) === ctx && all(isfinite, @view(p.coeffs[1:p.len])), polynomials) ||
         throw(ArgumentError("The map returned invalid or nonfinite Taylor coefficients"))
@@ -246,7 +261,7 @@ function ads_analyze(value, box, options, ctx)
         ads_contributions!(contributions, p, j, options.order, options.estimator)
     end
     scale = abs.(constant_term.(polynomials))
-    return (; box..., compiled, errors, contributions, scale, scalar)
+    return (; geometry = box, polynomials, compiled, errors, contributions, scale, scalar)
 end
 
 function ads_probes(box)
@@ -293,7 +308,7 @@ function ads_assess(p, options)
     C = eltype(p.errors)
     tolerance = ads_tolerances(C, options.atol, options.rtol, length(p.errors)) .+ C(options.rtol) .* p.scale
     accepted = all(j -> isfinite(p.errors[j]) && p.errors[j] <= tolerance[j], eachindex(tolerance))
-    return (; p..., tolerance, accepted)
+    return ADSCandidate(p.geometry, p.compiled, p.errors, p.contributions, tolerance, p.scalar, accepted)
 end
 
 function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
@@ -302,97 +317,18 @@ function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
         probes = ads_probes(box)
         ads_check_points!(p, probes, (problem.f(point) for (point, _, _) in probes))
     end
-    ads_check_context(ctx)
+    ads_check_context(ctx, options.working_order)
     return ads_assess(p, options)
 end
 
 ads_ratio(error, tolerance) = iszero(tolerance) ? (iszero(error) ? zero(error) : oftype(error, Inf)) : error / tolerance
-
-function ads_split_axis(candidate, initial_radius, splitter)
-    axis = 0; best = -one(eltype(candidate.errors)); widest = zero(eltype(initial_radius))
-    for i in eachindex(initial_radius)
-        candidate.lo[i] < candidate.center[i] < candidate.hi[i] || continue
-        score = splitter == :width ? zero(best) : maximum(j -> ads_ratio(candidate.contributions[j, i], candidate.tolerance[j]), eachindex(candidate.tolerance))
-        width = candidate.radius[i] / initial_radius[i]
-        if score > best || (score == best && width > widest)
-            axis, best, widest = i, score, width
-        end
-    end
-    return axis
-end
-
-function ads_queue(lo::Vector{T}, hi, partition) where {T}
-    partition === nothing && return [DomainNode(T)], [(lo, hi, 0, 1)]
-    nodes = copy(partition.nodes)
-    pending = Tuple{Vector{T}, Vector{T}, Int, Int}[]
-    for (i, node) in enumerate(nodes)
-        node.patch == 0 && continue
-        p = partition.patches[node.patch]
-        push!(pending, (copy(p.lower), copy(p.upper), p.depth, i))
-    end
-    reverse!(pending)
-    return nodes, pending
-end
-
-function ads_can_split(box, depth, patch_count, options)
-    return depth < options.max_depth && patch_count < options.max_patches &&
-        any(i -> box.lo[i] < box.center[i] < box.hi[i], eachindex(box.lo))
-end
-
-function ads_build(problem, lo::Vector{T}, hi, x, ctx, options, partition) where {T}
-    nodes, pending = ads_queue(lo, hi, partition)
-    patch_count = length(pending)
-    lower, upper, depth, _ = last(pending)
-    box = ads_geometry(lower, upper)
-    first_patch = ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, patch_count, options))
-    return ads_build!(problem, lo, hi, x, ctx, options, first_patch, nodes, pending)
-end
-
-function ads_build!(problem, lo::Vector{T}, hi, x, ctx, options, first_patch, nodes, pending) where {T}
-    C = eltype(first_patch.errors)
-    patches = TaylorPatch{T, C}[]
-    patch_count = length(pending)
-    initial_radius = ads_geometry(lo, hi).radius
-    first_node = last(pending)[4]
-    while !isempty(pending)
-        lower, upper, depth, node = pop!(pending)
-        box = ads_geometry(lower, upper)
-        p = node == first_node ? first_patch :
-            ads_candidate(problem, box, x, ctx, options, ads_can_split(box, depth, patch_count, options))
-        p.scalar == first_patch.scalar && length(p.errors) == length(first_patch.errors) || throw(DimensionMismatch("The map changed output shape"))
-        eltype(p.errors) === C || throw(ArgumentError("The map changed coefficient type between patches"))
-        axis = p.accepted ? 0 : ads_split_axis(p, initial_radius, options.splitter)
-        status = p.accepted ? :converged : depth >= options.max_depth ? :max_depth :
-            patch_count >= options.max_patches ? :max_patches : axis == 0 ? :roundoff : :split
-        if status == :split
-            midpoint = p.center[axis]
-            left, right = length(nodes) + 1, length(nodes) + 2
-            nodes[node] = DomainNode(axis, midpoint, left, right, 0)
-            push!(nodes, DomainNode(T), DomainNode(T))
-            left_upper, right_lower = copy(upper), copy(lower)
-            left_upper[axis] = right_lower[axis] = midpoint
-            push!(pending, (right_lower, upper, depth + 1, right), (lower, left_upper, depth + 1, left))
-            patch_count += 1
-        else
-            options.strict && !p.accepted && throw(ErrorException("Automatic domain splitting reached $status at depth $depth; increase the limit or use strict=false to inspect unresolved patches"))
-            push!(patches, TaylorPatch(lower, upper, p.center, p.radius, p.compiled, p.errors, depth, status))
-            nodes[node] = DomainNode(0, zero(T), 0, 0, length(patches))
-        end
-    end
-    max_degree = maximum(p -> degree(p.map), patches)
-    return PiecewiseTaylorMap(lo, hi, patches, nodes, max_degree, first_patch.scalar, all(p -> p.status == :converged, patches))
-end
 
 function ads_patch(map::PiecewiseTaylorMap, point)
     Base.require_one_based_indexing(point)
     length(point) == nvariables(map) || throw(DimensionMismatch("Provide one coordinate per domain dimension"))
     all(i -> !(point[i] isa TaylorPolynomial) && map.lower[i] <= point[i] <= map.upper[i], eachindex(point)) ||
         throw(DomainError(point, "Point lies outside the map domain"))
-    node = map.nodes[1]
-    while node.patch == 0
-        node = map.nodes[point[node.axis] <= node.midpoint ? node.left : node.right]
-    end
-    return map.patches[node.patch]
+    return map.patches[ads_point_patch(map.nodes, point)]
 end
 
 """

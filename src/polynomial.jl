@@ -90,6 +90,8 @@ end
     max_order(p::TaylorPolynomial)
 
 Maximum total degree of the current algebra, or of the algebra owning `p`.
+For ADS maps and their patches, return the requested retained order, separately
+from the actual stored `degree`. Taylor models report their fixed retained order.
 """
 max_order() = ready().basis.order
 isinitialized() = CURRENT_ALGEBRA[] !== nothing && CURRENT_ALGEBRA[].active

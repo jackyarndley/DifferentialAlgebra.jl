@@ -36,13 +36,23 @@ map([0.1, 0.2])
 `variables(T, n; order)` selects a coefficient type. Creating a new algebra
 invalidates existing polynomials; see the [user guide](https://jackyarndley.github.io/DifferentialAlgebra.jl/manual/getting-started/).
 
-Loading optional IntervalArithmetic enables `enclose(p, box)` for certified
-stored-polynomial ranges and native `taylor_models(box; order)` with absolute
-function remainders. Interval coefficients alone do not certify truncation error.
-See [intervals and Taylor models](docs/src/manual/interval-models.md).
-`adaptive_map(f, box; estimator=IntervalBound(), order, atol)` reevaluates original
-static maps and uses uniform interval error bounds for splitting.
-`validated_adaptive_map` remains a convenience entry point. The
+`TaylorPolynomial{Float64}`, `TaylorPolynomial{BigFloat}` and other ordinary
+coefficient types use truncated DA arithmetic. Loading optional IntervalArithmetic
+also supports `TaylorPolynomial{Interval{T}}` through the same polynomial engine.
+Interval coefficients enclose supported coefficient arithmetic; discarded terms
+are still discarded. `TaylorModel` adds an absolute remainder and validity-domain
+normalization for validated function enclosures. See
+[intervals and Taylor models](docs/src/manual/interval-models.md), including the
+order-one `x*x` example.
+
+`adaptive_map` is the common construction and refinement interface. Ordinary
+estimators report heuristic errors; `estimator=IntervalBound()` uses rigorous
+interval error bounds. Both reevaluate the original callback on refined children
+and retain the requested order and selected estimator for subsequent refinement.
+See [domain splitting](docs/src/manual/domain-splitting.md) for both patterns.
+`validated_adaptive_map` is a compatibility wrapper with preserved defaults
+`order=3`, `atol=1e-6`, `splitter=:width`; `adaptive_map` defaults to `order=5`,
+`atol=1e-8`, `splitter=:tail` for boxes. The
 [interval fitting example](examples/interval_models.jl) plots enclosures,
 partitions, and accepted error bounds. `splitter=:oriented` adds 2D convex polygon
 ADS with automatic or supplied projection directions to all four error methods;

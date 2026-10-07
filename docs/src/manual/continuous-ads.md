@@ -87,7 +87,12 @@ enclose(smooth)                      # Original function f on the full domain
 ```
 
 Each fresh interval-coefficient Taylor model retains its domain and entire
-absolute remainder. Stored coefficient midpoints define the **explicitly
+absolute remainder. Local callback normalization, model validation and fit-error
+assessment are shared with ADS candidates, while overlap construction stays
+separate from the ADS splitter. The default retained order and estimator come
+from the source map, including when its actual polynomial degree is lower.
+
+Stored coefficient midpoints define the **explicitly
 requested numeric surrogate**; the model certificates retain coefficient widths
 and all remainders. This does not introduce a midpoint-coefficient model backend
 or use midpoint extraction in validated arithmetic.

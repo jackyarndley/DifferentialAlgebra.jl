@@ -16,6 +16,31 @@ Do not change interval rounding or algebra configuration during a calculation.
 
 ## Three distinct calculations
 
+`TaylorPolynomial{Float64}`, `TaylorPolynomial{BigFloat}` and
+`TaylorPolynomial{Interval{T}}` use the same representation and polynomial
+arithmetic kernels. Interval coefficients enclose coefficient uncertainty and
+supported rounding operations; terms above the working order are still discarded.
+`TaylorModel` adds an absolute remainder and validity-domain/normalization
+metadata around an interval-coefficient polynomial.
+
+The order-one product explains why those extra data matter:
+
+```@example interval_distinction
+using DifferentialAlgebra, IntervalArithmetic
+box = [interval(-1, 1)]
+p, = variables(Interval{Float64}, 1; order = 1)
+enclose(p * p, box)              # [0,0]: x² was discarded
+```
+
+```@example interval_distinction
+x, = taylor_models(box; order = 1)
+m = x * x
+(polynomial(m), remainder(m), enclose(m))  # zero polynomial, [0,1], [0,1]
+```
+
+The remainder encloses the discarded square throughout the declared domain.
+Interval coefficients alone do not certify truncation error.
+
 `enclose(p, box)` rigorously encloses the **stored polynomial** on an explicit
 box of decorated intervals. It does not recover terms previously truncated by
 DA or bound an unknown generating function. For example, `enclose(sin(x), box)`
@@ -173,9 +198,9 @@ Finite stored coefficients and remainders are required; overflow fails clearly.
 ## Certified domain splitting
 
 Select `estimator=IntervalBound()` in `adaptive_map` for the validated ADS
-method. It reevaluates the original function with Taylor-model inputs on every
+method through the same construction driver as ordinary ADS. It reevaluates the original function with Taylor-model inputs on every
 child and uses rigorous interval bounds to decide whether a fit needs splitting.
-`validated_adaptive_map` is also available as a convenience entry point:
+`validated_adaptive_map` remains a thin compatibility wrapper:
 
 ```julia
 f(v) = exp(v[1] + v[2]) * cos(v[1] * v[2])
@@ -185,7 +210,16 @@ length(a.patches)
 evaluate(a, [0, 0])              # Enclosure, including the selected remainders
 enclose(a)                       # Enclosure on the entire partition
 enclose(a, [interval(Float64, 0, 1//4), interval(0)])
+fine = adaptive_map(f, a; atol = 1e-6)  # Fresh fits, saved estimator/order
 ```
+
+The wrapper explicitly preserves `order=3`, `atol=1e-6`, `splitter=:width`.
+The canonical `adaptive_map` defaults are `order=5`, `atol=1e-8`, `splitter=:tail`.
+With explicitly identical options their construction and acceptance are identical.
+Refinement preserves existing boundaries and defaults to the saved estimator
+and **requested retained order**, even when the stored outputs have lower degree.
+`degree(fit)` inspects the actual polynomial degree; `max_order(fit)` inspects
+the requested retained order. Both boxes and polygons support refinement.
 
 For each output, acceptance bounds the difference from the polynomial with
 stored midpoint coefficients. If `m_k` is a stored midpoint and `C_k` its retained
@@ -204,8 +238,13 @@ The deterministic callback must return models or real constants and must not
 change algebra settings.
 
 On boxes, `splitter=:width` bisects the longest side relative to the original
-box, skipping fixed or unsplittable coordinates. `:tail` selects a side using
-retained coefficient sensitivity, with relative widths breaking ties. These
+box, skipping fixed or unsplittable coordinates. `:tail` ignores outputs whose
+error bounds already satisfy their tolerances. Its directional heuristic uses
+the last two nonlinear retained degrees and lower-degree coefficient uncertainty,
+so a large exact affine term does not dominate unrelated approximation error.
+A scalar remainder has no exact directional attribution. When this information
+is absent (including an exact affine retained polynomial at order one), relative
+widths supply the fallback and break ties. These
 heuristic direction scores affect efficiency, not validity: only the uniform
 interval error decides acceptance. `max_depth` and `max_patches` bound the work. Limits throw unless
 `strict=false`, which retains valid unresolved models and records their status.
@@ -218,10 +257,15 @@ enclosure/evaluation, not arithmetic or composition. Certified ADS stores these
 snapshots in its patches, uses a temporary algebra during construction, and restores
 the caller's configuration on success or failure. Returned maps and snapshots
 remain usable after global algebra changes. Public domain/remainder accessors
-return independent copies; internal arrays are read-only. Queries intersect
-every overlapping patch and hull their enclosures with preserved interval flags,
-so faces and subboxes spanning several patches are covered. Initial lookup is
-linear in the number of patches.
+return independent copies; internal arrays are read-only. Outputs of a validated
+patch share owned read-only coordinate and exponent metadata; enclosure computes
+normalization and integer powers once per patch. Copying a public model/snapshot
+still gives independent storage, including BigFloat endpoints.
+Queries navigate the partition tree, intersect every relevant patch and hull
+their enclosures with preserved interval flags. A query touching a split face
+visits both closed children; a straddling subbox visits both branches rather
+than following its midpoint. Ordinary point queries select the lower child on
+a shared face. These policies preserve their different evaluation contracts.
 
 GuardedTail, ExtrapolatedTail, LastTerms and `adaptive_flow`
 retain their heuristic contracts. They do not acquire certified error bounds by
@@ -273,9 +317,10 @@ ADS currently supports deterministic static maps on boxes and 2D convex polygons
 with absolute tolerances.
 
 See the [Literate example](../generated/interval_models.md) and
-`benchmark/interval_models.jl` for separate timing, allocation and width reports,
-including a six-coordinate uncertainty map. Benchmark widths measure different
+`benchmark/unified_ads.jl` and `benchmark/interval_models.jl` for separate timing,
+allocation and width reports, including a six-coordinate uncertainty map.
+Benchmark widths measure different
 objects: stored-polynomial range versus original-function enclosure.
 
-The remainder invariant follows the usual [Taylor-model definition](https://juliaintervals.github.io/TaylorModels.jl/dev/);
+The remainder invariant follows the usual [Taylor-model definition](https://juliaintervals.github.io/TaylorModels.jl/stable/);
 the implementation uses DifferentialAlgebra's native polynomial engine.

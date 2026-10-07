@@ -1,0 +1,26 @@
+
+Multiplication table budget: 0
+Six-variable model construction: (seconds = 6.41e-5, bytes = 97641)
+Model enclosure: (seconds = 4.7e-6, bytes = 5280)
+Model width / remainder width: (0.062307791912239896, 7.919122357670971e-7)
+Certified six-variable box ADS: (seconds = 8.66e-5, bytes = 131463)
+Certified ADS enclosure: (seconds = 6.0e-6, bytes = 7712)
+ADS patches / width / largest uniform fit error: (1, 0.062307791912239896, 4.083095687002589e-7)
+Ordinary polynomial construction: (seconds = 1.2e-6, bytes = 8272)
+Stored-polynomial enclosure: (seconds = 1.07e-5, bytes = 6000)
+Stored-polynomial width: 0.062307000000003665
+Reusable ordinary multiplication: (seconds = 2.0e-7, bytes = 0)
+Reusable ordinary evaluation: (seconds = 0.0, bytes = 0)
+
+Multiplication table budget: 33554432
+Six-variable model construction: (seconds = 6.56e-5, bytes = 97705)
+Model enclosure: (seconds = 5.2e-6, bytes = 5280)
+Model width / remainder width: (0.062307791912239896, 7.919122357670971e-7)
+Certified six-variable box ADS: (seconds = 8.48e-5, bytes = 131431)
+Certified ADS enclosure: (seconds = 6.0e-6, bytes = 7712)
+ADS patches / width / largest uniform fit error: (1, 0.062307791912239896, 4.083095687002589e-7)
+Ordinary polynomial construction: (seconds = 1.0e-6, bytes = 5536)
+Stored-polynomial enclosure: (seconds = 1.64e-5, bytes = 6000)
+Stored-polynomial width: 0.062307000000003665
+Reusable ordinary multiplication: (seconds = 2.0e-7, bytes = 0)
+Reusable ordinary evaluation: (seconds = 1.0e-7, bytes = 0)

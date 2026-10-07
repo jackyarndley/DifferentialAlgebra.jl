@@ -50,7 +50,8 @@ The source is organized by responsibility:
 - `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
 - `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
 - `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
-- `ads_estimators.jl` defines error indicators; `domain_splitting.jl` builds and evaluates piecewise maps; `adaptive_flow.jl` monitors propagation.
+- `ads_estimators.jl` defines error indicators; `ads_driver.jl` owns the shared ADS lifecycle and partition lookup; `domain_splitting.jl` supplies ordinary box fitting and evaluation; `polygon_ads.jl` supplies exact polygon geometry operations; `adaptive_flow.jl` monitors propagation.
+- `taylor_models.jl` and `validated_ads.jl` declare the dependency-free model and snapshot storage. The interval extension entry point loads `interval_models.jl` (arithmetic and shared monomial bounds), `interval_ads.jl` (validated local fitting and box geometry), and polygon/continuity adapters. It does not own a separate ADS construction loop.
 - `precompile.jl` holds the package's small compilation workload.
 - `display.jl` handles polynomial output. Public docstrings live immediately beside the definitions they document.
 

@@ -74,8 +74,8 @@ function continuity_layout(a::PiecewisePolygonMap)
     cores = [(collect(x), collect(y)) for p in a.patches for (x, y) in (polygon_projection_bounds(p._domain, B),)]
     return (domain = domain(a), bounds = (collect(lo), collect(hi)), B, A, cores, scalar = a._scalar)
 end
-continuity_estimator(::PiecewiseTaylorMap) = GuardedTail()
-continuity_estimator(::PiecewiseTaylorModel) = IntervalBound()
+continuity_estimator(a::PiecewiseTaylorMap) = a._estimator
+continuity_estimator(a::PiecewiseTaylorModel) = a._estimator
 continuity_estimator(a::PiecewisePolygonMap) = a._estimator
 continuity_scalar_type(a::PiecewiseTaylorMap{T}) where {T} = T
 continuity_scalar_type(a::PiecewisePolygonMap{T}) where {T} = T
@@ -106,11 +106,11 @@ function continuity_candidate(f, lo, hi, A, options, ctx, estimator::ADSEstimato
     all(i -> isfinite(box.radius[i]) && (lo[i] == hi[i] || box.radius[i] > 0), eachindex(lo)) || throw(ArgumentError("Unrepresentable overlap domain"))
     x = [variable(i, T) for i in eachindex(lo)]
     callback(z) = f(T.(A) * z)
-    settings = (; order = options.order, atol = 1, rtol = 0, estimator, check_points = options.check_points)
+    settings = (; order = options.order, working_order = ctx.basis.order, atol = 1, rtol = 0, estimator, check_points = options.check_points)
     candidate = ads_candidate(StaticMap(callback), box, x, ctx, settings, false)
     C = eltype(candidate.errors)
     C <: AbstractFloat || throw(ArgumentError("Ordinary continuity fits require floating coefficients"))
-    return (; center = candidate.center, radius = candidate.radius, map = candidate.compiled, certificates = nothing, errors = candidate.errors, scalar = candidate.scalar)
+    return (; center = box.center, radius = box.radius, map = candidate.payload, certificates = nothing, errors = candidate.errors, scalar = candidate.scalar)
 end
 continuity_errors(patches) = map(j -> maximum(p -> p.errors[j], patches), eachindex(first(patches).errors))
 function continuity_check_tolerance(errors, atol)
@@ -123,7 +123,7 @@ end
 """
     continuous_map(
         f, fit; continuity = :c2, overlap = 1 // 4,
-        order = max(1, degree(fit)), atol = nothing, kwargs...
+        order = max_order(fit), atol = nothing, kwargs...
     )
 
 Reevaluate the original static function on overlapping covers of the box or
@@ -139,8 +139,8 @@ Products and normalization therefore give a Ck surrogate across faces and
 junctions, including oriented polygons. It generally is not a polynomial and
 need not interpolate the original function or match individual patch jets.
 
-For ordinary fits, `estimator` defaults to GuardedTail (or the polygon source's
-estimator), `guard_order` to two for GuardedTail, and `check_points` to true.
+For ordinary fits, `estimator` and retained `order` default to the source map's
+saved settings, `guard_order` to two for GuardedTail, and `check_points` to true.
 An interval source requires IntervalBound and retains its certificates while
 using stored midpoint coefficients for the explicitly requested surrogate.
 There is no midpoint Taylor-model arithmetic backend. `atol`, if supplied,
@@ -153,7 +153,7 @@ error certification is inferred. Construction restores the caller's algebra.
 function continuous_map(
         f, fit::Union{PiecewiseTaylorMap, PiecewiseTaylorModel, PiecewisePolygonMap};
         continuity::Symbol = :c2, overlap::Real = 1 // 4,
-        order::Integer = max(1, degree(fit)), atol = nothing,
+        order::Integer = max_order(fit), atol = nothing,
         estimator::ADSEstimator = continuity_estimator(fit),
         guard_order::Integer = estimator isa GuardedTail ? 2 : 0,
         check_points::Bool = !(estimator isa IntervalBound), names = nothing,
@@ -162,8 +162,7 @@ function continuous_map(
     continuity in (:c0, :c1, :c2) || throw(ArgumentError("continuity must be :c0, :c1 or :c2"))
     fraction = polygon_real(overlap)
     0 < fraction <= 1 || throw(ArgumentError("overlap must lie in (0,1]"))
-    1 <= order <= 65535 && 0 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid retained/guard order"))
-    (estimator isa GuardedTail ? guard_order > 0 : guard_order == 0) || throw(ArgumentError("Invalid guard order for estimator"))
+    ads_check_order(order, guard_order, estimator)
     validated = fit isa PiecewiseTaylorModel || fit isa PiecewisePolygonMap && fit._estimator isa IntervalBound
     validated == (estimator isa IntervalBound) || throw(ArgumentError("Use IntervalBound only with an interval source fit"))
     validated && check_points && throw(ArgumentError("IntervalBound does not use sampled acceptance"))
