@@ -8,6 +8,16 @@ using CairoMakie
 f(x, y) = exp(x + y) * cos(x * y) + log(one(x) + one(x) + x^2)
 box = [interval(Float64, -1 // 4, 1 // 4), interval(Float64, -1 // 8, 1 // 8)]
 
+# Interval coefficients use the same polynomial engine and truncation rules.
+# At order one the square is discarded. The model wrapper keeps its error on
+# the declared normalized domain; coefficients alone cannot certify this error.
+u, = variables(Interval{Float64}, 1; order = 1)
+@assert iszero(u * u)
+println("Order-one interval polynomial square: ", enclose(u * u, [interval(-1, 1)]))
+u, = taylor_models([interval(-1, 1)]; order = 1)
+@assert isequal_interval(remainder(u * u), interval(0, 1))
+println("Order-one model square remainder: ", remainder(u * u))
+
 # Ordinary DA computes a truncated polynomial. The interval bound below encloses
 # exactly that stored polynomial, including its stored Float64 coefficients.
 # It contains no proof of the missing terms of `f`.
@@ -48,8 +58,8 @@ println(
 # Restricting `m` itself would keep its original remainder.
 parent = compile(m)
 tolerance = 1.0e-5
-root = validated_adaptive_map(v -> f(v...), box; order = 3, atol = tolerance, max_depth = 0, strict = false)
-ads = validated_adaptive_map(v -> f(v...), box; order = 3, atol = tolerance)
+root = adaptive_map(v -> f(v...), box; estimator = IntervalBound(), order = 3, atol = tolerance, splitter = :width, max_depth = 0, strict = false)
+ads = adaptive_map(v -> f(v...), box; estimator = IntervalBound(), order = 3, atol = tolerance, splitter = :width)
 @assert ads.converged
 println(
     (
@@ -58,6 +68,12 @@ println(
         largest_child_error_bound = maximum(p -> sup(abs(only(p.error_bounds))), ads.patches),
     )
 )
+
+# Refinement follows the ordinary ADS pattern and uses fresh callback fits.
+# The estimator and requested retained order default to their saved settings.
+refined = adaptive_map(v -> f(v...), ads; atol = tolerance / 4)
+@assert refined.converged && max_order(refined) == max_order(ads)
+println("Refined certified partition: ", length(refined.patches), " patches")
 
 # These bands bound entire physical cells along y=0. The black curve samples
 # the original expression for orientation only; it is not an inclusion oracle.

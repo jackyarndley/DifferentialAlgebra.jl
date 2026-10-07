@@ -15,15 +15,15 @@ function DA.continuity_candidate(f, lo, hi, A, options, ctx, ::DA.IntervalBound)
     box = [checked_interval(IA.interval(T, a, b); guaranteed = true) for (a, b) in zip(lo, hi)]
     z = coordinate_models(box, options.order)
     x = [sum(IA.interval(T, A[i, j]) * z[j] for j in eachindex(z)) for i in eachindex(z)]
-    values, scalar = validated_outputs(f(x), first(z))
-    DA.ads_check_context(ctx)
+    fit = validated_fit(f, x, first(z), ctx, ctx.basis.order)
+    values = fit.payload.models
     mids = [DA.TaylorPolynomial{T}(IA.mid.(m._polynomial.coeffs[1:m._polynomial.len]), m._polynomial.len, ctx) for m in values]
     map = DA.compile(mids)
     coordinates = first(z)._coordinates
     return (;
         center = IA.inf.(collect(coordinates.center)), radius = IA.inf.(collect(coordinates.radius)),
-        map, certificates = Tuple(DA.compile(m) for m in values),
-        errors = Tuple(fit_error(m) for m in values), scalar,
+        map, certificates = compile_models(values),
+        errors = fit.errors, scalar = fit.scalar,
     )
 end
 function DA.continuity_errors(patches::AbstractVector{<:DA.ContinuityPatch{T, C, V, E}}) where {T, C, V, E <: Tuple}
@@ -80,11 +80,10 @@ function DA.enclose(a::DA.ContinuousTaylorMap, query = nothing)
         any(lower .> upper) && continue
         # The query/support intersection is conservatively bounded in projected
         # coordinates. Certificate snapshots include the entire remainder.
-        values = map(patch.certificates) do m
-            T = IA.numtype(typeof(m._remainder))
-            box = [IA.intersect_interval(IA.interval(T, l, h), b; dec = :auto) for (l, h, b) in zip(lower, upper, m._coordinates.box)]
-            DA.enclose(m, box)
-        end
+        m = first(patch.certificates)
+        T = IA.numtype(typeof(m._remainder))
+        box = [IA.intersect_interval(IA.interval(T, l, h), b; dec = :auto) for (l, h, b) in zip(lower, upper, m._coordinates.box)]
+        values = snapshot_bounds(patch.certificates, box)
         result = result === nothing ? values : map((x, y) -> IA.hull(x, y; dec = :auto), result, values)
     end
     result === nothing && throw(ErrorException("Overlap fits did not cover the query"))

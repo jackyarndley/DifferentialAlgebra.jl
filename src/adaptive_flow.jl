@@ -9,7 +9,8 @@ the same shape. Both callbacks must work with numbers and Taylor polynomials.
 `times` is a finite, strictly monotone vector, with at least two entries;
 backward propagation is supported. An adaptive ODE solve can implement `advance`.
 
-All keywords and estimators match [`adaptive_map`](@ref). The initial map and
+Keywords and ordinary estimators match [`adaptive_map`](@ref). `IntervalBound`
+supports static maps only and is rejected for time integration. The initial map and
 every checkpoint are checked, including independent numeric trajectories when
 `check_points = true`. Guard coefficients are retained between intervals.
 When a check fails, the children restart from `initial` at `first(times)`;
@@ -87,7 +88,7 @@ end
 function ads_flow_check(value, box, probes, states, ctx, options)
     p = ads_analyze(value, box, options, ctx)
     options.check_points && ads_check_points!(p, probes, states)
-    ads_check_context(ctx)
+    ads_check_context(ctx, options.working_order)
     return ads_assess(p, options)
 end
 
@@ -112,7 +113,7 @@ function ads_candidate(problem::CheckpointFlow, box, x, ctx, options, allow_spli
         errors .= max.(errors, p.errors)
         accepted &= p.accepted
     end
-    return (; p..., errors, accepted)
+    return ADSCandidate(p.geometry, p.payload, errors, p.contributions, p.tolerance, p.scalar, accepted)
 end
 
 function ads_candidate(problem::MonitoredFlow, box, x, ctx, options, allow_split)
@@ -157,5 +158,5 @@ function ads_candidate(problem::MonitoredFlow, box, x, ctx, options, allow_split
         monitor(final, target)
     end
     p = current[]
-    return (; p..., errors, accepted = accepted[])
+    return ADSCandidate(p.geometry, p.payload, errors, p.contributions, p.tolerance, p.scalar, accepted[])
 end

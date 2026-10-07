@@ -77,7 +77,8 @@ remainder(a::TaylorModel) = (model_valid(a); deepcopy(a._remainder))
     domain(model)
 
 Return an independent physical validity domain: a vector of intervals for
-models/box ADS or a `ConvexPolygon` for polygon ADS.
+models/validated box ADS, `(lower, upper)` vectors in a named tuple for ordinary
+box ADS, or a `ConvexPolygon` for polygon ADS.
 """
 domain(a::TaylorModel) = (model_valid(a); collect(deepcopy(a._coordinates.box)))
 coefficient_type(::TaylorModel{T}) where {T} = T

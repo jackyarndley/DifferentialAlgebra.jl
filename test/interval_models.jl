@@ -1,13 +1,7 @@
 using Test, DifferentialAlgebra, IntervalArithmetic, LinearAlgebra
 
-const IA = IntervalArithmetic
-const DA = DifferentialAlgebra
-const IF = Interval{Float64}
-const IB = Interval{BigFloat}
-subset(a, b) = IA.issubset_interval(a, b)
-interval_contains(a, x) = IA.in_interval(x, a)
-sameinterval(a, b) = IA.isequal_interval(a, b)
-guaranteed_coefficients(p) = all(IA.isguaranteed, p.coeffs[1:p.len])
+isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
+using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinterval, guaranteed_coefficients
 
 @testset "Optional extension and loading" begin
     @test Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt) !== nothing
@@ -83,9 +77,9 @@ end
             @test guaranteed_coefficients(f(2 + x / 4 + y / 8))
         end
         for f in (log, inv, sqrt)
-            @test_throws Exception f(TaylorPolynomial{I}(z) + x)
+            @test_throws (f === sqrt ? DomainError : DA.TaylorError) f(TaylorPolynomial{I}(z) + x)
         end
-        @test_throws Exception Float64(p)
+        @test_throws MethodError Float64(p)
         set_coefficient_tolerance!(1)
         @test degree(IA.interval(T, 1 // 1000) * x) == 1
         set_coefficient_tolerance!(0)
@@ -274,15 +268,21 @@ end
             @test interval_contains(evaluate(m, [0]), f === cos || f === exp ? 1 : 0)
             @test IA.decoration(evaluate(m, [0])) == IA.com
         end
-        # Independent analytical uniform remainder bounds. For |u|<=1/4:
-        # |sin(u)-u|<=|u|^3/6; -u^2/2<=cos(u)-1<=0.
-        @test subset(IA.interval(T, -1 // 384, 1 // 384), remainder(sin(x)))
-        @test subset(IA.interval(T, -1 // 32, 0), remainder(cos(x)))
-        # log(1+u)-u in [-1/24,0] by integrating -u/(1+u).
-        @test subset(IA.interval(T, -1 // 24, 0), remainder(log(1 + x)))
-        # sqrt(1+u)-1-u/2 = -u^2/(2*(1+sqrt(1+u))^2),
-        # and sqrt(1+u)>=3/4, giving [-1/98,0].
-        @test subset(IA.interval(T, -1 // 98, 0), remainder(sqrt(1 + x)))
+        # Exact retained coefficients and analytic whole-range oracles.
+        # These functions are monotone on h, except cos whose maximum is at 0.
+        @test sameinterval(coefficient(polynomial(sin(x)), [1]), IA.interval(T, 1 // 4))
+        @test sameinterval(constant_term(polynomial(cos(x))), one(Interval{T}))
+        for (fn, argument) in ((sin, x), (cos, x), (log, 1 + x), (sqrt, 1 + x))
+            physical = fn in (sin, cos) ? h : one(Interval{T}) + h
+            @test subset(fn(physical), enclose(fn(argument)))
+        end
+        # Separate tightness regressions for the degree-one Taylor-theorem
+        # bounder. Valid remainders need not contain an older analytical outer
+        # bound on the true remainder (e.g. |sin(u)-u| <= |u|³/6).
+        @test IA.sup(abs(remainder(sin(x)))) <= 1 // 128
+        @test IA.sup(abs(remainder(cos(x)))) <= 1 // 32
+        @test IA.sup(abs(remainder(log(1 + x)))) <= 1 // 16
+        @test IA.sup(abs(remainder(sqrt(1 + x)))) <= 1 // 64
         for f in (inv, log, sqrt)
             @test IA.isguaranteed(enclose(f(1 + x)))
         end
@@ -290,7 +290,8 @@ end
         # Exact geometric-series identity: inv(1-u)-(1+u+u^2)
         # = u^3/(1-u), uniformly in [-1/48,1/48].
         reciprocal = inv(1 - x)
-        @test subset(IA.interval(T, -1 // 48, 1 // 48), remainder(reciprocal))
+        @test subset(inv(one(Interval{T}) - h), enclose(reciprocal))
+        @test IA.sup(abs(remainder(reciprocal))) <= 1 // 20 # Tightness, not inclusion of a coarser bound.
         @test interval_contains(coefficient(polynomial(reciprocal), [2]), 1 // 16) # x = ξ/4
         @test interval_contains(evaluate((1 - x)^(-2), [0]), 1)
         @test interval_contains(evaluate(1 / (1 - x), [0]), 1)

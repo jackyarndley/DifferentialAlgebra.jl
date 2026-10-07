@@ -20,6 +20,21 @@ function Base.getproperty(p::PolygonPatch, name::Symbol)
     return getfield(p, name)
 end
 Base.propertynames(::PolygonPatch) = (:_domain, :_patch, :depth, :status, :error_estimate, :error_bounds)
+nvariables(::PolygonPatch) = 2
+noutputs(p::PolygonPatch) = noutputs(p._patch)
+degree(p::PolygonPatch) = degree(p._patch)
+max_order(p::PolygonPatch) = max_order(p._patch)
+
+# Cuts remain in physical coordinates, so refinement can choose a new frame
+# while preserving all of the old partition's boundaries and lookup branches.
+struct PolygonNode
+    normal::PolygonPoint
+    midpoint::PolygonReal
+    left::Int
+    right::Int
+    patch::Int
+end
+PolygonNode() = PolygonNode((zero(PolygonReal), zero(PolygonReal)), zero(PolygonReal), 0, 0, 0)
 
 """
     PiecewisePolygonMap
@@ -34,6 +49,7 @@ struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator}
     _domain::ConvexPolygon{T}
     _directions::Matrix{PolygonReal}
     patches::Tuple{Vararg{PolygonPatch{T, P}}}
+    nodes::Vector{PolygonNode}
     _order::Int
     _scalar::Bool
     _estimator::E
@@ -48,14 +64,10 @@ onto the splitting frame. It need not be orthonormal.
 """
 split_directions(a::PiecewisePolygonMap) = deepcopy(a._directions)
 nvariables(::PiecewisePolygonMap) = 2
-noutputs(a::PiecewisePolygonMap) = polygon_noutputs(first(a.patches)._patch)
-polygon_noutputs(p::TaylorPatch) = noutputs(p.map)
-polygon_noutputs(p::TaylorModelPatch) = length(p.models)
-degree(a::PiecewisePolygonMap) = maximum(p -> polygon_degree(p._patch), a.patches)
-polygon_degree(p::TaylorPatch) = degree(p.map)
-polygon_degree(p::TaylorModelPatch) = maximum(degree, p.models)
+noutputs(a::PiecewisePolygonMap) = noutputs(first(a.patches))
+degree(a::PiecewisePolygonMap) = maximum(degree, a.patches)
 max_order(a::PiecewisePolygonMap) = a._order
-Base.copy(a::PiecewisePolygonMap) = PiecewisePolygonMap(copy(a._domain), deepcopy(a._directions), deepcopy(a.patches), a._order, a._scalar, a._estimator, a.converged)
+Base.copy(a::PiecewisePolygonMap) = PiecewisePolygonMap(copy(a._domain), deepcopy(a._directions), deepcopy(a.patches), deepcopy(a.nodes), a._order, a._scalar, a._estimator, a.converged)
 Base.deepcopy_internal(a::PiecewisePolygonMap, copies::IdDict) = get!(() -> copy(a), copies, a)
 (a::PiecewisePolygonMap)(point) = evaluate(a, point)
 Base.show(io::IO, a::PiecewisePolygonMap) = print(io, "PiecewisePolygonMap(", length(a.patches), " polygons, ", a.converged ? "converged" : "unresolved", ")")
@@ -86,16 +98,10 @@ end
 function adaptive_map(
         f, previous::PiecewisePolygonMap;
         estimator::ADSEstimator = previous._estimator,
-        order::Integer = max(1, degree(previous)),
+        order::Integer = max_order(previous),
         directions = split_directions(previous), kwargs...
     )
     return polygon_construct(f, domain(previous); estimator, order, directions, partition = previous, kwargs...)
-end
-
-function polygon_check_context(ctx, order)
-    CURRENT_ALGEBRA[] === ctx && ctx.cutoff == order && iszero(ctx.epsilon) && ctx.big_epsilon === nothing ||
-        throw(ArgumentError("The callback changed the algebra configuration"))
-    return nothing
 end
 
 # Sensitivity only selects a frame. Neither midpoints nor these nearest-rounded
@@ -156,49 +162,63 @@ function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimat
     all(r -> isfinite(r) && r > 0, geometry.radius) || throw(ArgumentError("Polygon cover is not representable; use a wider scalar type"))
     x = [variable(i, T) for i in 1:2]
     z = geometry.center .+ geometry.radius .* x
-    values, scalar = ads_outputs(f(T.(A) * z))
-    polygon_check_context(ctx, options.working_order)
-    C = foldl((R, p) -> promote_type(R, p isa TaylorPolynomial ? coefficient_type(p) : typeof(p)), values; init = T)
-    C <: AbstractFloat || throw(ArgumentError("Ordinary polygon ADS requires floating coefficients; select IntervalBound for interval validation"))
-    polynomials = TaylorPolynomial{C}.(values)
-    all(p -> valid(p) === ctx && all(isfinite, @view(p.coeffs[1:p.len])), polynomials) || throw(ArgumentError("Invalid Taylor coefficients"))
-    errors = [ads_error(p, options.order, estimator) for p in polynomials]
-    contributions = zeros(C, length(values), 2)
-    for (j, p) in enumerate(polynomials)
-        ads_contributions!(contributions, p, j, options.order, estimator)
-    end
-    compiled = CompiledMap([trim(p, 0, options.order) for p in polynomials])
-    p = (; geometry..., compiled, errors, contributions, scale = abs.(constant_term.(polynomials)), scalar)
+    p = ads_analyze(f(T.(A) * z), geometry, options, ctx)
     if options.check_points
         points = collect(polygon._vertices)
         push!(points, ntuple(i -> sum(v -> v[i], polygon._vertices) / length(polygon._vertices), 2))
         probes = [(T.(collect(v)), (T.(collect(polygon_project(B, v))) - geometry.center) ./ geometry.radius, 0) for v in points]
         ads_check_points!(p, probes, (f(point) for (point, _, _) in probes))
     end
-    polygon_check_context(ctx, options.working_order)
+    ads_check_context(ctx, options.working_order)
     assessed = ads_assess(p, options)
-    directions = polygon_sensitivity(polynomials, geometry.radius, options.scales, assessed.tolerance, T)
-    return (; assessed..., projection = (lo, hi), directions)
+    directions = polygon_sensitivity(p.polynomials, geometry.radius, options.scales, assessed.tolerance, T)
+    cover = (; geometry..., projection = (lo, hi), directions)
+    return ADSCandidate(cover, assessed.payload, assessed.errors, assessed.contributions, assessed.tolerance, assessed.scalar, assessed.accepted)
 end
 function polygon_candidate(f, polygon, B, A, options, ctx, estimator::IntervalBound)
     throw(ArgumentError("Load IntervalArithmetic to use IntervalBound on polygons"))
 end
 
-function polygon_axis(p, original, options)
-    best, axis = -Inf, 0
-    widest = -Inf
-    for i in 1:2
-        polygon_splittable(p, i) || continue
-        width = (p.projection[2][i] - p.projection[1][i]) / (original[2][i] - original[1][i])
-        score = options.splitter == :width ? zero(best) : maximum(j -> ads_ratio(p.contributions[j, i], p.tolerance[j]), eachindex(p.errors))
-        if score > best || (score == best && width > widest)
-            axis, best, widest = i, score, width
-        end
-    end
-    return axis
+struct PolygonADS{T <: AbstractFloat}
+    root::ConvexPolygon{T}
+    B::Matrix{PolygonReal}
+    A::Matrix{PolygonReal}
+    original::Tuple{NTuple{2, PolygonReal}, NTuple{2, PolygonReal}}
 end
-polygon_splittable(p, i) = p.lo[i] < p.center[i] < p.hi[i]
-polygon_patch(p, depth, status) = TaylorPatch(p.lo, p.hi, p.center, p.radius, p.compiled, p.errors, depth, status)
+ads_root_node(::PolygonADS) = PolygonNode()
+ads_patch_domain(::PolygonADS, p::PolygonPatch) = domain(p)
+ads_leaf(::PolygonNode, patch) = PolygonNode((zero(PolygonReal), zero(PolygonReal)), zero(PolygonReal), 0, 0, patch)
+ads_node_value(node::PolygonNode, point) = node.normal[1] * point[1] + node.normal[2] * point[2]
+function ads_query_bounds(node::PolygonNode, points)
+    values = map(x -> ads_node_value(node, x), points)
+    return minimum(values), maximum(values)
+end
+# Positive-area exact polygons can be clipped; representability of the fitted
+# cover is checked separately before choosing a cut.
+ads_has_split(::ConvexPolygon) = true
+ads_fit(problem::StaticMap, g::PolygonADS, polygon, ctx, options, allow_split) =
+    polygon_candidate(problem.f, polygon, g.B, g.A, options, ctx, options.estimator)
+ads_patch_type(::PolygonADS{T}, p) where {T} = PolygonPatch{T, ads_payload_patch_type(p.payload, p.geometry)}
+function ads_finalize(::PolygonADS, polygon, p, depth, status, order)
+    return PolygonPatch(polygon, ads_local_patch(p.payload, p.geometry, p.errors, depth, status, order))
+end
+function ads_result(g::PolygonADS, patches, nodes, scalar, options)
+    return PiecewisePolygonMap(copy(g.root), deepcopy(g.B), Tuple(patches), nodes, options.order, scalar, options.estimator, all(p -> p.status == :converged, patches))
+end
+
+function ads_relative_width(g::PolygonADS, cover, i)
+    projection = cover.projection
+    return (projection[2][i] - projection[1][i]) / (g.original[2][i] - g.original[1][i])
+end
+function ads_split(g::PolygonADS, polygon, p, axis, left, right)
+    projection = p.geometry.projection
+    cut = (projection[1][axis] + projection[2][axis]) / 2
+    normal = (g.B[axis, 1], g.B[axis, 2])
+    left_polygon = polygon_clip(polygon, normal, cut)
+    right_polygon = polygon_clip(polygon, (-normal[1], -normal[2]), -cut)
+    left_polygon === nothing || right_polygon === nothing ? throw(ArgumentError("Degenerate polygon split")) : nothing
+    return left_polygon, right_polygon, PolygonNode(normal, cut, left, right, 0)
+end
 
 function polygon_construct(
         f, polygon::ConvexPolygon{T}; order::Integer = 5, atol = 1.0e-8, rtol::Real = 0,
@@ -208,15 +228,13 @@ function polygon_construct(
         directions = nothing, max_depth::Integer = 20, max_patches::Integer = 1024,
         names = nothing, table_bytes::Integer = 32 * 1024^2, partition = nothing
     ) where {T}
-    1 <= order <= 65535 && 0 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid order"))
-    (estimator isa GuardedTail ? guard_order > 0 : guard_order == 0) || throw(ArgumentError("Invalid guard_order for estimator"))
-    splitter in (:oriented, :tail, :width) || throw(ArgumentError("Unsupported polygon splitter"))
-    isfinite(rtol) && rtol >= 0 || throw(ArgumentError("Invalid relative tolerance"))
-    0 <= max_depth <= typemax(Int) && 1 <= max_patches <= typemax(Int) || throw(ArgumentError("Invalid splitting limits"))
-    estimator isa IntervalBound && (rtol != 0 || check_points) && throw(ArgumentError("IntervalBound uses absolute bounds, not relative tolerances or samples"))
-    partition !== nothing && (length(partition.patches) > max_patches || maximum(p -> p.depth, partition.patches) > max_depth) && throw(ArgumentError("Limits are smaller than the existing partition"))
+    settings = ads_options(;
+        order, atol, rtol, estimator, splitter, guard_order,
+        max_depth, max_patches, check_points, strict, splitters = (:oriented, :tail, :width)
+    )
+    ads_check_partition(partition, settings)
     _, scales = polygon_probe(polygon)
-    options = (; order = Int(order), working_order = Int(order + guard_order), atol, rtol, estimator, splitter, check_points, strict, scales)
+    options = (; settings..., scales)
     return with_algebra(max(2, options.working_order), 2; names, table_bytes) do ctx
         B, A = if directions === nothing || directions === :auto
             probe, _ = polygon_probe(polygon)
@@ -224,41 +242,15 @@ function polygon_construct(
             candidate = with_order(2) do
                 polygon_candidate(f, probe, Matrix{PolygonReal}(I, 2, 2), Matrix{PolygonReal}(I, 2, 2), probe_options, ctx, estimator)
             end
-            polygon_frame(candidate.directions)
+            polygon_frame(candidate.geometry.directions)
         else
             polygon_frame(directions === :axes ? Matrix{T}(I, 2, 2) : directions)
         end
         original = polygon_projection_bounds(polygon, B)
-        pending = partition === nothing ? [(copy(polygon), 0)] : [(domain(p), p.depth) for p in reverse(partition.patches)]
-        patch_count = length(pending)
-        patches = nothing
-        shape = nothing
-        with_order(options.working_order) do
-            while !isempty(pending)
-                child, depth = pop!(pending)
-                p = polygon_candidate(f, child, B, A, options, ctx, estimator)
-                newshape = (p.scalar, length(p.errors))
-                shape === nothing ? (shape = newshape) : shape == newshape || throw(DimensionMismatch("Callback changed output shape"))
-                axis = p.accepted ? 0 : polygon_axis(p, original, options)
-                status = p.accepted ? :converged : depth >= max_depth ? :max_depth : patch_count >= max_patches ? :max_patches : axis == 0 ? :roundoff : :split
-                if status == :split
-                    cut = (p.projection[1][axis] + p.projection[2][axis]) / 2
-                    normal = (B[axis, 1], B[axis, 2])
-                    left = polygon_clip(child, normal, cut)
-                    right = polygon_clip(child, (-normal[1], -normal[2]), -cut)
-                    left === nothing || right === nothing ? throw(ArgumentError("Degenerate polygon split")) : nothing
-                    push!(pending, (right, depth + 1), (left, depth + 1))
-                    patch_count += 1
-                else
-                    strict && !p.accepted && throw(ErrorException("Polygon ADS reached $status; increase limits or use strict=false"))
-                    patch = PolygonPatch(child, polygon_patch(p, depth, status))
-                    patches === nothing && (patches = typeof(patch)[])
-                    patch isa eltype(patches) || throw(ArgumentError("Callback changed coefficient type"))
-                    push!(patches, patch)
-                end
-            end
+        geometry = PolygonADS(copy(polygon), B, A, original)
+        return with_order(options.working_order) do
+            ads_build(StaticMap(f), geometry, ctx, options, partition)
         end
-        return PiecewisePolygonMap(copy(polygon), deepcopy(B), Tuple(patches), Int(order), shape[1], estimator, all(p -> p.status == :converged, patches))
     end
 end
 
@@ -271,8 +263,7 @@ end
 function evaluate(a::PiecewisePolygonMap, point)
     a._estimator isa IntervalBound && return polygon_interval_query(a, point; point = true)
     x = polygon_point(a, point)
-    patch = findfirst(p -> polygon_contains(p._domain, x), a.patches)
-    patch === nothing && throw(ErrorException("Polygon partition has a coverage gap"))
+    patch = ads_point_patch(a.nodes, x)
     p = a.patches[patch]._patch
     T = eltype(p.center)
     z = (T.(collect(polygon_project(a._directions, x))) - p.center) ./ p.radius

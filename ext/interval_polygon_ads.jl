@@ -13,32 +13,15 @@ function DA.polygon_candidate(
     box = [checked_interval(IA.interval(T, lo[i], hi[i]); guaranteed = true) for i in 1:2]
     z = coordinate_models(box, options.order)
     x = [sum(IA.interval(T, A[i, j]) * z[j] for j in 1:2) for i in 1:2]
-    values, scalar = validated_outputs(f(x), first(z))
-    DA.polygon_check_context(ctx, options.working_order)
-    tolerances = validated_tolerances(I, options.atol, length(values))
-    errors = Tuple(fit_error(m) for m in values)
-    contributions = [interval_contribution(m, i) for m in values, i in 1:2]
-    accepted = all(j -> IA.sup(abs(errors[j])) <= tolerances[j], eachindex(errors))
+    candidate = validated_candidate(f, x, first(z), box, ctx, options)
+    values = candidate.payload.models
     geometry = DA.ads_geometry(IA.inf.(box), IA.sup.(box))
     polynomials = [m._polynomial for m in values]
     radii = [IA.inf(r) for r in first(z)._coordinates.radius]
-    directions = DA.polygon_sensitivity(polynomials, radii, options.scales, tolerances, T)
-    return (;
-        geometry..., projection = (lo, hi), scalar, errors, contributions,
-        tolerance = tolerances, accepted, directions,
-        snapshots = Tuple(DA.compile(m) for m in values), interval_bound = true,
-    )
+    directions = DA.polygon_sensitivity(polynomials, radii, options.scales, candidate.tolerance, T)
+    cover = (; geometry..., projection = (lo, hi), directions)
+    return DA.ADSCandidate(cover, candidate.payload, candidate.errors, candidate.contributions, candidate.tolerance, candidate.scalar, candidate.accepted)
 end
-
-# More specific than the ordinary candidate NamedTuple methods, without a
-# framework of coefficient traits or changes to the existing polynomial engine.
-const IntervalPolygonCandidate = NamedTuple{
-    (
-        :lo, :hi, :center, :radius, :projection, :scalar, :errors, :contributions,
-        :tolerance, :accepted, :directions, :snapshots, :interval_bound,
-    ),
-}
-DA.polygon_patch(p::IntervalPolygonCandidate, depth, status) = DA.TaylorModelPatch(p.snapshots, deepcopy(p.errors), depth, status)
 
 function polygon_query_constraints(p::DA.ConvexPolygon)
     v = p._vertices
@@ -79,7 +62,8 @@ function polygon_interval_constraints(a, query)
     return [((one(R), zero(R)), hi[1]), ((-one(R), zero(R)), -lo[1]), ((zero(R), one(R)), hi[2]), ((zero(R), -one(R)), -lo[2])]
 end
 
-function polygon_snapshot_bound(model::DA.CompiledTaylorModel{I}, points, B) where {I <: Interval}
+function polygon_snapshot_bounds(models::Tuple{Vararg{DA.CompiledTaylorModel{I}}}, points, B) where {I <: Interval}
+    model = first(models)
     T = IA.numtype(I)
     projected = map(x -> DA.polygon_project(B, x), points)
     box = map(1:2) do i
@@ -88,7 +72,7 @@ function polygon_snapshot_bound(model::DA.CompiledTaylorModel{I}, points, B) whe
         # handles a caller reducing BigFloat precision since construction.
         IA.intersect_interval(value, model._coordinates.box[i]; dec = :auto)
     end
-    return DA.enclose(model, box)
+    return snapshot_bounds(models, box)
 end
 
 function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; point = false)
@@ -97,7 +81,18 @@ function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; p
     exact = point ? polygon_interval_point(a, query) : nothing
     constraints = query === nothing || point ? nothing : polygon_interval_constraints(a, query)
     result = nothing
-    for patch in a.patches
+    query_points = if point
+        (exact,)
+    elseif query === nothing
+        a._domain._vertices
+    elseif query isa DA.ConvexPolygon
+        query._vertices
+    else
+        lo, hi = DA.polygon_real.(IA.inf.(query)), DA.polygon_real.(IA.sup.(query))
+        ((lo[1], lo[2]), (lo[1], hi[2]), (hi[1], lo[2]), (hi[1], hi[2]))
+    end
+    DA.ads_visit_intersections(a.nodes, query_points) do index
+        patch = a.patches[index]
         points = if point
             DA.polygon_contains(patch._domain, exact) ? (exact,) : ()
         elseif query === nothing
@@ -110,9 +105,10 @@ function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; p
             end
             remaining
         end
-        isempty(points) && continue
-        values = [polygon_snapshot_bound(m, points, a._directions) for m in patch._patch.models]
+        isempty(points) && return nothing
+        values = polygon_snapshot_bounds(patch._patch.models, points, a._directions)
         result = result === nothing ? values : [IA.hull(x, y; dec = :auto) for (x, y) in zip(result, values)]
+        return nothing
     end
     result === nothing && throw(ErrorException("Polygon partition has a coverage gap"))
     return a._scalar ? only(result) : result
