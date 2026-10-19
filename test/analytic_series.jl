@@ -64,18 +64,19 @@ end
         for (f, oracle) in cases
             @testset "$f, table_bytes=$budget" begin
                 p = f in (inv, log) ? f(1 + x) : f(x)
-                @test [coefficient(p, [k]) for k in 0:order] ≈
-                    Float64[oracle(k) for k in 0:order] atol = 1.0e-14 rtol = 1.0e-14
+                actual = [coefficient(p, [k]) for k in 0:order]
+                expected = Float64[oracle(k) for k in 0:order]
+                @test all(isapprox.(actual, expected; atol = 1.0e-15, rtol = 0))
             end
         end
         for n in (2, 5, 10)
             p = (1 + x)^n
-            @test [coefficient(p, [k]) for k in 0:order] ≈ [binomial(n, k) for k in 0:order]
+            @test [coefficient(p, [k]) for k in 0:order] == [binomial(n, k) for k in 0:order]
         end
         for n in 2:5
             p = DifferentialAlgebra.nthroot(1 + x, n)
             expected = [prod(1 // n - j for j in 0:(k - 1); init = 1) / factorial(big(k)) for k in 0:order]
-            @test [coefficient(p, [k]) for k in 0:order] ≈ Float64.(expected) atol = 1.0e-15
+            @test all(isapprox.([coefficient(p, [k]) for k in 0:order], Float64.(expected); atol = 1.0e-15, rtol = 0))
         end
     end
 end
