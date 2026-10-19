@@ -30,6 +30,8 @@ Base.getindex(v::ShiftedVector, i::Int) = v.data[i + 1]
     @test_throws ArgumentError set_coefficient!(copy(x), counts, 2)
     @test_throws ArgumentError evaluate(x, ShiftedVector([0.1, 0.2]))
     for T in (Real, AbstractFloat)
+        @test_throws ArgumentError TaylorPolynomial{T}()
+        @test_throws ArgumentError variable(1, T)
         @test_throws ArgumentError TaylorPolynomial{T}(1)
         @test_throws ArgumentError TaylorPolynomial{T}(1, 1)
         @test_throws ArgumentError TaylorPolynomial{T}(T[1], 1, x.algebra)
@@ -53,5 +55,6 @@ Base.getindex(v::ShiftedVector, i::Int) = v.data[i + 1]
     @test TimeSeries(1:3).coefficients == [1, 2, 3]
     for f in (round, trunc), p in (x + 2.3, TaylorPolynomial(Inf))
         @test_throws MethodError f(p)
+        @test_throws MethodError f(Int, p)
     end
 end

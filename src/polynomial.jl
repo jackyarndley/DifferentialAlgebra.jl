@@ -33,6 +33,7 @@ mutable struct TaylorPolynomial{T <: Real} <: Real
         return new{T}(coeffs, len, algebra)
     end
 end
+TaylorPolynomial(coeffs::Vector{T}, len::Int, algebra::Algebra) where {T <: Real} = TaylorPolynomial{T}(coeffs, len, algebra)
 struct TaylorError <: Exception
     message::String
 end
@@ -245,7 +246,11 @@ coefficient_type(::Type{TaylorPolynomial{T}}) where {T} = T
 TaylorPolynomial() = TaylorPolynomial(0.0)
 TaylorPolynomial(x::Real) = TaylorPolynomial{typeof(float(x))}(x)
 TaylorPolynomial(a::TaylorPolynomial) = copy(a)
-function TaylorPolynomial{T}(x::Real = zero(T)) where {T <: Real}
+function TaylorPolynomial{T}() where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
+    return TaylorPolynomial{T}(zero(T))
+end
+function TaylorPolynomial{T}(x::Real) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     ctx = ready()
     c = coefficient_convert(T, x)
@@ -267,6 +272,7 @@ Return independent variable `i` in the current algebra with coefficient type `T`
 Indices start at one. This does not reinitialize or invalidate other polynomials.
 """
 function variable(i::Integer, ::Type{T} = Float64) where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     i >= 1 || throw(ArgumentError("Variable indices start at one"))
     return TaylorPolynomial{T}(i, one(T))
 end

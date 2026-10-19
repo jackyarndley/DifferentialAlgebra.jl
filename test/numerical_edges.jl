@@ -3,6 +3,11 @@ include("support/intervals.jl")
 using .IntervalTestSupport: IA, sameinterval, interval_contains
 
 @testset "Exact affine binomial factors" begin
+    for T in (Int, Rational{Int})
+        x, = variables(T, 1; order = 60)
+        p = DifferentialAlgebra.translate_variable(x^60, 1, 1, 1)
+        @test all(k -> coefficient(p, [k]) == binomial(big(60), k), 0:60)
+    end
     for T in (BigInt, Rational{BigInt}), budget in (0, 32 * 1024^2)
         x, = variables(T, 1; order = 60, table_bytes = budget)
         # Degree 60 has binomial coefficients beyond exact Float64 integers.
