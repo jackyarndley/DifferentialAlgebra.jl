@@ -3,6 +3,34 @@ using LinearAlgebra, GenericLinearAlgebra, ForwardDiff
 
 import ForwardDiff: Dual
 
+@testset "Eigenpair validation and scalar result types" begin
+    for T in (Int, Float32, Float64, BigFloat)
+        variables(T, 1; order = 2)
+        for A in (T[2 1; 1 4], T[2 0; 0 4])
+            expected = eigen(Symmetric(A))
+            values, vectors = DifferentialAlgebra.eigenpairs(TaylorPolynomial{T}.(A))
+            @test coefficient_type(eltype(values)) === eltype(expected.values)
+            @test coefficient_type(eltype(vectors)) === eltype(expected.vectors)
+            @test constant_term(values) ≈ expected.values
+            @test A * constant_term(vectors) ≈ constant_term(vectors) * Diagonal(expected.values)
+        end
+    end
+    for A in ([1 2; 0 3],)
+        @test_throws ArgumentError DifferentialAlgebra.eigenpairs(A)
+        @test_throws ArgumentError DifferentialAlgebra.eigenpairs(TaylorPolynomial.(A))
+    end
+    @test_throws DimensionMismatch DifferentialAlgebra.eigenpairs(ones(2, 3))
+    x, = variables(1; order = 4)
+    A = [2 + x one(x) + x^4; one(x) 4 + x]
+    B = [2 + x one(x) + 1.0e-8x; one(x) 4 + x]
+    with_order(2) do
+        set_coefficient_tolerance!(1.0e-4)
+        @test_throws ArgumentError DifferentialAlgebra.eigenpairs(A)
+        @test_throws ArgumentError DifferentialAlgebra.eigenpairs(B)
+        @test truncation_order() == 2
+    end
+end
+
 @testset verbose = true "Eigendecomposition" begin
 
     DifferentialAlgebra.initialize!(1, 6)

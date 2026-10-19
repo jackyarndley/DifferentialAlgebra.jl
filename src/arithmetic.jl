@@ -232,7 +232,5 @@ function coefficient_norm(a::TaylorPolynomial, p::Real = 0)
     valid(a)
     isinteger(p) && p >= 0 || throw(ArgumentError("Use a nonnegative integer coefficient norm"))
     c = @view a.coeffs[1:a.len]
-    p == 0 && return maximum(abs, c)
-    p == 1 && return sum(abs, c)
-    return sum(x -> abs(x)^p, c)^(one(float(constant_term(a))) / p)
+    return LinearAlgebra.norm(c, p == 0 ? Inf : p)
 end

@@ -21,3 +21,17 @@ using Test, DifferentialAlgebra
         @test DifferentialAlgebra.evaluate(other, T[2, 3]) == T[3, 5]
     end
 end
+
+@testset "Converting monomials" begin
+    for T in (Int, Float32, Float64, BigFloat, Rational{Int})
+        m = Monomial{T}(2, [1, 3])
+        @test coefficient(m) isa T
+        @test coefficient(m) == T(2)
+        @test exponents(m) == UInt32[1, 3]
+        @test coefficient(Monomial(T(2), view([1, 3], :))) isa T
+        @test_throws ArgumentError Monomial{T}(2, [-1])
+        @test_throws ArgumentError Monomial{T}(2, [big(typemax(UInt32)) + 1])
+    end
+    @test_throws ArgumentError Monomial{Real}(2, [1])
+    @test_throws InexactError Monomial{Int}(1.5, [1])
+end

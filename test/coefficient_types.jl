@@ -10,6 +10,37 @@ function evaluation_allocations(out, map, point, work)
     return @allocated DifferentialAlgebra.evaluate!(out, map, point, work)
 end
 
+@testset "Stable coefficient norms" begin
+    for T in (Int, Float32, Float64, BigFloat)
+        x, y = variables(T, 2; order = 2)
+        p = 3x + 4y
+        R = typeof(float(one(T)))
+        for (power, expected) in ((0, 4), (1, 7), (2, 5), (3, cbrt(R(91))))
+            value = coefficient_norm(p, power)
+            grouped = DifferentialAlgebra.degree_norms(p, 0, power)
+            @test value isa R
+            @test grouped isa Vector{R}
+            @test value ≈ R(expected)
+            @test grouped ≈ R[0, expected, 0]
+        end
+        @test_throws ArgumentError coefficient_norm(p, -1)
+        @test_throws ArgumentError coefficient_norm(p, 1.5)
+        @test_throws ArgumentError DifferentialAlgebra.degree_norms(p, 0, -1)
+        scales = T === Int ? (typemax(Int) ÷ 8,) : (sqrt(floatmax(T)), sqrt(floatmin(T)))
+        for scale in scales
+            p = scale * x + scale * y
+            for power in (1, 2, 3)
+                # Compare scaled answers: neither the oracle nor the test forms
+                # potentially overflowing or underflowing coefficient powers.
+                expected = R(2)^(one(R) / power)
+                @test coefficient_norm(p, power) / scale ≈ expected
+                @test DifferentialAlgebra.degree_norms(p, 0, power)[2] / scale ≈ expected
+                @test DifferentialAlgebra.degree_norms(p, 1, power)[1:2] ≈ R[scale, scale]
+            end
+        end
+    end
+end
+
 @testset "Typed Julia coefficients" begin
     for T in (Float32, Float64, BigFloat)
         DifferentialAlgebra.initialize!(5, 3)
@@ -140,5 +171,5 @@ end
     end
     DifferentialAlgebra.initialize!(70, 1)
     @test isfinite(DifferentialAlgebra.random_polynomial())
-    @test_throws ArgumentError DifferentialAlgebra.besselj(typemin(Int), TaylorPolynomial(1.0))
+    @test_throws ArgumentError besselj(typemin(Int), TaylorPolynomial(1.0))
 end

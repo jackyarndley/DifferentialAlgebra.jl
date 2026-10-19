@@ -13,7 +13,13 @@ struct Monomial{T <: Real}
         return new{T}(coefficient, exponents)
     end
 end
-Monomial(c::T, powers::Vector{UInt32}) where {T <: Real} = Monomial{T}(c, powers)
+function Monomial{T}(c::Real, powers::AbstractVector{<:Integer}) where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
+    Base.require_one_based_indexing(powers)
+    all(p -> 0 <= p <= typemax(UInt32), powers) || throw(ArgumentError("Exponents must fit UInt32"))
+    return Monomial{T}(coefficient_convert(T, c), UInt32[p for p in powers])
+end
+Monomial(c::T, powers::AbstractVector{<:Integer}) where {T <: Real} = Monomial{T}(c, powers)
 Monomial{T}() where {T <: Real} = Monomial{T}(zero(T), zeros(UInt32, nvariables()))
 Monomial() = Monomial{Float64}()
 coefficient(m::Monomial) = m.coefficient
@@ -194,13 +200,26 @@ end
 function degree_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0)
     b = valid(a).basis
     0 <= v <= b.variables && p >= 0 || throw(ArgumentError("Invalid norm arguments"))
-    out = zeros(typeof(abs(constant_term(a))), b.order + 1)
+    R = typeof(abs(float(constant_term(a))))
+    out = zeros(R, b.order + 1)
     @inbounds for i in 1:a.len
         degree = v == 0 ? b.degrees[i] : b.exponents[v, i]
-        c = abs(a.coeffs[i])
-        out[degree + 1] = p == 0 ? max(out[degree + 1], c) : out[degree + 1] + c^p
+        out[degree + 1] = max(out[degree + 1], abs(float(a.coeffs[i])))
     end
-    p > 1 && (out .= out .^ (one(eltype(out)) / p))
+    p == 0 && return out
+    # Scale each degree before taking powers, as in LinearAlgebra.norm. This
+    # avoids overflowing integers and floating powers of large/small coefficients.
+    sums = zeros(R, length(out))
+    @inbounds for i in 1:a.len
+        degree = v == 0 ? b.degrees[i] : b.exponents[v, i]
+        scale = out[degree + 1]
+        if isfinite(scale) && !iszero(scale)
+            sums[degree + 1] += (abs(float(a.coeffs[i])) / scale)^p
+        end
+    end
+    @inbounds for i in eachindex(out)
+        isfinite(out[i]) && (out[i] *= sums[i]^(one(R) / p))
+    end
     return out
 end
 function estimate_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0, n::Integer = max_order(a); errors::Bool = false)

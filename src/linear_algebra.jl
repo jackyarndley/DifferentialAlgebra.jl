@@ -69,23 +69,28 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         T = isconcretetype(eltype(A)) ? coefficient_type(eltype(A)) : Float64
         return TaylorPolynomial{T}[], Matrix{TaylorPolynomial{T}}(undef, 0, 0)
     end
-    T = mapreduce(coefficient_type, promote_type, A)
-    all(coefficient_norm(A[i, j] - A[j, i], 0) == 0 for i in 1:n,j in 1:n) || throw(ArgumentError("Expected a symmetric matrix"))
-    if all(iszero(A[i, j]) for i in 1:n for j in 1:n if i != j)
-        permutation = sortperm(constant_term.(LinearAlgebra.diag(A)))
-        return copy.(LinearAlgebra.diag(A)[permutation]), TaylorPolynomial{T}.(Matrix{T}(I, n, n)[:, permutation])
+    for j in 1:n, i in 1:(j - 1)
+        a, b = A[i, j], A[j, i]
+        all(k -> coefficient_at(a, k) == coefficient_at(b, k), 1:max(a.len, b.len)) ||
+            throw(ArgumentError("Expected a symmetric matrix"))
     end
+    T = mapreduce(coefficient_type, promote_type, A)
     A0 = Matrix{T}(constant_term.(A))
     F = LinearAlgebra.eigen(LinearAlgebra.Symmetric(A0))
-    values, vectors = TaylorPolynomial{T}.(F.values), TaylorPolynomial{T}.(F.vectors)
+    R, V = eltype(F.values), eltype(F.vectors)
+    if all(iszero(A[i, j]) for i in 1:n for j in 1:n if i != j)
+        permutation = sortperm(constant_term.(LinearAlgebra.diag(A)))
+        return TaylorPolynomial{R}.(LinearAlgebra.diag(A)[permutation]), TaylorPolynomial{V}.(F.vectors)
+    end
+    values, vectors = TaylorPolynomial{R}.(F.values), TaylorPolynomial{V}.(F.vectors)
     all(a -> a.len == 1, A) && return values, vectors
-    scale = max(one(T), maximum(abs, F.values; init = zero(T)))
-    minimum((abs(F.values[i] - F.values[j]) for i in 1:n for j in (i + 1):n); init = convert(T, Inf)) > 100eps(T) * scale ||
+    scale = max(one(R), maximum(abs, F.values; init = zero(R)))
+    minimum((abs(F.values[i] - F.values[j]) for i in 1:n for j in (i + 1):n); init = convert(R, Inf)) > 100eps(R) * scale ||
         throw(ArgumentError("Repeated or numerically indistinguishable eigenvalues do not define unique Taylor eigenvectors"))
     ctx = valid(first(A))
     for k in 1:n
         v0, lambda0 = F.vectors[:, k], F.values[k]
-        J = [A0 - lambda0 * I -v0; permutedims(v0) zero(T)]
+        J = [A0 - lambda0 * I -v0; permutedims(v0) zero(R)]
         Ji = inv(J)
         v, lambda = copy(vectors[:, k]), values[k]
         for degree in 1:ctx.cutoff
@@ -122,6 +127,9 @@ function eigen_residual(A, v, lambda, degree::Int)
     return result
 end
 function eigenpairs(A::AbstractMatrix{<:Real})
+    Base.require_one_based_indexing(A)
+    size(A, 1) == size(A, 2) || throw(DimensionMismatch("Expected a square matrix"))
+    LinearAlgebra.issymmetric(A) || throw(ArgumentError("Expected a symmetric matrix"))
     F = LinearAlgebra.eigen(LinearAlgebra.Symmetric(Matrix(A)))
     return F.values, F.vectors
 end
