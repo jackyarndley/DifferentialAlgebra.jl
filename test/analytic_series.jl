@@ -3,6 +3,39 @@ using ForwardDiff, SpecialFunctions
 
 include("support/series.jl")
 
+@testset "Filter completed analytic results" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 3, table_bytes = budget)
+        set_coefficient_tolerance!(1.0e-6)
+        q = 1.0e8 / (1.0e8 + 1.0e6x)
+        @test constant_term(q) == 1
+        @test coefficient(q, [1]) ≈ -0.01
+        @test iszero(inv(1.0e8 + 1.0e6x)) # Public reciprocal obeys tolerance.
+        @test coefficient_tolerance() == 1.0e-6
+
+        x, = variables(1; order = 10, table_bytes = budget)
+        set_coefficient_tolerance!(1.0e-4)
+        # Scalar differentiation gives exp(-5)*100^k/k!, independently of DA.
+        p = exp(-5 + 100x)
+        @test coefficient(p, [10]) ≈ exp(-5) * 100.0^10 / factorial(10)
+        @test coefficient_tolerance() == 1.0e-4
+
+        x, = variables(1; order = 2, table_bytes = budget)
+        set_coefficient_tolerance!(1.0e-4)
+        # erf''(4)*100^2/2 = -8exp(-16)*10000/sqrt(pi).
+        p = erf(4 + 100x)
+        @test coefficient(p, [2]) ≈ -0.005079293868746624
+        @test coefficient_tolerance() == 1.0e-4
+
+        x, = variables(1; order = 2, table_bytes = budget)
+        set_coefficient_tolerance!(1.0e-4)
+        # A normalized slope below tolerance can yield a retained coefficient
+        # after multiplication by the square root of a large expansion point.
+        @test coefficient(sqrt(1.0e16 + 1.0e11x), [1]) ≈ 500
+        @test coefficient(log(1.0e16 + 1.0e11x), [1]) == 0
+    end
+end
+
 @testset verbose = true "TEST 2: Single-variable functions" begin
     k = 10  # order
     eps = 1.0e-15  # tolerance for comparing real numbers

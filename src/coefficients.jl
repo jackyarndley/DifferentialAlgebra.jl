@@ -123,7 +123,10 @@ function coefficient_product(a::TaylorPolynomial, b::TaylorPolynomial)
     end
     return finish!(out, n)
 end
-function calculus(a::TaylorPolynomial, v::Integer, operation::Symbol, p::Integer = 1)
+function calculus(
+        a::TaylorPolynomial, v::Integer, operation::Symbol, p::Integer = 1;
+        order::Int = a.algebra.cutoff, filter::Bool = true
+    )
     ctx = valid(a); b = ctx.basis
     1 <= v <= b.variables && 0 <= p <= b.order || throw(ArgumentError("Invalid variable power"))
     T = operation === :integrate ? typeof(one(coefficient_type(a)) / degree_factor(one(coefficient_type(a)), 1)) : coefficient_type(a)
@@ -135,20 +138,20 @@ function calculus(a::TaylorPolynomial, v::Integer, operation::Symbol, p::Integer
         exponents .= @view b.exponents[:, i]
         degree = b.degrees[i]
         if operation === :integrate
-            degree >= ctx.cutoff && continue
+            degree >= order && continue
             exponents[v] += 1
             out.coeffs[rank(b, exponents, degree + 1)] = c / degree_factor(c, exponents[v])
         elseif operation === :differentiate
             exponents[v] == 0 && continue
             power = exponents[v]; exponents[v] -= 1
-            degree - 1 <= ctx.cutoff && (out.coeffs[rank(b, exponents, degree - 1)] = degree_factor(c, power) * c)
+            degree - 1 <= order && (out.coeffs[rank(b, exponents, degree - 1)] = degree_factor(c, power) * c)
         else
             exponents[v] < p && throw(TaylorError("Polynomial is not divisible by this variable power"))
             exponents[v] -= p
-            degree - p <= ctx.cutoff && (out.coeffs[rank(b, exponents, degree - p)] = c)
+            degree - p <= order && (out.coeffs[rank(b, exponents, degree - p)] = c)
         end
     end
-    return finish!(out)
+    return finish!(out; filter)
 end
 """
     differentiate(p, i)
@@ -174,15 +177,18 @@ integrate(a::TaylorPolynomial, i::Integer) = calculus(a, i, :integrate)
 divide_variable(a::TaylorPolynomial, i::Integer, p::Integer = 1) = calculus(a, i, :divide, p)
 for fn in (:differentiate, :integrate)
     @eval function $fn(a::TaylorPolynomial, counts::AbstractVector{<:Integer})
-        checked_counts(counts, valid(a).basis; limit = typemax(Int))
+        ctx = valid(a)
+        remaining = checked_counts(counts, ctx.basis; limit = typemax(Int))
         out = copy(a)
         for (i, n) in enumerate(counts)
             for _ in 1:n
-                out = $fn(out, i)
+                remaining -= 1
+                order = $(fn === :differentiate) ? ctx.cutoff + min(remaining, ctx.basis.order - ctx.cutoff) : ctx.cutoff
+                out = calculus(out, i, $(QuoteNode(fn)); order, filter = false)
                 iszero(out) && return out
             end
         end
-        return out
+        return finish!(out, min(out.len, ctx.basis.ends[ctx.cutoff + 1]))
     end
 end
 function degree_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0)

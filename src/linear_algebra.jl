@@ -27,7 +27,9 @@ Return the matrix of second polynomial partial derivatives of `p`.
 For a vector of polynomials, return a vector of Hessian matrices.
 """
 function hessian(a::TaylorPolynomial)
-    first_derivatives = gradient(a)
+    ctx = valid(a)
+    order = min(ctx.cutoff + 1, ctx.basis.order)
+    first_derivatives = [calculus(a, i, :differentiate; order, filter = false) for i in 1:nvariables(a)]
     return [differentiate(p, j) for p in first_derivatives, j in eachindex(first_derivatives)]
 end
 hessian(v::AbstractVector{<:TaylorPolynomial}) = hessian.(v)

@@ -44,7 +44,7 @@ end
 Base.:-(a::TaylorPolynomial) = -one(coefficient_type(a)) * a
 Base.signbit(a::TaylorPolynomial) = signbit(constant_term(a))
 Base.sign(a::TaylorPolynomial) = sign(constant_term(a))
-Base.abs(a::TaylorPolynomial) = signbit(a) ? -a : copy(a)
+Base.abs(a::TaylorPolynomial) = a * (signbit(a) ? -one(coefficient_type(a)) : one(coefficient_type(a)))
 Base.iszero(a::TaylorPolynomial) = (valid(a); a.len == 1 && coefficient_iszero(a.coeffs[1]))
 Base.isnan(a::TaylorPolynomial) = (valid(a); any(isnan, @view a.coeffs[1:a.len]))
 Base.isinf(a::TaylorPolynomial) = (valid(a); any(isinf, @view a.coeffs[1:a.len]))
@@ -100,7 +100,7 @@ for (op, sign) in ((:+, 1), (:-, -1))
         return weighted_sum!(out, a, one(T), b, degree_factor(one(S), $sign) * one(S))
     end
 end
-function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order::Int = a.algebra.cutoff)
+function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order::Int = a.algebra.cutoff, filter::Bool = true)
     ctx = compatible(out, a)
     n = min(a.len, ctx.basis.ends[order + 1])
     reserve!(out, n)
@@ -109,7 +109,7 @@ function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order:
     @inbounds @simd for i in 1:n
         out.coeffs[i] = factor * coefficient_operand(R, a.coeffs[i])
     end
-    return finish!(out, n)
+    return finish!(out, n; filter)
 end
 function Base.:*(a::TaylorPolynomial{T}, b::Real) where {T <: Real}
     ctx = valid(a)
@@ -163,17 +163,17 @@ function convolve!(out, a, b, basis, cutoff, ::Val{TABLE}, ::Val{SQUARE}) where 
     end
     return out
 end
-function multiply!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial, cutoff::Int)
+function multiply!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial, cutoff::Int; filter::Bool = true)
     ctx = compatible(a, b)
     valid(out) === ctx || throw(ArgumentError("Different output context"))
     # Scalar products need neither lookup tables nor a full coefficient buffer.
-    a.len == 1 && return scale!(out, b, a.coeffs[1]; order = cutoff)
-    b.len == 1 && return scale!(out, a, b.coeffs[1]; order = cutoff)
+    a.len == 1 && return scale!(out, b, a.coeffs[1]; order = cutoff, filter)
+    b.len == 1 && return scale!(out, a, b.coeffs[1]; order = cutoff, filter)
     basis = ctx.basis
     n = basis.ends[min(cutoff, basis.degrees[a.len] + basis.degrees[b.len]) + 1]
     if out === a || out === b || Base.mightalias(out.coeffs, a.coeffs) || Base.mightalias(out.coeffs, b.coeffs)
         tmp = allocate_undef(ctx, coefficient_type(out), n)
-        multiply!(tmp, a, b, cutoff)
+        multiply!(tmp, a, b, cutoff; filter)
         out.coeffs, tmp.coeffs = tmp.coeffs, out.coeffs
         out.len = tmp.len
         return out
@@ -195,7 +195,7 @@ function multiply!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomi
     else
         convolve!(out.coeffs, a, b, basis, cutoff, Val(true), Val(false))
     end
-    return finish!(out, n)
+    return finish!(out, n; filter)
 end
 "Multiply into reusable polynomial storage; scalar arithmetic may still allocate."
 LinearAlgebra.mul!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial) = multiply!(out, a, b, a.algebra.cutoff)

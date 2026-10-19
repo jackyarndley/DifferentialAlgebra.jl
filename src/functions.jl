@@ -1,20 +1,28 @@
 # Compose univariate Taylor coefficients with the nonconstant part of a TaylorPolynomial.
 # Horner stages need only successively increasing total degrees, and reuse buffers.
-function series(a::TaylorPolynomial, coefficients::AbstractVector{T}) where {T}
+function series(a::TaylorPolynomial, coefficients::AbstractVector{T}; filter::Bool = true) where {T}
     ctx = valid(a)
     R = promote_type(coefficient_type(a), T)
-    a.len == 1 && return TaylorPolynomial{R}(coefficients[1])
+    a.len == 1 && return finish!(TaylorPolynomial{R}([coefficient_convert(R, coefficients[1])], 1, ctx), 1; filter)
     n = min(ctx.cutoff, length(coefficients) - 1)
     h = TaylorPolynomial{R}(a); h.coeffs[1] = zero(R)
     result, scratch = allocate(ctx, R), allocate(ctx, R)
     result.coeffs[1] = coefficients[n + 1]
     for k in (n - 1):-1:0
-        multiply!(scratch, h, result, n - k)
+        multiply!(scratch, h, result, n - k; filter = false)
         scratch.coeffs[1] += coefficients[k + 1]
-        finish!(scratch, scratch.len)
+        finish!(scratch, scratch.len; filter = false)
         result, scratch = scratch, result
     end
-    return result
+    return finish!(result, result.len; filter)
+end
+
+# Normalization is an intermediate analytic step: a small coefficient can grow
+# in the subsequent composition. Only the completed public result is filtered.
+function normalized_argument(a::TaylorPolynomial, x::Real)
+    R = promote_type(coefficient_type(a), typeof(x))
+    factor = inv(coefficient_convert(R, x))
+    return scale!(allocate_undef(valid(a), typeof(factor), a.len), a, factor; filter = false)
 end
 function domain_call(f, x)
     return try
@@ -29,10 +37,10 @@ end
 # E(exp(a))=exp(a)E(a), a E(log(a))=E(a), and a E(a^p)=p a^p E(a)
 # into triangular coefficient recurrences. One traversal replaces repeated
 # polynomial products, with no cutoff applied to intermediate Taylor factors.
-function recurrence(a::TaylorPolynomial, c0, p, ::Val{MODE}) where {MODE}
+function recurrence(a::TaylorPolynomial, c0, p, ::Val{MODE}; filter::Bool = true) where {MODE}
     ctx = valid(a); basis = ctx.basis
     T = promote_type(coefficient_type(a), typeof(c0), typeof(p))
-    a.len == 1 && return TaylorPolynomial{T}(c0)
+    a.len == 1 && return finish!(TaylorPolynomial{T}([coefficient_convert(T, c0)], 1, ctx), 1; filter)
     n = basis.ends[ctx.cutoff + 1]
     out = allocate_undef(ctx, T, n); out.coeffs[1] = c0
     a0 = a.coeffs[1]
@@ -52,7 +60,7 @@ function recurrence(a::TaylorPolynomial, c0, p, ::Val{MODE}) where {MODE}
         end
         out.coeffs[k] = MODE === :exp ? value / degree_factor(value, degree) : value / (degree_factor(a0, degree) * a0)
     end
-    return finish!(out, n)
+    return finish!(out, n; filter)
 end
 
 function trig_recurrence(a::TaylorPolynomial, hyperbolic::Bool)
@@ -99,23 +107,23 @@ function Base.log(a::TaylorPolynomial)
         c[k + 1] = factor / degree_factor(factor, k)
         factor = -factor
     end
-    return series(a / x, c)
+    return series(normalized_argument(a, x), c)
 end
 Base.log2(a::TaylorPolynomial) = log(a) / log(convert(typeof(float(constant_term(a))), 2))
 Base.log10(a::TaylorPolynomial) = log(a) / log(convert(typeof(float(constant_term(a))), 10))
 Base.log(b::Real, a::TaylorPolynomial) = log(a) / log(b)
 Base.log(::Irrational{:ℯ}, a::TaylorPolynomial) = log(a)
 
-function power_series(a::TaylorPolynomial, p::Real, c0)
+function power_series(a::TaylorPolynomial, p::Real, c0; filter::Bool = true)
     x = constant_term(a)
     coefficient_iszero(x) && throw(TaylorError("Noninteger powers require a nonzero expansion point"))
-    !isempty(a.algebra.basis.products) && return recurrence(a, c0, p, Val(:power))
+    !isempty(a.algebra.basis.products) && return recurrence(a, c0, p, Val(:power); filter)
     T = promote_type(typeof(c0), typeof(p))
     c = Vector{T}(undef, a.algebra.cutoff + 1); c[1] = c0
     @inbounds for k in 1:(length(c) - 1)
         c[k + 1] = c[k] * (p - degree_factor(p, k - 1)) / degree_factor(c[k], k)
     end
-    return series(a / x, c)
+    return series(normalized_argument(a, x), c; filter)
 end
 function Base.:^(a::TaylorPolynomial, p::AbstractFloat)
     R = promote_type(coefficient_type(a), typeof(p))
@@ -143,7 +151,8 @@ function quotient(a::Real, b::TaylorPolynomial)
     end
     basis = ctx.basis
     if isempty(basis.products)
-        return a * power_series(b, -one(b0), inv(b0))
+        reciprocal = power_series(b, -one(b0), inv(b0); filter = false)
+        return a * reciprocal
     end
     T = promote_type(a isa TaylorPolynomial ? coefficient_type(a) : typeof(a), coefficient_type(b))
     T = typeof(one(T) / one(T))
