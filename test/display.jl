@@ -14,12 +14,12 @@ using Test, DifferentialAlgebra
     @test sprint(show, TaylorPolynomial{Int}(typemin(Int))) == string(typemin(Int))
     @test sprint(show, TaylorPolynomial{Float32}(2)) == "2.0f0"
     @test sprint(show, Monomial(3.0, UInt32[1, 2])) == "Monomial(3.0, [1, 2])"
-    @test sprint(show, MIME"text/plain"(), x + y) ==
+    @test sprint(show, MIME"text/plain"(), x + y; context = :module => @__MODULE__) ==
         "TaylorPolynomial{Float64} polynomial in 2 variables (order ≤ 5):\n  1.0 x₁ + 1.0 x₂"
     @test occursin("x₁", sprint(show, MIME"text/plain"(), [x y; y x]))
     @test sprint(show, x + y; context = :compact => true) == "1.0 x₁ + 1.0 x₂"
     map = CompiledMap([x + y^2, y])
-    @test sprint(show, map) == "CompiledMap{Float64}(2 outputs, 2 variables, degree 2, 4 nodes)"
+    @test sprint(show, map; context = :module => @__MODULE__) == "CompiledMap{Float64}(2 outputs, 2 variables, degree 2, 4 nodes)"
 
     p = (1 + x + y)^5
     full = sprint(show, p)
