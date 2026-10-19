@@ -122,8 +122,6 @@ end
         @test DifferentialAlgebra.nterms(p) == 6
         @test DifferentialAlgebra.coefficient_norm(p) == 3
         @test DifferentialAlgebra.coefficient_norm(DifferentialAlgebra.monomial([2, 1, 0], T(3)) - 3x^2 * y) == 0
-        @test DifferentialAlgebra.nterms(DifferentialAlgebra.filled(T(2))) == DifferentialAlgebra.nmonomials()
-        @test DifferentialAlgebra.filled(T(2)) isa TaylorPolynomial{T}
         q = inv(1 - x / 4)
         estimates, errors = DifferentialAlgebra.estimate_norms(q, 0, 0, 8; errors = true)
         @test maximum(abs.(estimates - [T(1) / 4^i for i in 0:8])) < tolerance

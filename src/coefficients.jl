@@ -260,3 +260,38 @@ end
 trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer = max_order()) = trim.(a, low, high)
 differentiate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = differentiate.(a, i)
 integrate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = integrate.(a, i)
+
+"Dot product of corresponding polynomial coefficients, without multiplying monomials."
+function coefficient_dot(a::TaylorPolynomial, b::TaylorPolynomial)
+    compatible(a, b)
+    T = promote_type(coefficient_type(a), coefficient_type(b))
+    result = zero(T)
+    @inbounds for i in 1:min(a.len, b.len)
+        result += a.coeffs[i] * b.coeffs[i]
+    end
+    return result
+end
+
+"Retain coefficients of p whose monomials occur in mask."
+function filter_terms(p::TaylorPolynomial, mask::TaylorPolynomial)
+    ctx = compatible(p, mask)
+    n = min(p.len, mask.len)
+    result = allocate(ctx, coefficient_type(p), n)
+    @inbounds for i in 1:n
+        !coefficient_iszero(mask.coeffs[i]) && (result.coeffs[i] = p.coeffs[i])
+    end
+    return finish!(result, n)
+end
+function monomial(powers::AbstractVector{<:Integer}, value::Real = 1.0)
+    return set_coefficient!(TaylorPolynomial(zero(value)), powers, value)
+end
+"Number of nonzero coefficients (Julia's size(p) retains scalar semantics)."
+nterms(p::TaylorPolynomial) = (valid(p); count(!coefficient_iszero, @view p.coeffs[1:p.len]))
+
+"Estimated radius where the first omitted order has norm tolerance; this is not a rigorous bound."
+function convergence_radius(p::TaylorPolynomial, tolerance::Real, type::Integer = 1)
+    isfinite(tolerance) && tolerance > 0 || throw(ArgumentError("Tolerance must be positive and finite"))
+    degree = valid(p).cutoff + 1
+    estimate = estimate_norms(p, 0, type, degree)[end]
+    return (tolerance / estimate)^(one(float(estimate)) / degree)
+end
