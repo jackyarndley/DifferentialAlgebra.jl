@@ -2,19 +2,7 @@
 # Reports work and enclosure widths alongside warmed timings, without BenchmarkTools.
 using DifferentialAlgebra, IntervalArithmetic
 
-function measure_ads(f; samples = 30, batch = 10)
-    f()
-    times = map(1:samples) do _
-        duration = @elapsed begin
-            for _ in 1:batch
-                f()
-            end
-        end
-        duration / batch
-    end
-    seconds = minimum(times)
-    return (; seconds, bytes = @allocated(f()))
-end
+include("measurement.jl")
 
 function report_ads(label, build, point)
     fit = build()
@@ -27,9 +15,9 @@ function report_ads(label, build, point)
         query = () -> evaluate!(out, fit, point, normalized, work)
     end
     error = maximum(p -> validated ? maximum(sup.(abs.(p.error_bounds))) : maximum(p.error_estimate), fit.patches)
-    println((; label, patches = length(fit.patches), construction = measure_ads(build), query = measure_ads(query; samples = 100), snapshot_bytes = Base.summarysize(fit), error))
+    println((; label, patches = length(fit.patches), construction = measure(build), query = measure(query; samples = 100), snapshot_bytes = Base.summarysize(fit), error))
     if validated
-        println((; label, enclosure = measure_ads(() -> enclose(fit)), full_width = diam.(enclose(fit)), point_width = diam.(fit(point))))
+        println((; label, enclosure = measure(() -> enclose(fit)), full_width = diam.(enclose(fit)), point_width = diam.(fit(point))))
     end
     return fit
 end
@@ -51,5 +39,5 @@ end
 for count in (8, 32, 128, 512)
     build() = adaptive_map(v -> v[1]^2, [interval(-1, 1)]; estimator = IntervalBound(), splitter = :width, order = 1, atol = 1 // count^2)
     fit = build()
-    println((; scaling = count, patches = length(fit.patches), point = measure_ads(() -> fit([1 // 7]); samples = 100), point_width = diam(fit([1 // 7])), error = maximum(p -> sup(abs(only(p.error_bounds))), fit.patches)))
+    println((; scaling = count, patches = length(fit.patches), point = measure(() -> fit([1 // 7]); samples = 100), point_width = diam(fit([1 // 7])), error = maximum(p -> sup(abs(only(p.error_bounds))), fit.patches)))
 end

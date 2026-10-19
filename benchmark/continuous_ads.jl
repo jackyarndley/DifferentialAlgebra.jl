@@ -1,13 +1,8 @@
 # Optional benchmark, excluded from the test suite.
-# julia --project=examples benchmark/continuous_ads.jl
+# julia --project=benchmark benchmark/continuous_ads.jl
 using DifferentialAlgebra, IntervalArithmetic, ForwardDiff
 
-function measure_continuity(f; samples = 10)
-    f()
-    times = [@elapsed f() for _ in 1:samples]
-    bytes = @allocated f()
-    return (; seconds = minimum(times), bytes)
-end
+include("measurement.jl")
 
 for (label, f, dimensions, splitter) in (
         ("Diagonal nonlinear map", v -> exp(v[1] + v[2]) + (v[1] - v[2])^2, 2, :tail),
@@ -24,6 +19,6 @@ for (label, f, dimensions, splitter) in (
         blend() = continuous_map(f, source; continuity = :c2, order = 4, table_bytes = budget)
         s = blend()
         point = fill(Float64(radius) / 4, dimensions)
-        println((; label, radius, budget, splitter, patches = length(source.patches), source_construction = measure_continuity(build), overlap_construction = measure_continuity(blend), source_query = measure_continuity(() -> source(point)), smooth_query = measure_continuity(() -> s(point)), gradient = measure_continuity(() -> ForwardDiff.gradient(s, point)), hessian = measure_continuity(() -> ForwardDiff.hessian(s, point)), original_enclosure = measure_continuity(() -> enclose(s)), full_width = diam(enclose(s)), point_width = diam(enclose(s, point)), uniform_blend_error = sup(abs(only(s.error_bounds)))))
+        println((; label, radius, budget, splitter, patches = length(source.patches), source_construction = measure(build), overlap_construction = measure(blend), source_query = measure(() -> source(point)), smooth_query = measure(() -> s(point)), gradient = measure(() -> ForwardDiff.gradient(s, point)), hessian = measure(() -> ForwardDiff.hessian(s, point)), original_enclosure = measure(() -> enclose(s)), full_width = diam(enclose(s)), point_width = diam(enclose(s, point)), uniform_blend_error = sup(abs(only(s.error_bounds)))))
     end
 end

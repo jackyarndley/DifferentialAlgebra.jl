@@ -1,15 +1,10 @@
 # Run separately; this benchmark is intentionally outside the default suite.
-# julia --project=examples benchmark/interval_models.jl
+# julia --project=benchmark benchmark/interval_models.jl
 using DifferentialAlgebra, IntervalArithmetic, LinearAlgebra
 
 uncertainty_map(x) = exp(x[1] + x[2] / 2) * cos(x[3] - x[4]) + log(2 + x[5] * x[6])
 
-function measure(f; samples = 10)
-    f() # Compile and warm up.
-    times = [@elapsed f() for _ in 1:samples]
-    bytes = @allocated f()
-    return (; seconds = minimum(times), bytes)
-end
+include("measurement.jl")
 
 function report(; order = 3, table_bytes = 32 * 1024^2)
     box = fill(interval(Float64, -1 // 50, 1 // 50), 6)

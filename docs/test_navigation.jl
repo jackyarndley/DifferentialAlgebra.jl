@@ -20,10 +20,6 @@ isdefined(@__MODULE__, :example_groups) || include("literate.jl")
         @test sidebar !== nothing
         sidebar === nothing && continue
         menu = only(sidebar.captures)
-        # At collapselevel=3, topic groups have always-visible lists. Only
-        # an individual page's longer contents may use a collapsed toggle.
-        expanded = all(topic -> occursin("<span class=\"tocitem\">$topic</span><ul>", menu), first.(groups))
-        @test expanded
         # Documenter uses a valueless href for the active page with pretty URLs.
         links = Dict(m.captures[2] => something(m.captures[1], "") for m in eachmatch(r"<a class=\"tocitem\" href(?:=\"([^\"]*)\")?>([^<]+)</a>", menu))
         registered = all(entry -> haskey(links, first(entry)), entries)

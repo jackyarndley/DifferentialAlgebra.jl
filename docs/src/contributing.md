@@ -10,6 +10,10 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
 Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
 Examples have a separate dependency environment.
+Each test file imports its dependencies and includes its own helpers. SafeTestsets
+isolates file namespaces; the dispatcher runs files sequentially because algebra
+configuration is global. Fresh-process checks also verify optional extension loading.
+Aqua checks package quality, limiting ambiguity inspection to package-owned methods.
 
 The test suite uses Julia code and inline inputs. Function-coefficient tests
 combine scalar derivatives from ForwardDiff with an independent multinomial
@@ -36,7 +40,7 @@ Install it in a separate environment, then format the source and executable exam
 
 ```sh
 julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples benchmark docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl
 ```
 
 Replace `--inplace` with `--check` to verify formatting without modifying files.
