@@ -1,4 +1,5 @@
-using Test, LinearAlgebra, SpecialFunctions, ForwardDiff, GenericLinearAlgebra, DifferentialAlgebra
+using Test, DifferentialAlgebra
+using LinearAlgebra, SpecialFunctions, ForwardDiff, GenericLinearAlgebra
 
 @testset "Mixed precision reusable buffers" begin
     initialize!(1, 1)

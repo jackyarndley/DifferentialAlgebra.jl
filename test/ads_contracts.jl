@@ -1,4 +1,6 @@
-using Test, DifferentialAlgebra, IntervalArithmetic
+using Test, DifferentialAlgebra
+using IntervalArithmetic
+
 isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
 using .IntervalTestSupport: DA, IA, IF, IB, subset, interval_contains, sameinterval
 

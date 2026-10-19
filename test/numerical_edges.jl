@@ -1,4 +1,6 @@
-using Test, DifferentialAlgebra, IntervalArithmetic
+using Test, DifferentialAlgebra
+using IntervalArithmetic
+
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, sameinterval, interval_contains
 

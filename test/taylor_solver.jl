@@ -1,6 +1,5 @@
 using Test, DifferentialAlgebra
-using OrdinaryDiffEqCore
-using SciMLBase
+using OrdinaryDiffEqCore, SciMLBase
 using SciMLBase: successful_retcode
 
 @testset "SciML Taylor integration" begin

@@ -1,4 +1,5 @@
-using Test, DifferentialAlgebra, LinearAlgebra
+using Test, DifferentialAlgebra
+using LinearAlgebra
 
 @testset "Exact polygon geometry and ordinary oriented ADS" begin
     DA = DifferentialAlgebra

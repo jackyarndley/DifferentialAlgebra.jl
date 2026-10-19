@@ -1,4 +1,4 @@
-using DifferentialAlgebra, Test
+using Test, DifferentialAlgebra
 
 @testset "Monomial and compiled map constructors" begin
     for T in (Float32, Float64, BigFloat)

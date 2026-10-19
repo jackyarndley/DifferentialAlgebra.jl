@@ -1,5 +1,5 @@
 using Test, DifferentialAlgebra
-using Test, LinearAlgebra, Random, GenericLinearAlgebra, SpecialFunctions
+using LinearAlgebra, Random, GenericLinearAlgebra, SpecialFunctions
 
 function multiplication_allocations(out, a, b)
     mul!(out, a, b)

@@ -1,6 +1,6 @@
 using Test, DifferentialAlgebra
-using LinearAlgebra, GenericLinearAlgebra
-using ForwardDiff
+using LinearAlgebra, GenericLinearAlgebra, ForwardDiff
+
 import ForwardDiff: Dual
 
 @testset verbose = true "Eigendecomposition" begin

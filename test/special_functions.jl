@@ -1,5 +1,6 @@
 using Test, DifferentialAlgebra
 using SpecialFunctions
+
 special_error(p, c) = coefficient_norm(p - c, 0)
 
 @testset "Special function derivatives" begin

@@ -1,4 +1,5 @@
 using Test, DifferentialAlgebra
+
 @testset "Coefficient recurrences and composition agree" begin
     # A zero lookup budget selects Horner composition through polynomial products,
     # providing an independent algorithm for dense, sparse and short inputs.

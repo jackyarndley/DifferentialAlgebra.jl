@@ -1,4 +1,5 @@
 using Test, DifferentialAlgebra
+
 @testset "Gaussian probability integral" begin
     function ErrFunc(x::TaylorPolynomial)::TaylorPolynomial
         my_pi = 4.0 * atan(1.0)

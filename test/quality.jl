@@ -1,4 +1,5 @@
-using Test, DifferentialAlgebra, Aqua
+using Test, DifferentialAlgebra
+using Aqua
 
 Aqua.test_all(DifferentialAlgebra; unbound_args = false)
 

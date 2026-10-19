@@ -1,5 +1,6 @@
 using Test, DifferentialAlgebra
 using ForwardDiff, SpecialFunctions
+
 include("support/series.jl")
 
 @testset verbose = true "TEST 2: Single-variable functions" begin

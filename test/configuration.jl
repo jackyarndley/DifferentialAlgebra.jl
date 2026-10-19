@@ -1,4 +1,5 @@
 using Test, DifferentialAlgebra
+
 @testset verbose = true "TEST 1: DifferentialAlgebra initialization" begin
     @testset "1.1 Maximum order, number of variables, and number of monomials" begin
         for order in 1:10

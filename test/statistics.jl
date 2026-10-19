@@ -1,4 +1,5 @@
-using Test, LinearAlgebra, DifferentialAlgebra
+using Test, DifferentialAlgebra
+using LinearAlgebra
 
 # Independent Cartesian enumeration, rather than the package's recursive basis
 # traversal. Keep these small cases bounded: this deliberately enumerates a cube.

@@ -1,5 +1,6 @@
-using LinearAlgebra
 using Test, DifferentialAlgebra
+using LinearAlgebra
+
 @testset "Independent variables" begin
     x = variables(4; order = 4)
     @test x isa Vector{TaylorPolynomial{Float64}}
