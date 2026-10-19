@@ -23,6 +23,7 @@ end
 for budget in (0, 32 * 1024^2)
     x, = variables(1; order = 4, table_bytes = budget)
     p, q, r = 10 + 0.09x, 2 + 0.018x, 1 + 100x
+    stored = 10 + 0.009x + x^4
     set_coefficient_tolerance!(0.01)
     for (name, f) in (
             (:integer_power, () -> p^3), (:negative_power, () -> q^(-3)),
@@ -32,6 +33,10 @@ for budget in (0, 32 * 1024^2)
             (:gamma, () -> gamma(p)), (:polynomial_power, () -> p^q),
         )
         report(name, f; budget)
+    end
+    with_order(2) do
+        report(:stored_power, () -> stored^3; budget)
+        println((; budget, stored_power_linear = coefficient(stored^3, [1])))
     end
     println(
         (;
@@ -47,7 +52,9 @@ for (name, c) in (
     )
     p = name == :contains_zero ? c * x : c * x + interval(4) * y
     result = report(Symbol(name, :_norm), () -> coefficient_norm(p, 2))
-    grouped = report(Symbol(name, :_degrees), () -> DifferentialAlgebra.degree_norms(p, 0, 2))
+    grouped = report(
+        Symbol(name, :_degrees), () -> DifferentialAlgebra.degree_norms(p, 0, 2)
+    )
     if !isnothing(result)
         println(
             (;

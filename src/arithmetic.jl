@@ -227,7 +227,7 @@ function Base.:^(a::TaylorPolynomial, n::Integer)
     result = nothing
     while n > 0
         if isodd(n)
-            result = isnothing(result) ? copy(+power) :
+            result = isnothing(result) ? copy(power) :
                 product(result, power; filter = false)
         end
         n >>= 1

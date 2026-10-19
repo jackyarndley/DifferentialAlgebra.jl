@@ -106,6 +106,7 @@ end
     )
     for budget in (0, 32 * 1024^2)
         x, = variables(1; order = 4, table_bytes = budget)
+        stored = 10 + 0.009x + x^4
         set_coefficient_tolerance!(0.01)
         # BigFloat derivatives avoid cancellation in the small scalar-input
         # corrections to hypot; the polynomial calculation still uses Float64.
@@ -133,6 +134,7 @@ end
         end
         with_order(2) do
             @test degree(p^5) <= 2
+            @test coefficient(stored^3, [1]) ≈ 2.7
             @test truncation_order() == 2
         end
         @test truncation_order() == 4
