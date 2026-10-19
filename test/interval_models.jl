@@ -15,6 +15,53 @@ using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinter
     end
 end
 
+@testset "Interval coefficient norms" begin
+    for I in (IF, IB)
+        T = IA.numtype(I)
+        x, y = variables(I, 2; order = 2)
+        for (c, lower, upper) in (
+                (IA.interval(T, -3, 3), 4, 5),
+                (IA.interval(T, 3, 4), 5, sqrt(big(32))),
+                (IA.interval(T, 3), 5, 5),
+            )
+            p = c * x + IA.interval(T, 4) * y
+            for n in (0, 1, 2, 3)
+                full = coefficient_norm(p, n)
+                grouped = DA.degree_norms(p, 0, n)
+                @test sameinterval(full, grouped[2])
+                @test IA.isguaranteed(full) && IA.decoration(full) == IA.com
+                @test sameinterval(grouped[1], IA.interval(T, 0))
+                @test sameinterval(grouped[3], IA.interval(T, 0))
+            end
+            result = coefficient_norm(p, 2)
+            @test interval_contains(result, lower)
+            @test interval_contains(result, upper)
+            # The enclosure is tight up to outward rounding, without an
+            # uncertain normalization factor multiplying the answer again.
+            @test IA.inf(result) >= lower * (1 - 10eps(T))
+            @test IA.sup(result) <= upper * (1 + 10eps(T))
+        end
+        @test sameinterval(coefficient_norm(3x + 4y, 2), IA.interval(T, 5))
+        for n in (0, 1, 2, 3)
+            p = IA.interval(T, -3, 3) * x
+            @test sameinterval(coefficient_norm(p, n), IA.interval(T, 0, 3))
+            @test sameinterval(DA.degree_norms(p, 0, n)[2], IA.interval(T, 0, 3))
+        end
+        for c in (convert(I, 0.0), IA.setdecoration(IA.interval(T, 0), IA.trv))
+            p = c * x
+            for n in (0, 1, 2)
+                result = coefficient_norm(p, n)
+                @test IA.isguaranteed(result) == IA.isguaranteed(c)
+                @test IA.decoration(result) == IA.decoration(c)
+                @test sameinterval(result, DA.degree_norms(p, 0, n)[2])
+            end
+        end
+        @test_throws ArgumentError coefficient_norm(x, -1)
+        @test_throws ArgumentError coefficient_norm(x, 1.5)
+        @test_throws ArgumentError DA.degree_norms(x, 3, 2)
+    end
+end
+
 @testset "Interval coefficients and stored-polynomial enclosure" begin
     for I in (IF, IB), budget in (0, 32 * 1024^2)
         T = IA.numtype(I)

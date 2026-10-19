@@ -26,6 +26,51 @@ DA.degree_factor(c::Interval{T}, n::Integer) where {T <: IA.NumTypes} = IA.inter
 DA.coefficient_muladd(a::Real, b::Real, c::Interval) = DA.coefficient_convert(typeof(c), a) * DA.coefficient_convert(typeof(c), b) + c
 DA.invertible_constant(c::Interval) = !IA.isnai(c) && !IA.isempty_interval(c) && !IA.in_interval(0, c)
 
+# Normalize by a guaranteed point bound, never by an uncertain interval. The
+# coefficients still participate in arithmetic, including thin degraded zeros.
+function interval_norms(a::TaylorPolynomial{Interval{T}}, v, p::Integer) where {T}
+    basis = DA.valid(a).basis
+    count = isnothing(v) ? 1 : basis.order + 1
+    group(i) = isnothing(v) ? 1 :
+        (v == 0 ? basis.degrees[i] : basis.exponents[v, i]) + 1
+    out = zeros(Interval{T}, count)
+    if p == 0 || p == 1
+        for i in 1:a.len
+            k = group(i)
+            c = abs(a.coeffs[i])
+            out[k] = p == 0 ? max(out[k], c) : out[k] + c
+        end
+        return out
+    end
+    scales = zeros(T, count)
+    for i in 1:a.len
+        k = group(i)
+        scales[k] = max(scales[k], IA.mag(a.coeffs[i]))
+    end
+    # Zero and unbounded groups need no scaling. This also avoids 0/0 and Inf/Inf.
+    map!(s -> isfinite(s) && !iszero(s) ? s : one(T), scales, scales)
+    for i in 1:a.len
+        k = group(i)
+        out[k] += IA.pown(abs(a.coeffs[i]) / IA.interval(T, scales[k]), p)
+    end
+    for k in eachindex(out)
+        out[k] = IA.interval(T, scales[k]) * IA.rootn(out[k], p)
+    end
+    return out
+end
+function DA.coefficient_norm(a::TaylorPolynomial{<:Interval}, p::Real = 0)
+    isinteger(p) && p >= 0 ||
+        throw(ArgumentError("Use a nonnegative integer coefficient norm"))
+    power = p isa Integer ? p : BigInt(p)
+    return only(interval_norms(a, nothing, power))
+end
+function DA.degree_norms(a::TaylorPolynomial{<:Interval}, v::Integer = 0, p::Integer = 0)
+    basis = DA.valid(a).basis
+    0 <= v <= basis.variables && p >= 0 ||
+        throw(ArgumentError("Invalid norm arguments"))
+    return interval_norms(a, v, p)
+end
+
 # IA has symmetric Real promotion/arithmetic rules. Resolve their intersections
 # using methods that own a DifferentialAlgebra type, never methods on IA alone.
 Base.promote_rule(::Type{TaylorPolynomial{T}}, ::Type{Interval{S}}) where {T <: Real, S <: IA.NumTypes} = TaylorPolynomial{promote_type(T, Interval{S})}
