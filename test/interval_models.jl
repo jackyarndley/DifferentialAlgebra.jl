@@ -21,7 +21,7 @@ end
         x, y = variables(I, 2; order = 2)
         for (c, lower, upper) in (
                 (IA.interval(T, -3, 3), 4, 5),
-                (IA.interval(T, 3, 4), 5, sqrt(big(32))),
+                (IA.interval(T, 3, 5), 5, sqrt(big(41))),
                 (IA.interval(T, 3), 5, 5),
             )
             p = c * x + IA.interval(T, 4) * y

@@ -5,7 +5,7 @@ include("measurement.jl")
 revision = readchomp(`git -C $(pkgdir(DifferentialAlgebra)) rev-parse --short HEAD`)
 println(
     (;
-        julia = VERSION, revision,
+        julia = VERSION, revision, cpu = Sys.CPU_NAME, threads = Threads.nthreads(),
         interval_arithmetic = Base.pkgversion(IntervalArithmetic),
     )
 )
@@ -42,17 +42,25 @@ for budget in (0, 32 * 1024^2)
 end
 x, y = variables(Interval{Float64}, 2; order = 4)
 for (name, c) in (
-        (:point, interval(3)), (:positive, interval(3, 4)),
+        (:point, interval(3)), (:positive, interval(3, 5)),
         (:contains_zero, interval(-3, 3)),
     )
     p = name == :contains_zero ? c * x : c * x + interval(4) * y
     result = report(Symbol(name, :_norm), () -> coefficient_norm(p, 2))
-    report(Symbol(name, :_degrees), () -> DifferentialAlgebra.degree_norms(p, 0, 2))
+    grouped = report(Symbol(name, :_degrees), () -> DifferentialAlgebra.degree_norms(p, 0, 2))
     if !isnothing(result)
         println(
             (;
                 path = name, bounds = (inf(result), sup(result)),
                 guaranteed = isguaranteed(result), decoration = decoration(result),
+            )
+        )
+    end
+    if !isnothing(grouped)
+        println(
+            (;
+                path = name, degree_bounds = (inf(grouped[2]), sup(grouped[2])),
+                guaranteed = isguaranteed(grouped[2]), decoration = decoration(grouped[2]),
             )
         )
     end
