@@ -98,30 +98,37 @@ function trig_recurrence(a::TaylorPolynomial, hyperbolic::Bool)
     return finish!(s, n), finish!(c, n)
 end
 
-function Base.exp(a::TaylorPolynomial)
+function exponential(a::TaylorPolynomial; filter::Bool = true)
     x = constant_term(a); c0 = exp(x)
-    !isempty(a.algebra.basis.products) && return recurrence(a, c0, zero(c0), Val(:exp))
+    !isempty(a.algebra.basis.products) &&
+        return recurrence(a, c0, zero(c0), Val(:exp); filter)
     c = Vector{typeof(c0)}(undef, a.algebra.cutoff + 1); c[1] = c0
     @inbounds for k in 1:(length(c) - 1)
         c[k + 1] = c[k] / degree_factor(c[k], k)
     end
-    return series(a, c)
+    return series(a, c; filter)
 end
-function Base.log(a::TaylorPolynomial)
+Base.exp(a::TaylorPolynomial) = exponential(a)
+function logarithm(a::TaylorPolynomial; filter::Bool = true)
     x = constant_term(a); c0 = domain_call(log, x)
     !invertible_constant(x) && throw(TaylorError("Logarithm requires a constant excluding zero"))
-    !isempty(a.algebra.basis.products) && return recurrence(a, c0, zero(c0), Val(:log))
+    !isempty(a.algebra.basis.products) &&
+        return recurrence(a, c0, zero(c0), Val(:log); filter)
     c = Vector{typeof(c0)}(undef, a.algebra.cutoff + 1); c[1] = c0
     factor = one(x)
     @inbounds for k in 1:(length(c) - 1)
         c[k + 1] = factor / degree_factor(factor, k)
         factor = -factor
     end
-    return series(normalized_argument(a, x), c)
+    return series(normalized_argument(a, x), c; filter)
 end
-Base.log2(a::TaylorPolynomial) = log(a) / log(convert(typeof(float(constant_term(a))), 2))
-Base.log10(a::TaylorPolynomial) = log(a) / log(convert(typeof(float(constant_term(a))), 10))
-Base.log(b::Real, a::TaylorPolynomial) = log(a) / log(b)
+Base.log(a::TaylorPolynomial) = logarithm(a)
+Base.log2(a::TaylorPolynomial) = log(2, a)
+Base.log10(a::TaylorPolynomial) = log(10, a)
+function Base.log(b::Real, a::TaylorPolynomial)
+    R = promote_type(typeof(b), coefficient_type(a))
+    return logarithm(a; filter = false) / log(coefficient_convert(R, b))
+end
 Base.log(::Irrational{:ℯ}, a::TaylorPolynomial) = log(a)
 
 function power_series(a::TaylorPolynomial, p::Real, c0; filter::Bool = true)
@@ -142,27 +149,36 @@ function Base.:^(a::TaylorPolynomial, p::AbstractFloat)
     return power_series(a, p, domain_call(x -> x^p, constant_term(a)))
 end
 Base.:^(a::TaylorPolynomial, p::Rational) = a^convert(float(promote_type(coefficient_type(a), typeof(p))), p)
-Base.:^(a::Real, b::TaylorPolynomial) = exp(log(a) * b)
-Base.:^(a::TaylorPolynomial, b::TaylorPolynomial) = exp(log(a) * b)
+function Base.:^(a::Real, b::TaylorPolynomial)
+    R = promote_type(typeof(a), coefficient_type(b))
+    return exp(scaled(b, log(coefficient_convert(R, a)); filter = false))
+end
+Base.:^(a::TaylorPolynomial, b::TaylorPolynomial) =
+    exp(product(logarithm(a; filter = false), b; filter = false))
 Base.:^(::Irrational{:ℯ}, b::TaylorPolynomial) = exp(b)
 @inline coefficient_at(a::TaylorPolynomial, k::Int) = k <= a.len ? a.coeffs[k] : zero(coefficient_type(a))
 @inline coefficient_at(a::Real, k::Int) = k == 1 ? a : zero(a)
 
 # b*y=a is triangular by total degree. Division needs one recurrence, avoiding
 # both the homogeneous-degree weights of a generic power and a second product.
-function quotient(a::Real, b::TaylorPolynomial)
+function quotient(a::Real, b::TaylorPolynomial; filter::Bool = true)
     ctx = a isa TaylorPolynomial ? compatible(a, b) : valid(b)
     b0 = constant_term(b)
     !invertible_constant(b0) && throw(TaylorError("Division requires a denominator constant excluding zero"))
     if b.len == 1
-        numerator = a isa TaylorPolynomial ? a : coefficient_operand(promote_type(typeof(a), typeof(b0)), a)
+        if a isa TaylorPolynomial
+            R = promote_type(coefficient_type(a), typeof(b0))
+            return scaled(a, inv(coefficient_convert(R, b0)); filter)
+        end
+        numerator = coefficient_operand(promote_type(typeof(a), typeof(b0)), a)
         result = numerator / b0
-        return result isa TaylorPolynomial ? result : TaylorPolynomial{typeof(result)}(result)
+        return finish!(TaylorPolynomial{typeof(result)}([result], 1, ctx), 1; filter)
     end
     basis = ctx.basis
     if isempty(basis.products)
         reciprocal = power_series(b, -one(b0), inv(b0); filter = false)
-        return a * reciprocal
+        return a isa TaylorPolynomial ? product(a, reciprocal; filter) :
+            scaled(reciprocal, a; filter)
     end
     T = promote_type(a isa TaylorPolynomial ? coefficient_type(a) : typeof(a), coefficient_type(b))
     T = typeof(one(T) / one(T))
@@ -178,14 +194,14 @@ function quotient(a::Real, b::TaylorPolynomial)
         end
         result.coeffs[k] = value / b0
     end
-    return finish!(result, n)
+    return finish!(result, n; filter)
 end
 Base.inv(a::TaylorPolynomial) = quotient(one(coefficient_type(a)), a)
 
 # y^2=a: use each unordered pair of nonconstant monomials only once.
-function square_root(a::TaylorPolynomial, c0)
+function square_root(a::TaylorPolynomial, c0; filter::Bool = true)
     ctx = valid(a); basis = ctx.basis
-    a.len == 1 && return TaylorPolynomial(c0)
+    a.len == 1 && return finish!(TaylorPolynomial{typeof(c0)}([c0], 1, ctx), 1; filter)
     n = basis.ends[ctx.cutoff + 1]
     result = allocate_undef(ctx, typeof(c0), n)
     result.coeffs[1] = c0
@@ -202,9 +218,9 @@ function square_root(a::TaylorPolynomial, c0)
         end
         result.coeffs[k] = value / denominator
     end
-    return finish!(result, n)
+    return finish!(result, n; filter)
 end
-function nthroot(a::TaylorPolynomial, p::Integer = 2)
+function root_series(a::TaylorPolynomial, p::Integer; filter::Bool = true)
     p != 0 || throw(DomainError(p, "Zeroth root is undefined"))
     p == 1 && return copy(a)
     p > 0 && coefficient_iszero(a) && return zero(a)
@@ -213,9 +229,10 @@ function nthroot(a::TaylorPolynomial, p::Integer = 2)
     iseven(p) && x < 0 && throw(TaylorError("Even root of a negative constant"))
     exponent = one(float(x)) / p
     c0 = p == 2 ? sqrt(x) : p == 3 ? cbrt(x) : copysign(abs(x)^exponent, x)
-    p == 2 && !isempty(a.algebra.basis.products) && return square_root(a, c0)
-    return power_series(a, exponent, c0)
+    p == 2 && !isempty(a.algebra.basis.products) && return square_root(a, c0; filter)
+    return power_series(a, exponent, c0; filter)
 end
+nthroot(a::TaylorPolynomial, p::Integer = 2) = root_series(a, p)
 Base.sqrt(a::TaylorPolynomial) = nthroot(a, 2)
 Base.cbrt(a::TaylorPolynomial) = nthroot(a, 3)
 function nthroot(x::Real, p::Integer = 2)
@@ -271,18 +288,20 @@ function quadratic_power(q0, q1, q2, p, n)
     end
     return c
 end
-function integral_series(a::TaylorPolynomial, c0, derivative)
+function integral_series(a::TaylorPolynomial, c0, derivative; filter::Bool = true)
     T = promote_type(typeof(c0), eltype(derivative))
     c = Vector{T}(undef, length(derivative) + 1); c[1] = c0
     @inbounds for k in eachindex(derivative)
         c[k + 1] = derivative[k] / k
     end
-    return series(a, c)
+    return series(a, c; filter)
 end
 for fn in (:asin, :acos, :atan, :asinh, :acosh, :atanh)
-    @eval function Base.$fn(a::TaylorPolynomial)
+    @eval function inverse_series(
+            a::TaylorPolynomial, ::Val{$(QuoteNode(fn))}; filter::Bool = true
+        )
         x = constant_term(a); u = one(float(x)); c0 = domain_call($fn, x)
-        a.len == 1 && return TaylorPolynomial(c0)
+        a.len == 1 && return series(a, [c0]; filter)
         q0, q1, q2, p = $(
             fn in (:asin, :acos) ? :((u - x * x, -2x, -u, -u / 2)) :
                 fn == :atan ? :((u + x * x, 2x, u, -u)) : fn == :asinh ? :((u + x * x, 2x, u, -u / 2)) :
@@ -290,24 +309,38 @@ for fn in (:asin, :acos, :atan, :asinh, :acosh, :atanh)
         )
         derivative = quadratic_power(q0, q1, q2, p, a.algebra.cutoff - 1)
         $(fn == :acos) && (derivative .*= -one(eltype(derivative)))
-        return integral_series(a, c0, derivative)
+        return integral_series(a, c0, derivative; filter)
     end
+    @eval Base.$fn(a::TaylorPolynomial) = inverse_series(a, Val($(QuoteNode(fn))))
 end
 function Base.atan(y::TaylorPolynomial, x::TaylorPolynomial)
     compatible(y, x)
     x0, y0 = constant_term(x), constant_term(y)
     coefficient_iszero(x0) && coefficient_iszero(y0) && throw(TaylorError("atan is not analytic at the origin"))
-    p = abs(x0) >= abs(y0) ? atan(y / x) : -atan(x / y)
-    return p + (atan(y0, x0) - constant_term(p))
+    use_x = abs(x0) >= abs(y0)
+    ratio = use_x ? quotient(y, x; filter = false) : quotient(x, y; filter = false)
+    p = inverse_series(ratio, Val(:atan); filter = false)
+    !use_x && scale!(p, p, -one(coefficient_type(p)); filter = false)
+    p.coeffs[1] = atan(y0, x0)
+    return finish!(p)
 end
 Base.atan(a::TaylorPolynomial, b::Real) = atan(promote(a, b)...)
 Base.atan(a::Real, b::TaylorPolynomial) = atan(promote(a, b)...)
 function Base.hypot(a::TaylorPolynomial, b::TaylorPolynomial)
-    compatible(a, b)
+    ctx = compatible(a, b)
     scale = max(abs(constant_term(a)), abs(constant_term(b)))
-    coefficient_iszero(scale) && return sqrt(a * a + b * b)
     # Normalize before squaring to avoid overflow/underflow at finite centers.
-    return scale * sqrt((a / scale)^2 + (b / scale)^2)
+    if !coefficient_iszero(scale)
+        a, b = normalized_argument(a, scale), normalized_argument(b, scale)
+    end
+    aa, bb = product(a, a; filter = false), product(b, b; filter = false)
+    R = promote_type(coefficient_type(aa), coefficient_type(bb))
+    squares = weighted_sum!(
+        aa isa TaylorPolynomial{R} ? aa : allocate(ctx, R),
+        aa, one(R), bb, one(R); filter = false
+    )
+    result = root_series(squares, 2; filter = false)
+    return scaled(result, coefficient_iszero(scale) ? one(scale) : scale)
 end
 Base.hypot(a::TaylorPolynomial, b::Real) = hypot(promote(a, b)...)
 Base.hypot(a::Real, b::TaylorPolynomial) = hypot(promote(a, b)...)
@@ -329,8 +362,8 @@ for fn in (:erf, :erfc)
         return integral_series(a, c0, derivative)
     end
 end
-function derivative_series(f, a::TaylorPolynomial, c0)
-    a.len == 1 && return TaylorPolynomial(c0)
+function derivative_series(f, a::TaylorPolynomial, c0; filter::Bool = true)
+    a.len == 1 && return series(a, [c0]; filter)
     x = constant_term(a)
     c = Vector{typeof(c0)}(undef, a.algebra.cutoff + 1); c[1] = c0
     factor = one(c0)
@@ -338,13 +371,14 @@ function derivative_series(f, a::TaylorPolynomial, c0)
         factor /= k
         c[k + 1] = f(k, x) * factor
     end
-    return series(a, c)
+    return series(a, c; filter)
 end
-gamma_series(a::TaylorPolynomial, c0) = derivative_series((k, x) -> scalar_psi(k - 1, x), a, c0)
+gamma_series(a::TaylorPolynomial, c0; filter::Bool = true) =
+    derivative_series((k, x) -> scalar_psi(k - 1, x), a, c0; filter)
 SpecialFunctions.loggamma(a::TaylorPolynomial) = gamma_series(a, domain_call(SpecialFunctions.loggamma, constant_term(a)))
 function SpecialFunctions.gamma(a::TaylorPolynomial)
     value, sign = domain_call(SpecialFunctions.logabsgamma, constant_term(a))
-    return sign * exp(gamma_series(a, value))
+    return scaled(exponential(gamma_series(a, value; filter = false); filter = false), sign)
 end
 function polygamma_series(a::TaylorPolynomial, n::Integer)
     n >= 0 || throw(ArgumentError("Invalid polygamma order"))

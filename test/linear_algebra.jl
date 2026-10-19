@@ -4,7 +4,8 @@ using LinearAlgebra, GenericLinearAlgebra, ForwardDiff
 import ForwardDiff: Dual
 
 @testset "Diagonal eigenpairs without optional scalar solvers" begin
-    script = "include(" * repr(joinpath(@__DIR__, "support", "diagonal_eigenpairs.jl")) * ")"
+    script = "include(" *
+        repr(joinpath(@__DIR__, "support", "diagonal_eigenpairs.jl")) * ")"
     project = dirname(Base.active_project())
     @test success(`$(Base.julia_cmd()) --startup-file=no --project=$project -e $script`)
 end

@@ -67,7 +67,11 @@ for op in (:isless, :isequal, :(==))
 end
 
 "Set out = alpha*a + beta*b. Aliasing either input is supported."
-@inline function weighted_sum!(out::TaylorPolynomial, a::TaylorPolynomial, alpha::Real, b::TaylorPolynomial, beta::Real; order::Int = a.algebra.cutoff)
+@inline function weighted_sum!(
+        out::TaylorPolynomial, a::TaylorPolynomial, alpha::Real,
+        b::TaylorPolynomial, beta::Real;
+        order::Int = a.algebra.cutoff, filter::Bool = true
+    )
     ctx = compatible(a, b)
     valid(out) === ctx || throw(ArgumentError("Different output context"))
     n = min(max(a.len, b.len), ctx.basis.ends[order + 1])
@@ -79,7 +83,7 @@ end
         bc = i <= b.len ? b.coeffs[i] : zero(coefficient_type(b))
         out.coeffs[i] = alpha * coefficient_operand(R, ac) + beta * coefficient_operand(R, bc)
     end
-    return finish!(out, n)
+    return finish!(out, n; filter)
 end
 
 function Base.muladd(alpha::Real, a::TaylorPolynomial, b::TaylorPolynomial)
@@ -89,7 +93,8 @@ function Base.muladd(alpha::Real, a::TaylorPolynomial, b::TaylorPolynomial)
     return weighted_sum!(allocate_undef(ctx, T, n), a, alpha, b, one(T))
 end
 Base.muladd(a::TaylorPolynomial, alpha::Real, b::TaylorPolynomial) = muladd(alpha, a, b)
-Base.muladd(a::TaylorPolynomial, b::TaylorPolynomial, c::TaylorPolynomial) = a * b + c
+Base.muladd(a::TaylorPolynomial, b::TaylorPolynomial, c::TaylorPolynomial) =
+    product(a, b; filter = false) + c
 function add!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial)
     return weighted_sum!(out, a, one(coefficient_type(a)), b, one(coefficient_type(b)))
 end
@@ -111,11 +116,12 @@ function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order:
     end
     return finish!(out, n; filter)
 end
-function Base.:*(a::TaylorPolynomial{T}, b::Real) where {T <: Real}
+function scaled(a::TaylorPolynomial{T}, b::Real; filter::Bool = true) where {T <: Real}
     ctx = valid(a)
     out = allocate_undef(ctx, promote_type(T, typeof(b)), min(a.len, ctx.basis.ends[ctx.cutoff + 1]))
-    return scale!(out, a, b)
+    return scale!(out, a, b; filter)
 end
+Base.:*(a::TaylorPolynomial, b::Real) = scaled(a, b)
 Base.:*(a::Real, b::TaylorPolynomial) = b * a
 function Base.:+(a::TaylorPolynomial{T}, b::Real) where {T <: Real}
     ctx = valid(a)
@@ -199,26 +205,35 @@ function multiply!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomi
 end
 "Multiply into reusable polynomial storage; scalar arithmetic may still allocate."
 LinearAlgebra.mul!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial) = multiply!(out, a, b, a.algebra.cutoff)
-function Base.:*(a::TaylorPolynomial{T}, b::TaylorPolynomial{S}) where {T <: Real, S <: Real}
+function product(
+        a::TaylorPolynomial{T}, b::TaylorPolynomial{S}; filter::Bool = true
+    ) where {T <: Real, S <: Real}
     ctx = compatible(a, b)
     n = ctx.basis.ends[min(ctx.cutoff, ctx.basis.degrees[a.len] + ctx.basis.degrees[b.len]) + 1]
-    return multiply!(allocate_undef(ctx, promote_type(T, S), n), a, b, ctx.cutoff)
+    return multiply!(allocate_undef(ctx, promote_type(T, S), n), a, b, ctx.cutoff; filter)
 end
+Base.:*(a::TaylorPolynomial, b::TaylorPolynomial) = product(a, b)
+# Base's negative literal-power fallback filters inv(a) before raising it again.
+Base.literal_pow(::typeof(^), a::TaylorPolynomial, ::Val{N}) where {N} = a^N
 function Base.:^(a::TaylorPolynomial, n::Integer)
     # Preserve the explicit range check in the existing API, avoiding abs(typemin).
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Exponent out of range"))
-    valid(a)
+    ctx = valid(a)
     n == 0 && return one(a)
-    n == 1 && return copy(+a)
-    n == 2 && return a * a
-    n < 0 && return inv(a)^(-n)
-    result, power = one(a), a
+    n == 1 && return finish!(copy(+a))
+    n == 2 && return product(a, a)
+    power = n < 0 ? quotient(one(coefficient_type(a)), a; filter = false) : a
+    n = abs(n)
+    result = nothing
     while n > 0
-        isodd(n) && (result = result * power)
+        if isodd(n)
+            result = isnothing(result) ? copy(+power) :
+                product(result, power; filter = false)
+        end
         n >>= 1
-        n > 0 && (power = power * power)
+        n > 0 && (power = product(power, power; filter = false))
     end
-    return result
+    return finish!(result, min(result.len, ctx.basis.ends[ctx.cutoff + 1]))
 end
 """
     coefficient_norm(p::TaylorPolynomial, type = 0)
@@ -228,6 +243,7 @@ Type zero returns the maximum absolute coefficient; type one returns their
 absolute sum; higher integer types use the corresponding power norm.
 Unlike scalar polynomial comparisons, this includes nonconstant coefficients.
 The result uses the floating norm type of the coefficients, as in `LinearAlgebra.norm`.
+Interval coefficients produce an outward-rounded enclosure of the possible norms.
 """
 function coefficient_norm(a::TaylorPolynomial, p::Real = 0)
     valid(a)

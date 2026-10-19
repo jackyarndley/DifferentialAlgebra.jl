@@ -88,6 +88,73 @@ function scalar_derivative(f, x, n)
     return n == 0 ? f(x) : ForwardDiff.derivative(t -> scalar_derivative(f, t, n - 1), x)
 end
 
+@testset "Filter completed compound results" begin
+    cases = (
+        t -> log2(2 + 0.018t), t -> log10(2 + 0.18t),
+        t -> log(1.1, 2 + 0.018t), t -> (10 + 0.09t)^3,
+        t -> (10 + 0.09t)^5, t -> (0.5 + 0.09t)^(-3),
+        t -> hypot(10 + 0.09t, 2 + 0.018t),
+        t -> gamma(10 + 0.09t), t -> gamma(-2.5 + 0.09t),
+        t -> (10 + 0.09t)^(2 + 0.018t), t -> 1.1^(100 + 0.018t),
+        t -> atan(2 + 0.018t, 10 + 0.09t),
+        t -> atan(10 + 0.09t, 2 + 0.018t),
+        t -> muladd(10 + 0.09t, 10 + 0.09t, 0.018t^2),
+    )
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 4, table_bytes = budget)
+        set_coefficient_tolerance!(0.01)
+        for f in cases
+            result = f(x)
+            for k in 0:4
+                expected = scalar_derivative(f, 0.0, k) / factorial(k)
+                expected = abs(expected) <= 0.01 ? 0.0 : expected
+                @test coefficient(result, [k]) ≈ expected rtol = 1.0e-10 atol = 1.0e-12
+            end
+            @test coefficient_tolerance() == 0.01
+            @test truncation_order() == 4
+        end
+        @test coefficient(log2(2 + 0.018x), [1]) ≈ 0.01298425536800067
+        @test coefficient((10 + 0.09x)^3, [2]) ≈ 0.243
+        # The public result is owned, including identity and negative powers.
+        p = 10 + 0.09x
+        snapshot = copy(p.coeffs)
+        for n in (0, 1, 2, 3, -1, -3)
+            result = p^n
+            result.coeffs[1] = 7
+            @test p.coeffs == snapshot
+        end
+        with_order(2) do
+            @test degree(p^5) <= 2
+            @test truncation_order() == 2
+        end
+        @test truncation_order() == 4
+    end
+end
+
+@testset "Compound coefficient precision" begin
+    for bits in (128, 256)
+        setprecision(BigFloat, bits) do
+            x, = variables(BigFloat, 1; order = 3)
+            slope = BigFloat("0.018")
+            p = 2 + slope * x
+            set_coefficient_tolerance!(0.01)
+            for (result, expected) in (
+                    (log2(p), slope / (2log(big(2)))),
+                    (log(1 // 2, p), slope / (2log(big(1) // 2))),
+                    (3^p, 9log(big(3)) * slope),
+                )
+                @test coefficient_type(result) === BigFloat
+                actual = coefficient(result, [1])
+                @test abs(expected) <= 0.01 ? iszero(actual) :
+                    isapprox(actual, expected; rtol = 20eps(BigFloat))
+            end
+        end
+    end
+    x, = variables(1; order = 2)
+    @test constant_term(asin(one(x))) == pi / 2
+    @test constant_term(acos(one(x))) == 0
+end
+
 # Expand f(2+h), h = a*x + b*y + c*x*z + d*y^2, directly by the multinomial
 # theorem. Counts of x*z and x are fixed by the target x/z exponents; enumerate
 # the possible y^2 counts. No polynomial multiplication or basis metadata is used.

@@ -1,5 +1,16 @@
 # API migrations
 
+From `24dc1a1`:
+
+- Compound analytic operations, integer powers (including negative literals),
+  and polynomial exponentiation filter coefficients only after completing the
+  result. Global tolerance and truncation order are unchanged.
+- Interval coefficient norms return outward-rounded enclosures, including for
+  intervals containing zero, and preserve coefficient metadata. Ordinary-number
+  norm types and stable accumulation are unchanged.
+- Diagonal polynomial eigenpairs derive scalar working types without a dense
+  eigensolve; BigFloat and Rational{BigInt} diagonals need no optional solver.
+
 From `720b46c`:
 
 - Import `erf`, `erfc`, `gamma`, `loggamma`, `besselj`, `bessely`, `besseli`,
