@@ -92,6 +92,17 @@ end
 
 # Dense output owns the coefficients of each saved step in k. It never reads
 # the current cache's expansion, which may belong to a later step or callback.
+function dense_value(k, order, i, h, prototype, ::Val{D}) where {D}
+    value = zero(prototype)
+    for degree in order:-1:D
+        term = k[degree + 1][i]
+        for count in 0:(D - 1)
+            term *= degree - count
+        end
+        value = muladd(value, h, term)
+    end
+    return value
+end
 function ODECore._ode_interpolant(
         Θ, dt, y0, y1, k, cache::TaylorCache,
         idxs, ::Type{Val{D}}, differential_vars
@@ -99,24 +110,20 @@ function ODECore._ode_interpolant(
     D >= 0 || throw(ArgumentError("Derivative order must be nonnegative"))
     indices = idxs === nothing ? eachindex(y0) : idxs isa Integer ? (idxs,) : idxs
     h = Θ * dt
-    result = map(indices) do i
-        value = zero(y0[i])
-        for degree in cache.order:-1:D
-            term = k[degree + 1][i]
-            for count in 0:(D - 1)
-                term *= degree - count
-            end
-            value = muladd(value, h, term)
-        end
-        return value
-    end
-    return idxs isa Integer ? only(result) : result
+    idxs isa Integer && return dense_value(k, cache.order, idxs, h, y0[idxs], Val(D))
+    return map(i -> dense_value(k, cache.order, i, h, y0[i], Val(D)), indices)
 end
 function ODECore._ode_interpolant!(
         out, Θ, dt, y0, y1, k, cache::TaylorCache,
         idxs, deriv::Type{Val{D}}, differential_vars
     ) where {D}
-    out .= ODECore._ode_interpolant(Θ, dt, y0, y1, k, cache, idxs, deriv, differential_vars)
+    D >= 0 || throw(ArgumentError("Derivative order must be nonnegative"))
+    indices = idxs === nothing ? eachindex(y0) : idxs isa Integer ? (idxs,) : idxs
+    length(out) == length(indices) || throw(DimensionMismatch("Output length must match the interpolation selection"))
+    h = Θ * dt
+    for (j, i) in zip(eachindex(out), indices)
+        out[j] = dense_value(k, cache.order, i, h, y0[i], Val(D))
+    end
     return out
 end
 function ODECore._ode_addsteps!(

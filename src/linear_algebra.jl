@@ -26,7 +26,10 @@ end
 Return the matrix of second polynomial partial derivatives of `p`.
 For a vector of polynomials, return a vector of Hessian matrices.
 """
-hessian(a::TaylorPolynomial) = [differentiate(differentiate(a, i), j) for i in 1:nvariables(), j in 1:nvariables()]
+function hessian(a::TaylorPolynomial)
+    first_derivatives = gradient(a)
+    return [differentiate(p, j) for p in first_derivatives, j in eachindex(first_derivatives)]
+end
 hessian(v::AbstractVector{<:TaylorPolynomial}) = hessian.(v)
 
 # Julia's generic normalize uses floating-point limits to choose a rescaling

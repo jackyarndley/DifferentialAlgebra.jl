@@ -92,8 +92,14 @@ Base.sincos(a::TimeNode) = record_time_sincos(a, false)
 for (f, hyperbolic, index) in ((:sin, false, 1), (:cos, false, 2), (:sinh, true, 1), (:cosh, true, 2))
     @eval Base.$f(a::TimeNode) = record_time_sincos(a, $hyperbolic)[$index]
 end
-Base.tan(a::TimeNode) = sin(a) / cos(a)
-Base.tanh(a::TimeNode) = sinh(a) / cosh(a)
+function Base.tan(a::TimeNode)
+    s, c = record_time_sincos(a, false)
+    return s / c
+end
+function Base.tanh(a::TimeNode)
+    s, c = record_time_sincos(a, true)
+    return s / c
+end
 
 function time_convolution(a, b, k, prototype)
     value = zero(prototype)

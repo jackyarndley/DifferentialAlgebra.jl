@@ -155,7 +155,7 @@ function polygon_probe(p::ConvexPolygon{T}) where {T}
     return ConvexPolygon{T}(points, Val(:owned)), T.(radii)
 end
 
-function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimator)
+function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimator; probe::Bool = false)
     T = eltype(options.scales)
     lo, hi = polygon_projection_bounds(polygon, B)
     geometry = ads_geometry(T.(collect(lo)), T.(collect(hi)))
@@ -171,11 +171,11 @@ function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimat
     end
     ads_check_context(ctx, options.working_order)
     assessed = ads_assess(p, options)
-    directions = polygon_sensitivity(p.polynomials, geometry.radius, options.scales, assessed.tolerance, T)
+    directions = probe ? polygon_sensitivity(p.polynomials, geometry.radius, options.scales, assessed.tolerance, T) : nothing
     cover = (; geometry..., projection = (lo, hi), directions)
     return ADSCandidate(cover, assessed.payload, assessed.errors, assessed.contributions, assessed.tolerance, assessed.scalar, assessed.accepted)
 end
-function polygon_candidate(f, polygon, B, A, options, ctx, estimator::IntervalBound)
+function polygon_candidate(f, polygon, B, A, options, ctx, estimator::IntervalBound; probe::Bool = false)
     throw(ArgumentError("Load IntervalArithmetic to use IntervalBound on polygons"))
 end
 
@@ -240,7 +240,7 @@ function polygon_construct(
             probe, _ = polygon_probe(polygon)
             probe_options = (; options..., order = 2, working_order = 2, check_points = false)
             candidate = with_order(2) do
-                polygon_candidate(f, probe, Matrix{PolygonReal}(I, 2, 2), Matrix{PolygonReal}(I, 2, 2), probe_options, ctx, estimator)
+                polygon_candidate(f, probe, Matrix{PolygonReal}(I, 2, 2), Matrix{PolygonReal}(I, 2, 2), probe_options, ctx, estimator; probe = true)
             end
             polygon_frame(candidate.geometry.directions)
         else

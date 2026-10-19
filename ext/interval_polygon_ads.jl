@@ -4,7 +4,7 @@ DA.polygon_mid(x::Interval) = IA.mid(x)
 
 function DA.polygon_candidate(
         f, polygon::DA.ConvexPolygon{T}, B, A, options, ctx,
-        estimator::DA.IntervalBound
+        estimator::DA.IntervalBound; probe::Bool = false
     ) where {T}
     validated_rounding()
     T in (Float64, BigFloat) || throw(ArgumentError("IntervalBound supports Float64 or BigFloat polygon endpoints"))
@@ -16,9 +16,13 @@ function DA.polygon_candidate(
     candidate = validated_candidate(f, x, first(z), box, ctx, options)
     values = candidate.payload.models
     geometry = DA.ads_geometry(IA.inf.(box), IA.sup.(box))
-    polynomials = [m._polynomial for m in values]
-    radii = [IA.inf(r) for r in first(z)._coordinates.radius]
-    directions = DA.polygon_sensitivity(polynomials, radii, options.scales, candidate.tolerance, T)
+    directions = if probe
+        polynomials = [m._polynomial for m in values]
+        radii = [IA.inf(r) for r in first(z)._coordinates.radius]
+        DA.polygon_sensitivity(polynomials, radii, options.scales, candidate.tolerance, T)
+    else
+        nothing
+    end
     cover = (; geometry..., projection = (lo, hi), directions)
     return DA.ADSCandidate(cover, candidate.payload, candidate.errors, candidate.contributions, candidate.tolerance, candidate.scalar, candidate.accepted)
 end

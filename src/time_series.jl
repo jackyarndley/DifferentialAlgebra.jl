@@ -161,8 +161,14 @@ Base.sincos(a::TimeSeries) = time_sincos(a, false)
 for (fn, hyperbolic, index) in ((:sin, false, 1), (:cos, false, 2), (:sinh, true, 1), (:cosh, true, 2))
     @eval Base.$fn(a::TimeSeries) = time_sincos(a, $hyperbolic)[$index]
 end
-Base.tan(a::TimeSeries) = sin(a) / cos(a)
-Base.tanh(a::TimeSeries) = sinh(a) / cosh(a)
+function Base.tan(a::TimeSeries)
+    s, c = time_sincos(a, false)
+    return s / c
+end
+function Base.tanh(a::TimeSeries)
+    s, c = time_sincos(a, true)
+    return s / c
+end
 
 function evaluate(s::TimeSeries, τ::Real)
     value = copy(last(s.coefficients))
