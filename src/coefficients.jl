@@ -136,7 +136,12 @@ function calculus(
     )
     ctx = valid(a); b = ctx.basis
     1 <= v <= b.variables && 0 <= p <= b.order || throw(ArgumentError("Invalid variable power"))
-    T = operation === :integrate ? typeof(one(coefficient_type(a)) / degree_factor(one(coefficient_type(a)), 1)) : coefficient_type(a)
+    T = if operation === :integrate
+        unit = one(coefficient_type(a))
+        typeof(unit / degree_factor(unit, 1))
+    else
+        coefficient_type(a)
+    end
     out = allocate(ctx, T)
     exponents = zeros(Int, b.variables)
     for i in 1:a.len

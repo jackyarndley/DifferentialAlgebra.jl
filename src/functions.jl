@@ -52,13 +52,23 @@ function recurrence(a::TaylorPolynomial, c0, p, ::Val{MODE}; filter::Bool = true
             i > a.len && break
             ai = a.coeffs[i]
             coefficient_iszero(ai) && continue
-            weight = MODE === :exp ? degree_factor(ai, basis.degrees[i]) : MODE === :log ? degree_factor(ai, -basis.degrees[j]) : p * degree_factor(ai, basis.degrees[i]) - degree_factor(ai, basis.degrees[j])
+            weight = if MODE === :exp
+                degree_factor(ai, basis.degrees[i])
+            elseif MODE === :log
+                degree_factor(ai, -basis.degrees[j])
+            else
+                p * degree_factor(ai, basis.degrees[i]) - degree_factor(ai, basis.degrees[j])
+            end
             value += weight * ai * out.coeffs[j]
         end
         if MODE === :log
             value += k <= a.len ? degree_factor(a.coeffs[k], degree) * a.coeffs[k] : zero(T)
         end
-        out.coeffs[k] = MODE === :exp ? value / degree_factor(value, degree) : value / (degree_factor(a0, degree) * a0)
+        out.coeffs[k] = if MODE === :exp
+            value / degree_factor(value, degree)
+        else
+            value / (degree_factor(a0, degree) * a0)
+        end
     end
     return finish!(out, n; filter)
 end
@@ -350,15 +360,15 @@ function bessel_series(fn, n::Integer, a::TaylorPolynomial, q::Int, s)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
     x = constant_term(a); c0 = scalar_bessel(fn, n, x)
     a.len == 1 && return TaylorPolynomial(c0)
-    N = a.algebra.cutoff
+    cutoff = a.algebra.cutoff
     if coefficient_iszero(x)
         fn in (SpecialFunctions.besselj, SpecialFunctions.besseli) || throw(TaylorError("Bessel expansion is singular at zero"))
-        c = zeros(typeof(c0), N + 1)
+        c = zeros(typeof(c0), cutoff + 1)
         order = abs(n)
-        if order <= N
+        if order <= cutoff
             sign = n < 0 && fn === SpecialFunctions.besselj && isodd(order) ? -1 : 1
             value = convert(typeof(c0), sign) / convert(typeof(c0), big(2)^order * factorial(big(order)))
-            for k in order:2:N
+            for k in order:2:cutoff
                 c[k + 1] = value
                 m = (k - order) ÷ 2 + 1
                 value *= -q / (convert(typeof(c0), 4) * m * (m + order))
@@ -366,13 +376,13 @@ function bessel_series(fn, n::Integer, a::TaylorPolynomial, q::Int, s)
         end
         return series(a, c)
     end
-    c = zeros(typeof(c0), N + 1); c[1] = c0
+    c = zeros(typeof(c0), cutoff + 1); c[1] = c0
     lower, upper = scalar_bessel(fn, n - 1, x), scalar_bessel(fn, n + 1, x)
     neighbor = fn in (SpecialFunctions.besselj, SpecialFunctions.bessely) ? (lower - upper) / 2 :
         fn in (SpecialFunctions.besseli, SpecialFunctions.besselix) ? (lower + upper) / 2 : -(lower + upper) / 2
     c[2] = neighbor - s * c0
     r = s * s + q
-    @inbounds for k in 0:(N - 2)
+    @inbounds for k in 0:(cutoff - 2)
         value = -(2x * k + x + 2s * x * x) * (k + 1) * c[k + 2] - (k * k + 4s * x * k + r * x * x + s * x - n * n) * c[k + 1]
         k >= 1 && (value -= (2s * (k - 1) + 2r * x + s) * c[k])
         k >= 2 && (value -= r * c[k - 1])
