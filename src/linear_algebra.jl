@@ -53,6 +53,9 @@ function hessian_tensor(v::AbstractVector{<:TaylorPolynomial})
     return stack(hessian(v); dims = 3)
 end
 
+scalar_eigen_type(::Type{T}) where {T} =
+    promote_type(Float32, typeof(zero(T) / sqrt(abs2(one(T)))))
+
 """
     eigenpairs(A)
 
@@ -68,7 +71,7 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
     if n == 0
         T = isconcretetype(eltype(A)) ? coefficient_type(eltype(A)) : Float64
         # Match the scalar solver's real working type without an empty solve.
-        R = promote_type(Float32, typeof(zero(T) / sqrt(abs2(one(T)))))
+        R = scalar_eigen_type(T)
         return TaylorPolynomial{R}[], Matrix{TaylorPolynomial{R}}(undef, 0, 0)
     end
     for j in 1:n, i in 1:(j - 1)
@@ -77,13 +80,17 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
             throw(ArgumentError("Expected a symmetric matrix"))
     end
     T = mapreduce(coefficient_type, promote_type, A)
+    if all(iszero(A[i, j]) for i in 1:n for j in 1:n if i != j)
+        R = scalar_eigen_type(T)
+        diagonal = LinearAlgebra.diag(A)
+        permutation = sortperm(constant_term.(diagonal))
+        values = TaylorPolynomial{R}.(diagonal[permutation])
+        vectors = TaylorPolynomial{R}.(Matrix{R}(I, n, n)[:, permutation])
+        return values, vectors
+    end
     A0 = Matrix{T}(constant_term.(A))
     F = LinearAlgebra.eigen(LinearAlgebra.Symmetric(A0))
     R, V = eltype(F.values), eltype(F.vectors)
-    if all(iszero(A[i, j]) for i in 1:n for j in 1:n if i != j)
-        permutation = sortperm(constant_term.(LinearAlgebra.diag(A)))
-        return TaylorPolynomial{R}.(LinearAlgebra.diag(A)[permutation]), TaylorPolynomial{V}.(Matrix{V}(I, n, n)[:, permutation])
-    end
     values, vectors = TaylorPolynomial{R}.(F.values), TaylorPolynomial{V}.(F.vectors)
     all(a -> a.len == 1, A) && return values, vectors
     scale = max(one(R), maximum(abs, F.values; init = zero(R)))

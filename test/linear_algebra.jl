@@ -3,6 +3,12 @@ using LinearAlgebra, GenericLinearAlgebra, ForwardDiff
 
 import ForwardDiff: Dual
 
+@testset "Diagonal eigenpairs without optional scalar solvers" begin
+    script = "include(" * repr(joinpath(@__DIR__, "support", "diagonal_eigenpairs.jl")) * ")"
+    project = dirname(Base.active_project())
+    @test success(`$(Base.julia_cmd()) --startup-file=no --project=$project -e $script`)
+end
+
 @testset "Eigenpair validation and scalar result types" begin
     for T in (Int, Float32, Float64, BigFloat)
         variables(T, 1; order = 2)
