@@ -1,11 +1,12 @@
 # Benchmarks and verification
 
-Run from the repository root. The benchmark environment contains only the package,
-interval/AD support, and the ODE interfaces needed by these scripts; it does not
+Run from the repository root. The benchmark environment contains the package,
+interval/AD support, and the ODE interfaces needed by the scripts. It does not
 require the plotting or documentation environment.
 
 ```sh
 julia --startup-file=no --project=benchmark -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --startup-file=no --project=benchmark benchmark/compound_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/numerical_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/cleanup.jl
 julia --startup-file=no --project=benchmark benchmark/unified_ads.jl
@@ -15,133 +16,133 @@ julia --startup-file=no --project=benchmark benchmark/continuous_ads.jl
 ```
 
 `measurement.jl` reports the minimum of 30 warmed batches of ten calls, allocated
-bytes per call, first-call runtime, and compilation time inside that first call.
-Package loading and compilation of the measurement wrapper are excluded. First
-calls later in a process can reuse earlier specializations; zero compilation does
-not mean that a path has no compilation cost. Scripts report both multiplication
-budgets (zero and 32 MiB), numerical work, and interval widths where applicable.
-Dynamic first-call entry keeps workload compilation inside the timer; a separate
-specialized loop measures warmed calls without runtime dispatch. Julia 1.10
-reports first-call elapsed time but returns `missing` for the compilation statistic.
-Run paired revisions sequentially without competing Julia jobs. Timings are
-machine dependent; compare allocations, patch counts, and numerical contracts too.
+bytes per call, first-call runtime, and compilation inside that first call.
+Package loading and compilation of the measurement wrapper are excluded. Later
+calls can reuse earlier specializations; zero compilation does not mean that a
+path has no compilation cost. Julia 1.10 reports first-call elapsed time and
+`missing` for the separate compilation statistic. Run paired revisions
+sequentially without competing Julia jobs. Submicrosecond minima are sensitive
+to timer resolution and CPU frequency; allocations and numerical results also
+matter.
 
-For the numerical-kernel baseline, create a detached worktree at `720b46c` and
-copy the root project's local `Manifest.toml` into it. Run
-`benchmark/numerical_kernels.jl` first with `--project=<baseline-worktree>` and
-then with `--project=.`. This script needs only the root package dependencies;
-use the same Julia version and manifest for both runs. The broader ADS scripts
-use the benchmark environment above. Local manifests are not committed.
+For the compound-kernel comparison, create a detached worktree at `24dc1a1`.
+Use the current `compound_kernels.jl` script for both revisions, changing only
+the benchmark environment's DifferentialAlgebra path with `Pkg.develop`.
+Keep dependency versions and source hashes identical within each Julia pair.
+The script prints the loaded package revision, multiplication budget, retained
+regression coefficients, interval bounds, and metadata. Configuration occurs
+outside the timed calls. It never loads GenericLinearAlgebra.
 
-## Numerical cleanup from `720b46c`
+## Compound kernels from `24dc1a1` to `1efc220`
 
-The paired script measures analytic Horner/recurrence paths, quotient construction,
-repeated differentiation, Hessians, coefficient norms and symmetric eigenpairs.
-It prints the formerly lost coefficients alongside timings, so an incorrectly
-shortened baseline result is visible. Global tolerance is configured outside the
-measured calculations. See the [migration note](../docs/src/migration.md).
+Measurements used Windows, an Intel i7-12700 (`alderlake`), one Julia thread,
+IntervalArithmetic 1.0.12, SpecialFunctions 2.9.0, and default 256-bit BigFloat
+precision. Compound rows use one variable/order four; interval rows use
+`Interval{Float64}`, two variables/order four; diagonal matrices are 2×2.
+Both Julia versions used `--startup-file=no --check-bounds=yes`.
+Dependency versions and source hashes matched within each pair. The measured
+numerical source is unchanged by the results-only commit recording this report.
+See the [API migration note](../docs/src/migration.md).
 
-Paired runs compare `720b46c` with `1a66559` on Windows, an Intel i7-12700,
-Julia 1.13.1 and SpecialFunctions 2.9.0, with identical dependency manifests.
-BigFloat measurements use the default 256-bit precision. The numerical source is
-unchanged by the results-only commit that records this report.
-
-The following paths use the zero-byte multiplication budget. Times are warmed
-minima and bytes are per call; baseline rows with discarded coefficients do less
-mathematical work and should not be interpreted as equivalent correct results.
+Julia 1.13.2, zero-byte multiplication budget:
 
 | Path | Before → after (μs) | Before → after (B) |
 |:--|--:|--:|
-| `exp`, three variables/order six | 0.91 → 0.98 | 1,888 → 1,888 |
-| `log` | 0.93 → 1.29 | 2,064 → 2,064 |
-| Polynomial quotient | 1.27 → 1.99 | 2,976 → 2,976 |
-| `erf` | 0.97 → 0.95 | 2,000 → 2,000 |
-| Hessian, three variables/order six | 1.93 → 1.94 | 10,784 → 10,784 |
-| Scaled quotient, tolerance `1e-6` | 0.12 → 0.16 | 672 → 704 |
-| Scaled order-ten `exp`, tolerance `1e-4` | 0.25 → 0.29 | 608 → 608 |
-| Scaled order-two `erf`, tolerance `1e-4` | 0.11 → 0.09 | 496 → 496 |
-| Repeated derivative, stored four/working two | 0.05 → 0.08 | 384 → 576 |
-| Hessian, stored four/working two | 0.08 → 0.08 | 528 → 528 |
+| Integer cube | 0.26 → 0.18 | 432 → 352 |
+| Negative integer power | 0.36 → 0.42 | 1,088 → 1,088 |
+| `log2` | 0.23 → 0.51 | 672 → 704 |
+| `hypot` | 0.34 → 0.99 | 896 → 1,152 |
+| `hypot` with a small scalar | 1.20 → 1.10 | 1,312 → 1,216 |
+| `atan` with a small scalar | 0.50 → 0.50 | 992 → 1,376 |
+| `gamma` | 0.55 → 1.04 | 1,056 → 1,072 |
+| Polynomial exponent | 0.44 → 1.00 | 1,152 → 1,184 |
+| Stored order four/working order two power | 0.22 → 0.26 | 432 → 352 |
+| Point-interval coefficient norm | 0.29 → 2.96 | 0 → 1,376 |
+| Positive-width interval degree norm | 0.90 → 4.17 | 352 → 1,544 |
+| Float64 diagonal eigenpairs | 1.73 → 0.42 | 2,912 → 1,312 |
 
-Norms and eigenpairs:
+Correct interval norms cost additional storage and arithmetic. The shared
+interval accumulator groups coefficients by degree or into one group for the
+full norm, using guaranteed point scales and IA's integer powers/roots. The
+ordinary-number norm implementations are unchanged. Compound operations reuse
+private entry points to the existing multiplication, scaling and analytic
+kernels, with local filtering flags; no global tolerance or cutoff changes.
+
+The positive-width degree norm previously returned about `[4, 8.004]` and lost
+its guarantee flag. It now encloses `[5, sqrt(41)]` to outward-rounding accuracy,
+with `com` decoration and its guarantee intact. The point degree-norm case now
+returns the exact point interval `[5, 5]`. Zero-containing intervals previously threw; the
+new full/degree norm calls take 0.35/0.47 μs and allocate 912/1,040 B.
+BigFloat/Rational{BigInt} diagonal solves previously threw without an optional
+solver; they now take 2.19/6.72 μs and allocate 2,552/5,096 B.
+
+With either multiplication budget, the `log2` linear coefficient changes from
+zero to `0.01298425536800067`, and the cube's quadratic coefficient changes
+from `0.162` to `0.243`. Incorrect baseline results do less mathematical work;
+the timings do not compare equivalent correct calculations. At 32 MiB, the
+integer cube takes 0.29 → 0.12 μs, `log2` 0.13 → 0.08 μs, and `hypot`
+0.46 → 0.23 μs; their allocations are 432 → 352, 224 → 256, and 704 → 704 B.
+
+Julia 1.10.12, zero-byte multiplication budget:
 
 | Path | Before → after (μs) | Before → after (B) |
 |:--|--:|--:|
-| Float32 coefficient norm | 0.12 → 0.03 | 0 → 0 |
-| Float32 degree norms | 0.14 → 0.12 | 96 → 160 |
-| Float64 coefficient norm | 0.15 → 0.04 | 0 → 0 |
-| Float64 degree norms | 0.14 → 0.14 | 112 → 192 |
-| BigFloat coefficient norm | 8.86 → 2.15 | 7,208 → 7,112 |
-| BigFloat degree norms | 8.81 → 11.77 | 8,080 → 8,520 |
-| Symmetric eigenpair lifting | 5.29 → 5.57 | 19,136 → 18,720 |
-| Diagonal eigenpairs | 0.30 → 0.63 | 1,840 → 2,896 |
-| Empty integer eigenpairs | 0.01 → 0.01 | 80 → 80 |
+| Integer cube | 0.32 → 0.30 | 432 → 352 |
+| `hypot` | 0.27 → 0.49 | 896 → 1,152 |
+| Stored order four/working order two power | 0.28 → 0.14 | 432 → 352 |
+| Positive-width interval degree norm | 0.54 → 2.41 | 352 → 1,832 |
+| Float64 diagonal eigenpairs | 1.14 → 0.36 | 2,848 → 1,200 |
 
-Stable degree norms use a second scaled accumulation buffer. Repeated derivatives
-retain one additional intermediate result in the stored-order regression. Diagonal
-eigenpairs now consult the scalar solver for result types, adding work relative
-to the former copy-only path. The empty path derives that working type directly,
-so it remains usable for BigFloat even when an empty scalar solve is unsupported.
-Submicrosecond timings approach timer resolution; allocation counts are useful
-alongside them. No solver or polygon allocation tuning is included.
+Compilation inside first invocations on Julia 1.13.2:
 
-The 32 MiB multiplication budget is also measured in the raw results. The quotient
-constant/linear terms are now `1`/`-0.01` with either budget. The tenth exponential
-coefficient is about `1.85679756368096e11`; the quadratic error-function coefficient
-is `-0.005079293868746624`. Both derivative regressions now return coefficient `12`
-of `x²`. Previously the fallback quotient/exponential, both error-function paths,
-and both derivative paths returned zero for these requested coefficients. Empty
-integer eigenpairs now use Float64 coefficient containers.
-
-Compilation below is measured inside each first call, excluding package loading
-and the measurement wrapper. Later calls can reuse earlier specializations; these
-are individual observations rather than complete package time-to-first-execution.
-
-| First invocation | Compilation before → after (ms) |
+| Path | Before → after (ms) |
 |:--|--:|
-| `exp` | 2.34 → 2.41 |
-| `log` | 51.00 → 58.79 |
-| `erf` | 40.48 → 50.21 |
-| Hessian | 94.05 → 70.51 |
-| Float32 coefficient norm | 88.50 → 174.18 |
-| BigFloat coefficient norm | 139.33 → 183.25 |
-| BigFloat degree norms | 49.38 → 48.29 |
-| Eigenpair lifting | 1225.39 → 1194.58 |
-| Empty integer eigenpairs | 556.10 → 637.36 |
+| Integer cube | 12.11 → 2.98 |
+| `log2` | 6.07 → 3.77 |
+| `gamma` | 2.95 → 3.97 |
+| Point-interval coefficient norm | 8.40 → 7.61 |
+| Float64 diagonal eigenpairs | 4.75 → 6.69 |
+| Point-interval degree norms | 3.63 → 4.05 |
 
-All first-call runtimes and both budgets are retained in the
-[baseline measurements](measurements/720b46c-numerical_kernels.txt) and
-[cleanup measurements](measurements/1a66559-numerical_kernels.txt).
-The only new numerical helper normalizes analytic arguments without filtering;
-existing multiplication/scaling/calculus kernels receive local order/filter
-controls. Coefficient norms reuse LinearAlgebra's stable implementation.
+Julia 1.10 first-call elapsed times for the cube and diagonal eigenpairs are
+3.39 → 3.80 ms and 4.39 → 4.66 ms. These observations include reuse from package
+precompilation, input setup, and earlier paths in the same script; they are not
+whole-package compilation totals. Full measurements retain first-call times and both budgets:
 
-The isolated baseline passed **9,984/9,984** tests on Julia 1.13.1. The final
-cleanup passed **9,991/9,991** on **both Julia 1.10.12 and 1.13.1**, with bounds
-checking and Aqua enabled. Aqua retains only the five exact constructor-method
-exceptions documented in `test/quality.jl`. Concurrent shutdown probes initially
-exceeded Aqua's 30-second limit; staggered probes passed with that default unchanged.
-Literate's catalog/rendering checks passed **10/10**, all **30** tutorials executed,
-and Documenter's rendered catalog/link/asset checks passed **3,553/3,553** for flat
-URLs and **3,269/3,269** for directory URLs. The asset audit excludes only the two
-version-selector files created by deployment. Runic 1.11.1 and `git diff --check`
-also passed. The benchmark script completed on Julia 1.10.12 as well; its
-compilation statistic is `missing`, as documented above.
+- [Julia 1.13.2 baseline](measurements/24dc1a1-compound_kernels-julia1.13.2.txt)
+- [Julia 1.13.2 follow-up](measurements/1efc220-compound_kernels-julia1.13.2.txt)
+- [Julia 1.10.12 baseline](measurements/24dc1a1-compound_kernels-julia1.10.12.txt)
+- [Julia 1.10.12 follow-up](measurements/1efc220-compound_kernels-julia1.10.12.txt)
+
+Earlier numerical-kernel measurements remain revision-tagged in
+[720b46c](measurements/720b46c-numerical_kernels.txt) and
+[1a66559](measurements/1a66559-numerical_kernels.txt).
 
 ## Verification commands
 
 ```sh
 julia --startup-file=no --project -e 'using Pkg; Pkg.test(; julia_args=["--startup-file=no", "--check-bounds=yes"])'
-julia +1.10 --startup-file=no --project -e 'using Pkg; Pkg.test(; julia_args=["--startup-file=no", "--check-bounds=yes"])'
-julia --startup-file=no --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-julia --startup-file=no --project=docs docs/test_literate.jl
-julia --startup-file=no --project=docs docs/make.jl
-julia --startup-file=no --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --check --diff --docstrings src test ext examples benchmark docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl
+julia +1.10 --startup-file=no -e 'using Pkg; Pkg.activate(; temp=true); Pkg.develop(path=pwd()); Pkg.test("DifferentialAlgebra"; julia_args=["--startup-file=no", "--check-bounds=yes"])'
 git diff --check
 ```
 
-The Ubuntu CI matrix remains Julia 1.10 and latest stable. Local runs on Windows
-do not substitute for that CI job. Namespace isolation uses SafeTestsets, while
-context-mutating files remain sequential. Independent coefficient/moment oracles,
-interval guarantees and metadata, precision, aliasing, both multiplication tables,
-loading order, catalog registration, links, and generated figures remain tested.
+Use separate environments for each Julia version to avoid rewriting a shared
+manifest. See [Contributing](../docs/src/contributing.md) for Runic, documentation,
+and Literate commands. The Ubuntu CI matrix remains Julia 1.10 and latest stable;
+local Windows checks do not substitute for that CI job. Context-mutating tests
+remain sequential, and Aqua keeps its five exact constructor-method exceptions.
+No solver or polygon allocation tuning is included in this patch.
+
+## Verification at `1efc220`
+
+`Pkg.test()` passed **10,464/10,464** checks across 31 sequential SafeTestsets on
+**Julia 1.10.12 and 1.13.2**, with bounds checking and Aqua enabled. Fresh-process
+checks covered optional extension loading and BigFloat/Rational{BigInt}
+polynomial diagonal eigenpairs without GenericLinearAlgebra. The suite also
+checked snapshot ownership.
+Runic 1.11.1 passed on both Julia versions; all added Julia lines fit 92 columns.
+Literate's catalog/rendering checks passed **10/10**, and the audit of the existing
+rendered documentation passed **3,553/3,553** catalog/link/asset checks using the
+Julia 1.13.1 documentation environment. A fresh full documentation build was not
+run for this follow-up. No failing checks remain. IntervalArithmetic's existing
+invalid-input and rounding-probe warnings still appear in the test output.

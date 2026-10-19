@@ -60,7 +60,9 @@ scalar_eigen_type(::Type{T}) where {T} =
     eigenpairs(A)
 
 Eigenvalues and orthonormal eigenvectors of a real symmetric polynomial matrix.
-The constant matrix must have distinct eigenvalues for a unique Taylor expansion.
+Diagonal matrices use coordinate eigenvectors, sorted by constant eigenvalues
+with stable ties. Other nonconstant matrices require distinct constant eigenvalues
+for a unique Taylor expansion.
 Each eigenpair is lifted degree by degree with the constant bordered Jacobian.
 """
 function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
