@@ -19,9 +19,9 @@ by the factorials of their exponents to recover the moments.
 """
 function raw_moments(mgf::TaylorPolynomial, no::Integer)
     return lock(ALGEBRA_LOCK) do
-        valid(mgf)
-        0 <= no <= max_order() || throw(ArgumentError("Moment order exceeds initialized order"))
-        indices = multiindices(no, nvariables())
+        basis = valid(mgf).basis
+        0 <= no <= basis.order || throw(ArgumentError("Moment order exceeds initialized order"))
+        indices = multiindices(no, basis.variables)
         T = coefficient_type(mgf)
         moments = [coefficient(mgf, jj) * prod(j -> convert(T, factorial(big(j))), jj) for jj in indices]
         indices, moments
@@ -31,11 +31,15 @@ end
     central_moments(mgf, order)
 
 Return multi-indices and moments after centering the moment-generating function.
-The input must have constant coefficient one.
+The input must have constant coefficient one. The requested order must not exceed
+the current working order; increase it explicitly before calling this function.
+This function never changes the working order.
 """
 function central_moments(mgf::TaylorPolynomial, no::Integer)
     return lock(ALGEBRA_LOCK) do
-        valid(mgf)
+        ctx = valid(mgf)
+        0 <= no <= ctx.cutoff || throw(ArgumentError("Central moment order must be between zero and the working order; use with_order explicitly for a higher order"))
+        constant_term(mgf) == one(coefficient_type(mgf)) || throw(ArgumentError("A moment-generating function must have constant coefficient one"))
         mean = linear_part(mgf)
         shift = sum(mean[i] * variable(i, coefficient_type(mgf)) for i in eachindex(mean))
         raw_moments(exp(-shift) * mgf, no)

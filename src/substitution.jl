@@ -19,7 +19,7 @@ function affine_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Rea
         powers[from] = 0
         target = powers[to]
         remaining = b.degrees[i] - power
-        choose = one(T)
+        choose = T <: Union{Integer, Rational} ? big(1) : one(T)
         first, last = coefficient_iszero(c) ? power : 0, coefficient_iszero(a) ? 0 : power
         for k in first:last
             degree = remaining + k
@@ -27,7 +27,13 @@ function affine_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Rea
                 powers[to] = target + k
                 result.coeffs[rank(b, powers, degree)] += coefficient * choose * ap[k + 1] * cp[power - k + 1]
             end
-            k < power && (choose = choose * degree_factor(choose, power - k) / degree_factor(choose, k + 1))
+            if k < power
+                choose = if T <: Union{Integer, Rational}
+                    div(choose * (power - k), k + 1)
+                else
+                    choose * degree_factor(choose, power - k) / degree_factor(choose, k + 1)
+                end
+            end
         end
     end
     return finish!(result)
