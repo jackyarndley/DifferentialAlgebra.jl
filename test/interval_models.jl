@@ -42,6 +42,7 @@ end
             @test IA.sup(result) <= upper * (1 + 10eps(T))
         end
         @test sameinterval(coefficient_norm(3x + 4y, 2), IA.interval(T, 5))
+        @test sameinterval(coefficient_norm(3x + 4y, 2.0), IA.interval(T, 5))
         for n in (0, 1, 2, 3)
             p = IA.interval(T, -3, 3) * x
             @test sameinterval(coefficient_norm(p, n), IA.interval(T, 0, 3))

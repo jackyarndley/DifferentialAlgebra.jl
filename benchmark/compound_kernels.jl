@@ -22,11 +22,13 @@ function report(name, f; budget = missing)
 end
 for budget in (0, 32 * 1024^2)
     x, = variables(1; order = 4, table_bytes = budget)
-    p, q = 10 + 0.09x, 2 + 0.018x
+    p, q, r = 10 + 0.09x, 2 + 0.018x, 1 + 100x
     set_coefficient_tolerance!(0.01)
     for (name, f) in (
             (:integer_power, () -> p^3), (:negative_power, () -> q^(-3)),
             (:log2, () -> log2(q)), (:hypot, () -> hypot(p, q)),
+            (:hypot_scalar, () -> hypot(r, 0.005)),
+            (:atan_scalar, () -> atan(0.005, r)),
             (:gamma, () -> gamma(p)), (:polynomial_power, () -> p^q),
         )
         report(name, f; budget)

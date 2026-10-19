@@ -100,18 +100,26 @@ end
         t -> atan(10 + 0.09t, 2 + 0.018t),
         t -> muladd(10 + 0.09t, 10 + 0.09t, 0.018t^2),
     )
+    scalar_cases = (
+        t -> hypot(1 + 100t, 0.005), t -> hypot(0.005, 1 + 100t),
+        t -> atan(1 + 100t, 0.005), t -> atan(0.005, 1 + 100t),
+    )
     for budget in (0, 32 * 1024^2)
         x, = variables(1; order = 4, table_bytes = budget)
         set_coefficient_tolerance!(0.01)
-        for f in cases
-            result = f(x)
-            for k in 0:4
-                expected = scalar_derivative(f, 0.0, k) / factorial(k)
-                expected = abs(expected) <= 0.01 ? 0.0 : expected
-                @test coefficient(result, [k]) ≈ expected rtol = 1.0e-10 atol = 1.0e-12
+        # BigFloat derivatives avoid cancellation in the small scalar-input
+        # corrections to hypot; the polynomial calculation still uses Float64.
+        for (functions, point) in ((cases, 0.0), (scalar_cases, BigFloat(0)))
+            for f in functions
+                result = f(x)
+                for k in 0:4
+                    expected = scalar_derivative(f, point, k) / factorial(k)
+                    expected = abs(expected) <= 0.01 ? 0.0 : expected
+                    @test coefficient(result, [k]) ≈ expected rtol = 1.0e-10 atol = 1.0e-12
+                end
+                @test coefficient_tolerance() == 0.01
+                @test truncation_order() == 4
             end
-            @test coefficient_tolerance() == 0.01
-            @test truncation_order() == 4
         end
         @test coefficient(log2(2 + 0.018x), [1]) ≈ 0.01298425536800067
         @test coefficient((10 + 0.09x)^3, [2]) ≈ 0.243
