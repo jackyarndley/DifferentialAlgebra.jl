@@ -33,7 +33,7 @@ end
         @test_throws ArgumentError DifferentialAlgebra.coefficient(p, [6, 0, 0])
         @test DifferentialAlgebra.linear_part(p) == [3, 0, 0]
         q = copy(p)
-        DifferentialAlgebra.set_coefficient!(q, [1, 1], 7)
+        DifferentialAlgebra.set_coefficient!(q, [1, 1, 0], 7)
         @test DifferentialAlgebra.coefficient(p, [1, 1, 0]) == 4
         @test DifferentialAlgebra.coefficient(q, [1, 1, 0]) == 7
         ms = DifferentialAlgebra.monomials(p)
@@ -42,7 +42,7 @@ end
         @test DifferentialAlgebra.exponents(last(ms)) == [0, 0, 3]
         @test DifferentialAlgebra.coefficient(DifferentialAlgebra.monomial(p, 1)) == 2
         @test_throws BoundsError DifferentialAlgebra.monomial(p, 0)
-        @test_throws ArgumentError DifferentialAlgebra.set_coefficient!(p, [-1], 2)
+        @test_throws ArgumentError DifferentialAlgebra.set_coefficient!(p, [-1, 0, 0], 2)
         @test_throws ArgumentError TaylorPolynomial(4, 1.0)
         @test_throws ArgumentError DifferentialAlgebra.variable(0)
         # The coefficient storage must stay alive across GC.
@@ -123,15 +123,16 @@ end
         bounds = DifferentialAlgebra.bounds(2 + 3x)
         @test bounds.lower <= -1 && bounds.upper >= 5
         @test isfinite(DifferentialAlgebra.random_polynomial(; density = 0.2, scaled = false))
-        @test eps(Float64) ≈ eps(Float64)
         @test DifferentialAlgebra.set_coefficient_tolerance!(1.0e-20) == 0
         @test DifferentialAlgebra.coefficient_tolerance() == 1.0e-20
         @test DifferentialAlgebra.set_truncation_order!(3) == 5
-        DifferentialAlgebra.push_order!(2); DifferentialAlgebra.push_order!(1)
-        @test DifferentialAlgebra.truncation_order() == 1
-        DifferentialAlgebra.pop_order!(); DifferentialAlgebra.pop_order!()
+        with_order(2) do
+            with_order(1) do
+                @test truncation_order() == 1
+            end
+            @test truncation_order() == 2
+        end
         @test DifferentialAlgebra.truncation_order() == 3
-        @test_throws ArgumentError DifferentialAlgebra.pop_order!()
         @test_throws ArgumentError DifferentialAlgebra.set_truncation_order!(6)
         DifferentialAlgebra.set_truncation_order!(5)
     end

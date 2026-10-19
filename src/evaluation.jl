@@ -234,6 +234,7 @@ function evaluate!(result::AbstractVector, map::CompiledMap, args::AbstractVecto
 end
 
 function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:TaylorPolynomial})
+    Base.require_one_based_indexing(A, x)
     size(A, 2) == length(x) || throw(DimensionMismatch("Linear map dimensions differ"))
     ctx = valid(first(x))
     T = foldl((R, a) -> promote_type(R, coefficient_type(a)), x; init = eltype(A))
@@ -254,6 +255,7 @@ shift by the map's constant value and accepts output coordinates.
 A partial map is completed with identity coordinates before inversion.
 """
 function invert(f::AbstractVector{<:TaylorPolynomial})
+    Base.require_one_based_indexing(f)
     isempty(f) && throw(DimensionMismatch("An empty map cannot be inverted"))
     ctx = valid(first(f)); nv = ctx.basis.variables
     1 <= length(f) <= nv || throw(DimensionMismatch("Map dimension exceeds the independent variables"))

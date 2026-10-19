@@ -8,7 +8,12 @@ with `DifferentialAlgebra.monomials(p)`.
 struct Monomial{T <: Real}
     coefficient::T
     exponents::Vector{UInt32}
+    function Monomial{T}(coefficient::T, exponents::Vector{UInt32}) where {T <: Real}
+        isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
+        return new{T}(coefficient, exponents)
+    end
 end
+Monomial(c::T, powers::Vector{UInt32}) where {T <: Real} = Monomial{T}(c, powers)
 Monomial{T}() where {T <: Real} = Monomial{T}(zero(T), zeros(UInt32, nvariables()))
 Monomial() = Monomial{Float64}()
 coefficient(m::Monomial) = m.coefficient
@@ -28,14 +33,15 @@ the sum of its exponents. The zero polynomial has degree zero.
 """
 degree(m::Monomial) = sum(m.exponents)
 degree(p::TaylorPolynomial) = valid(p).basis.degrees[p.len]
-function exponent_vector(jj::AbstractVector{<:Integer}, basis::MonomialBasis = ready().basis)
-    all(j -> 0 <= j <= typemax(UInt32), jj) || throw(ArgumentError("Invalid monomial exponents"))
-    out = zeros(Int, basis.variables)
-    for (i, j) in enumerate(jj)
-        i > length(out) && break
-        out[i] = j
+function checked_counts(counts::AbstractVector{<:Integer}, basis::MonomialBasis; limit::Int = basis.order)
+    Base.require_one_based_indexing(counts)
+    length(counts) == basis.variables || throw(DimensionMismatch("Provide one exponent or count per variable"))
+    total = 0
+    for count in counts
+        0 <= count <= limit - total || throw(ArgumentError("Exponents or counts must be nonnegative with total at most $limit"))
+        total += Int(count)
     end
-    return out
+    return total
 end
 """
     coefficient(p, exponents)
@@ -46,29 +52,21 @@ exponent per independent variable, with total degree at most `max_order()`.
 """
 function coefficient(a::TaylorPolynomial{T}, powers::AbstractVector{<:Integer}) where {T}
     basis = valid(a).basis
-    length(powers) == basis.variables || throw(DimensionMismatch("One exponent per variable is required"))
-    total = 0
-    for power in powers
-        0 <= power <= basis.order || throw(ArgumentError("Invalid exponents"))
-        total += Int(power)
-    end
-    total <= basis.order || throw(ArgumentError("Invalid exponents"))
+    total = checked_counts(powers, basis)
     i = rank(basis, powers, total)
     return i <= a.len ? a.coeffs[i] : zero(T)
 end
 """
     set_coefficient!(p, exponents, value)
 
-Replace one monomial coefficient in `p` and return `p`. Missing trailing exponents
-are zero, and extra exponents are ignored. The total degree cannot exceed the
+Replace one monomial coefficient in `p` and return `p`. Supply exactly one
+nonnegative exponent per variable. The total degree cannot exceed the
 algebra's maximum order. The value is converted to the polynomial's coefficient type.
 """
 function set_coefficient!(a::TaylorPolynomial{T}, jj::AbstractVector{<:Integer}, value::Real) where {T}
     ctx = valid(a)
-    exponents = exponent_vector(jj, ctx.basis)
-    degree = sum(exponents)
-    degree <= ctx.basis.order || throw(ArgumentError("Monomial exceeds initialized order"))
-    i = rank(ctx.basis, exponents, degree)
+    degree = checked_counts(jj, ctx.basis)
+    i = rank(ctx.basis, jj, degree)
     reserve!(a, i)
     @inbounds for j in (a.len + 1):i
         a.coeffs[j] = zero(T)
@@ -105,7 +103,7 @@ function monomial(a::TaylorPolynomial, pos::Integer)
     end
     throw(BoundsError(a, pos))
 end
-function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order())
+function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a))
     ctx = valid(a)
     low >= 0 && high >= 0 || throw(ArgumentError("Invalid order range"))
     low > high && return zero(a)
@@ -176,12 +174,12 @@ integrate(a::TaylorPolynomial, i::Integer) = calculus(a, i, :integrate)
 divide_variable(a::TaylorPolynomial, i::Integer, p::Integer = 1) = calculus(a, i, :divide, p)
 for fn in (:differentiate, :integrate)
     @eval function $fn(a::TaylorPolynomial, counts::AbstractVector{<:Integer})
-        all(>=(0), counts) || throw(ArgumentError("Counts must be nonnegative"))
+        checked_counts(counts, valid(a).basis; limit = typemax(Int))
         out = copy(a)
         for (i, n) in enumerate(counts)
-            i > a.algebra.basis.variables && break
             for _ in 1:n
                 out = $fn(out, i)
+                iszero(out) && return out
             end
         end
         return out
@@ -199,7 +197,7 @@ function degree_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0)
     p > 1 && (out .= out .^ (one(eltype(out)) / p))
     return out
 end
-function estimate_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0, n::Integer = max_order(); errors::Bool = false)
+function estimate_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0, n::Integer = max_order(a); errors::Bool = false)
     n >= 0 || throw(ArgumentError("Invalid estimated order"))
     norms = degree_norms(a, v, p)
     length(norms) >= 3 || throw(TaylorError("At least second order is required to estimate norms"))

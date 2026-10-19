@@ -131,9 +131,10 @@ end
         @test DifferentialAlgebra.convergence_radius(q, T(1) / 2^14) ≈ one(T) rtol = tolerance
         @test_throws ArgumentError DifferentialAlgebra.convergence_radius(q, -1)
         @test DifferentialAlgebra.isinitialized()
-        DifferentialAlgebra.set_truncation_order!(2); DifferentialAlgebra.push_order!()
-        @test DifferentialAlgebra.truncation_order() == 6
-        DifferentialAlgebra.pop_order!()
+        DifferentialAlgebra.set_truncation_order!(2)
+        with_order(max_order()) do
+            @test truncation_order() == 6
+        end
         @test DifferentialAlgebra.truncation_order() == 2
         DifferentialAlgebra.set_truncation_order!()
         @test DifferentialAlgebra.truncation_order() == 6

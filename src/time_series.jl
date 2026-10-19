@@ -15,11 +15,12 @@ and hyperbolic functions are supported at regular expansion points.
 struct TimeSeries{T <: Real} <: Number
     coefficients::Vector{T}
     function TimeSeries{T}(coefficients::Vector{T}) where {T <: Real}
+        isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
         isempty(coefficients) && throw(ArgumentError("A time series needs a constant coefficient"))
         return new{T}(coefficients)
     end
 end
-TimeSeries(c::AbstractVector{T}) where {T <: Real} = TimeSeries{T}(copy.(c))
+TimeSeries(c::AbstractVector{T}) where {T <: Real} = TimeSeries{T}(T[copy(x) for x in c])
 coefficient_type(::TimeSeries{T}) where {T} = T
 max_order(s::TimeSeries) = length(s.coefficients) - 1
 constant_term(s::TimeSeries) = first(s.coefficients)
@@ -209,7 +210,8 @@ function taylor_expand(f, initial::AbstractVector{<:Real}, t0::Real; order::Inte
     return prepare_time_expansion(f, initial, t0; order, parameters).series
 end
 function prepare_time_expansion(f, initial::AbstractVector{<:Real}, t0::Real; order::Integer = 20, parameters = nothing)
-    order >= 1 || throw(ArgumentError("Time order must be positive"))
+    Base.require_one_based_indexing(initial)
+    1 <= order < typemax(Int) || throw(ArgumentError("Time order must be a positive machine integer"))
     isempty(initial) && throw(ArgumentError("The initial state cannot be empty"))
     isfinite(t0) && all(isfinite, initial) || throw(ArgumentError("Expansion point must be finite"))
     t0 isa TaylorPolynomial && throw(ArgumentError("The expansion epoch must be a scalar time"))
@@ -220,6 +222,7 @@ function prepare_time_expansion(f, initial::AbstractVector{<:Real}, t0::Real; or
     derivative = f(state, parameters, epoch)
     derivative isa AbstractVector && length(derivative) == length(state) ||
         throw(DimensionMismatch("The right-hand side must return one derivative per state"))
+    Base.require_one_based_indexing(derivative)
     all(x -> x isa Real, derivative) || throw(ArgumentError("Unsupported right-hand-side element"))
     all(isfinite, derivative) || throw(DomainError(derivative, "Nonfinite time coefficient"))
     T = foldl((S, x) -> promote_type(S, typeof(x)), state; init = typeof(first(state)))

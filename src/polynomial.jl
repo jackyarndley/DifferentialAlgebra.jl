@@ -5,7 +5,6 @@ mutable struct Algebra
     epsilon::Float64
     big_epsilon::Union{Nothing, BigFloat}
     active::Bool
-    stack::Vector{Int}
 end
 const CURRENT_ALGEBRA = Ref{Union{Nothing, Algebra}}(nothing)
 const ALGEBRA_LOCK = ReentrantLock() # Serializes algebra initialization.
@@ -28,6 +27,11 @@ mutable struct TaylorPolynomial{T <: Real} <: Real
     coeffs::Vector{T}
     len::Int
     algebra::Algebra
+    function TaylorPolynomial{T}(coeffs::Vector{T}, len::Int, algebra::Algebra) where {T <: Real}
+        isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
+        1 <= len <= length(coeffs) <= last(algebra.basis.ends) || throw(ArgumentError("Invalid coefficient storage length"))
+        return new{T}(coeffs, len, algebra)
+    end
 end
 struct TaylorError <: Exception
     message::String
@@ -70,7 +74,7 @@ function initialize!(no::Integer, nv::Integer; names = nothing, table_bytes::Int
         old = CURRENT_ALGEBRA[]
         basis = old !== nothing && old.basis.order == no && old.basis.variables == nv && old.basis.table_bytes == table_bytes ? old.basis : MonomialBasis(Int(no), Int(nv); table_bytes = Int(table_bytes))
         old !== nothing && (old.active = false)
-        CURRENT_ALGEBRA[] = Algebra(basis, labels, Int(no), 0.0, nothing, true, Int[])
+        CURRENT_ALGEBRA[] = Algebra(basis, labels, Int(no), 0.0, nothing, true)
     end
     return nothing
 end
@@ -164,12 +168,6 @@ function set_coefficient_tolerance!(value::Real)
     ctx.big_epsilon = value isa BigFloat ? copy(value) : nothing
     return old
 end
-push_order!(n::Integer = max_order()) = (push!(ready().stack, set_truncation_order!(n)); nothing)
-function pop_order!()
-    isempty(ready().stack) && throw(ArgumentError("Truncation-order stack is empty"))
-    set_truncation_order!(pop!(ready().stack))
-    return nothing
-end
 
 """
     with_order(f, order)
@@ -248,11 +246,13 @@ TaylorPolynomial() = TaylorPolynomial(0.0)
 TaylorPolynomial(x::Real) = TaylorPolynomial{typeof(float(x))}(x)
 TaylorPolynomial(a::TaylorPolynomial) = copy(a)
 function TaylorPolynomial{T}(x::Real = zero(T)) where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     ctx = ready()
     c = coefficient_convert(T, x)
     return TaylorPolynomial{T}([keep(c, ctx) ? c : zero(T)], 1, ctx)
 end
 function TaylorPolynomial{T}(i::Integer, c::Real) where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     ctx = ready()
     0 <= i <= ctx.basis.variables || throw(ArgumentError("Variable index out of bounds"))
     a = allocate(ctx, T, Int(i) + 1)
@@ -297,7 +297,8 @@ function linear_part(a::TaylorPolynomial{T}) where {T}
 end
 function linear_part(v::AbstractVector{<:TaylorPolynomial})
     T = isempty(v) ? Float64 : mapreduce(coefficient_type, promote_type, v)
-    result = zeros(T, length(v), nvariables())
+    n = isempty(v) ? nvariables() : nvariables(first(v))
+    result = zeros(T, length(v), n)
     for (i, p) in enumerate(v)
         result[i, :] = linear_part(p)
     end

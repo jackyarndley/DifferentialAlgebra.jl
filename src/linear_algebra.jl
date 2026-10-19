@@ -4,7 +4,7 @@
 Return the vector of polynomial partial derivatives of `p`.
 Use `constant_term(gradient(p))` for the gradient at the expansion point.
 """
-gradient(a::TaylorPolynomial) = [differentiate(a, i) for i in 1:nvariables()]
+gradient(a::TaylorPolynomial) = [differentiate(a, i) for i in 1:nvariables(a)]
 """
     jacobian(p)
     jacobian(map)
@@ -14,7 +14,11 @@ Rows correspond to map components and columns to independent variables.
 A scalar polynomial produces a one-row matrix.
 """
 jacobian(a::TaylorPolynomial) = permutedims(gradient(a))
-jacobian(v::AbstractVector{<:TaylorPolynomial}) = [differentiate(v[i], j) for i in eachindex(v), j in 1:nvariables()]
+function jacobian(v::AbstractVector{<:TaylorPolynomial})
+    Base.require_one_based_indexing(v)
+    n = isempty(v) ? nvariables() : nvariables(first(v))
+    return [differentiate(p, j) for p in v, j in 1:n]
+end
 """
     hessian(p)
     hessian(map)
