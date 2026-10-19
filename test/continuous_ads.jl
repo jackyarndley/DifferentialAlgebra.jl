@@ -1,7 +1,7 @@
 using Test, DifferentialAlgebra
 using ForwardDiff, IntervalArithmetic, LinearAlgebra
 
-isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
+include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 
 exact_derivative(f, x, n) = n == 0 ? f(x) : ForwardDiff.derivative(t -> exact_derivative(f, t, n - 1), x)

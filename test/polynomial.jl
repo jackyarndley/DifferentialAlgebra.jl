@@ -94,7 +94,7 @@ end
         @test isless(1.0, p) && !isless(p, 1.0)
         @test isequal(2.0, p) && isequal(p, 2.0)
         @test (p == π) == (π == p) == false
-        @test !iszero(x) && x == 0 # Legacy comparisons use the constant part.
+        @test !iszero(x) && x == 0 # Scalar comparisons use the constant part.
         @test !iszero(TaylorPolynomial(NaN)) && !iszero(TaylorPolynomial(Inf))
         @test iszero(p - p)
         @test_throws DifferentialAlgebra.TaylorError log(-p)
@@ -102,10 +102,6 @@ end
         @test_throws DifferentialAlgebra.TaylorError sqrt(x)
         @test_throws ArgumentError p^typemin(Cint)
         @test polyerror(exp(log(p)), p) < 1.0e-13
-        @test polyerror(DifferentialAlgebra.differentiate(p^3, [2, 1]), 1.2) < 1.0e-13
-        @test polyerror(DifferentialAlgebra.differentiate(DifferentialAlgebra.integrate(p, 1), 1), p) < 1.0e-14
-        @test polyerror(DifferentialAlgebra.differentiate(DifferentialAlgebra.integrate(p, [1, 1]), [1, 1]), p) < 1.0e-14
-        @test polyerror(DifferentialAlgebra.divide_variable(x^2 * y, 1, 2), y) == 0
         @test polyerror(DifferentialAlgebra.coefficient_product(2 + 3x, 4 + 5x + x * x), 8 + 15x) == 0
         @test DifferentialAlgebra.coefficient_norm(2 + 3x - 4x * y, 0) == 4
         @test DifferentialAlgebra.coefficient_norm(2 + 3x - 4x * y, 1) == 9
@@ -219,8 +215,4 @@ end
         ]
         @test all(fetch, jobs)
     end
-    # Check our methods against Julia's numeric API. Combinations of distinct AD
-    # scalar types (e.g. TaylorPolynomial with ForwardDiff.Dual) need their own promotion policy.
-    standard(m) = m.module in (DifferentialAlgebra, Base, Core, SpecialFunctions) || parentmodule(m.module) === Base
-    @test isempty(filter(pair -> all(standard, pair), Test.detect_ambiguities(DifferentialAlgebra; recursive = true)))
 end

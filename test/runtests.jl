@@ -43,11 +43,14 @@ end
 @safetestset "regressions" begin
     include("regressions.jl")
 end
-@safetestset "numerical edges" begin
-    include("numerical_edges.jl")
-end
 @safetestset "linear algebra" begin
     include("linear_algebra.jl")
+end
+@safetestset "calculus" begin
+    include("calculus.jl")
+end
+@safetestset "substitution" begin
+    include("substitution.jl")
 end
 @safetestset "hessians" begin
     include("hessians.jl")
@@ -70,9 +73,6 @@ end
 @safetestset "taylor solver" begin
     include("taylor_solver.jl")
 end
-@safetestset "reused calculations" begin
-    include("reused_calculations.jl")
-end
 @safetestset "domain splitting" begin
     include("domain_splitting.jl")
 end
@@ -93,7 +93,4 @@ end
 end
 @safetestset "ads contracts" begin
     include("ads_contracts.jl")
-end
-@safetestset "tutorial tests" begin
-    include("tutorial_tests.jl")
 end

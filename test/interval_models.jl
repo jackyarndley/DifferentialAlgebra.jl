@@ -1,7 +1,7 @@
 using Test, DifferentialAlgebra
 using IntervalArithmetic, LinearAlgebra
 
-isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
+include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinterval, guaranteed_coefficients
 
 @testset "Optional extension and loading" begin

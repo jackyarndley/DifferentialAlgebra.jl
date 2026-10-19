@@ -1,7 +1,7 @@
 using Test, DifferentialAlgebra
 using IntervalArithmetic, LinearAlgebra
 
-isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
+include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 
 @testset "IntervalBound selector and certified polygon ADS" begin

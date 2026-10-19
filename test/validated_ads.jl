@@ -1,7 +1,7 @@
 using Test, DifferentialAlgebra
 using IntervalArithmetic
 
-isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
+include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 
 @testset "Certified box ADS and portable model snapshots" begin

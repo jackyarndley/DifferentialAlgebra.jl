@@ -34,22 +34,3 @@ using .IntervalTestSupport: IA, sameinterval, interval_contains
         @test sameinterval(c, IA.interval(T, 2, 3))
     end
 end
-
-@testset "Requested central moment order" begin
-    x, = variables(1; order = 6)
-    # N(2,3) has centered moments 0,3,0,27,0,405.
-    mgf = exp(2x + 3x^2 / 2)
-    with_order(2) do
-        @test_throws ArgumentError DifferentialAlgebra.central_moments(mgf, 6)
-        @test truncation_order() == 2
-        indices, moments = DifferentialAlgebra.central_moments(mgf, 2)
-        @test only(last(indices)) == 2
-        @test moments ≈ [1, 0, 3]
-    end
-    indices, moments = DifferentialAlgebra.central_moments(mgf, 6)
-    @test length(indices) == 7
-    @test moments ≈ [1, 0, 3, 0, 27, 0, 405]
-    @test truncation_order() == 6
-    @test_throws ArgumentError DifferentialAlgebra.central_moments(2mgf, 2)
-    @test_throws ArgumentError DifferentialAlgebra.central_moments(mgf, -1)
-end

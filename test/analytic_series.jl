@@ -36,318 +36,46 @@ include("support/series.jl")
     end
 end
 
-@testset verbose = true "TEST 2: Single-variable functions" begin
-    k = 10  # order
-    eps = 1.0e-15  # tolerance for comparing real numbers
-
-    @testset "2.1 Power function" begin
-        for n in 1:10
-            @testset "2.1 Power function (n=$(n))" begin
-                DifferentialAlgebra.initialize!(k, 1)
-
-                x = TaylorPolynomial(1, 1)
-                f = (1 + x)^n
-
-                jj = Vector{UInt32}(undef, 1)
-                for i in 0:k
-                    jj[1] = i
-                    a_da = DifferentialAlgebra.coefficient(f, jj)
-                    if i <= n
-                        a_exact = binomial(n, i)
-                    else
-                        a_exact = 0.0
-                    end
-                    @test isapprox(a_da, a_exact, atol = eps)
-                end
+@testset "Univariate analytic coefficients" begin
+    order = 10
+    # Exact scalar formulas supply the oracle, including Bernoulli numbers for
+    # tangent and rational binomial coefficients for fractional powers.
+    arcsine(k) = iseven(k) ? 0 : factorial(big(k - 1)) //
+        (big(4)^((k - 1) ÷ 2) * factorial(big((k - 1) ÷ 2))^2 * k)
+    tangent(k) = iseven(k) ? 0 : (-1)^((k - 1) ÷ 2) * big(2)^(k + 1) *
+        (big(2)^(k + 1) - 1) * bernoulli(k + 1) / factorial(big(k + 1))
+    cases = (
+        (inv, k -> (-1)^k),
+        (exp, k -> 1 // factorial(big(k))),
+        (log, k -> k == 0 ? 0 : (-1)^(k + 1) // k),
+        (sin, k -> iseven(k) ? 0 : (-1)^((k - 1) ÷ 2) // factorial(big(k))),
+        (cos, k -> isodd(k) ? 0 : (-1)^(k ÷ 2) // factorial(big(k))),
+        (tan, tangent), (asin, arcsine),
+        (acos, k -> k == 0 ? pi / 2 : -arcsine(k)),
+        (atan, k -> iseven(k) ? 0 : (-1)^((k - 1) ÷ 2) // k),
+        (sinh, k -> iseven(k) ? 0 : 1 // factorial(big(k))),
+        (cosh, k -> isodd(k) ? 0 : 1 // factorial(big(k))),
+        (tanh, k -> iseven(k) ? 0 : (-1)^((k - 1) ÷ 2) * tangent(k)),
+        (asinh, k -> iseven(k) ? 0 : (-1)^((k - 1) ÷ 2) * arcsine(k)),
+        (atanh, k -> iseven(k) ? 0 : 1 // k),
+    )
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order, table_bytes = budget)
+        for (f, oracle) in cases
+            @testset "$f, table_bytes=$budget" begin
+                p = f in (inv, log) ? f(1 + x) : f(x)
+                @test [coefficient(p, [k]) for k in 0:order] ≈
+                    Float64[oracle(k) for k in 0:order] atol = 1.0e-14 rtol = 1.0e-14
             end
         end
-    end
-
-    @testset "2.2 Division" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = 1 / (1 - x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            a_exact = 1.0
-            @test isapprox(a_da, a_exact, atol = eps)
+        for n in (2, 5, 10)
+            p = (1 + x)^n
+            @test [coefficient(p, [k]) for k in 0:order] ≈ [binomial(n, k) for k in 0:order]
         end
-    end
-
-    @testset "2.3 nth root function" begin
         for n in 2:5
-            @testset "2.3 nth root function (n=$(n))" begin
-                DifferentialAlgebra.initialize!(k, 1)
-
-                x = TaylorPolynomial(1, 1)
-                f = DifferentialAlgebra.nthroot(1 + x, n)
-
-                jj = Vector{UInt32}(undef, 1)
-                args = Vector{Float64}(undef, 0)
-                for i in 0:k
-                    jj[1] = i
-                    a_da = DifferentialAlgebra.coefficient(f, jj)
-                    if i == 0
-                        a_exact = 1.0
-                    else
-                        push!(args, 1.0 / n - (i - 1))
-                        a_exact = 1.0 / factorial(i) * prod(args)
-                    end
-                    @test isapprox(a_da, a_exact, atol = eps)
-                end
-            end
-        end
-    end
-
-    @testset "2.4 Exponential function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = exp(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            a_exact = 1 / factorial(i)
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.5 Logarithmic function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = log(1 + x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if i == 0
-                a_exact = 0.0
-            else
-                a_exact = (-1)^(i + 1) * 1.0 / i
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.6 Sine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = sin(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = (-1)^((i - 1) / 2) / factorial(i)
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.7 Cosine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = cos(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = (-1)^(i / 2) / factorial(i)
-            else
-                a_exact = 0.0
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.8 Tangent function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = tan(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = (-1)^((i - 1) / 2) * 2^(i + 1) * (2^(i + 1) - 1) * bernoulli(i + 1) / factorial(i + 1)
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.9 Arcsine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = asin(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = factorial(i - 1) / (4.0^((i - 1) / 2) * factorial(div(i - 1, 2))^2 * i)
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.10 Arccosine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = acos(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if i == 0
-                a_exact = pi / 2.0
-            elseif iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = - factorial(i - 1) / (4.0^((i - 1) / 2) * factorial(div(i - 1, 2))^2 * i)
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.11 Arctangent function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = atan(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = (-1)^((i - 1) / 2) / i
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.12 Hyperbolic sine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = sinh(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = 1.0 / factorial(i)
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.13 Hyperbolic cosine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = cosh(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 1.0 / factorial(i)
-            else
-                a_exact = 0.0
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.14 Hyperbolic tangent function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = tanh(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-                @test isapprox(a_da, a_exact, atol = eps)
-            else
-                # tanh(x) = sum(2^(2n)*(2^(2n)-1)*B_(2n)/(2n)! * x^(2n-1)).
-                a_exact = 2^(i + 1) * (2^(i + 1) - 1) * bernoulli(i + 1) / factorial(i + 1)
-                @test isapprox(a_da, a_exact, atol = eps)
-            end
-        end
-    end
-
-    @testset "2.15 Hyperbolic arcsine function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = asinh(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = (-1)^((i - 1) / 2) * factorial(i - 1) / (4^((i - 1) / 2) * factorial(div(i - 1, 2))^2 * i)
-            end
-            @test isapprox(a_da, a_exact, atol = eps)
-        end
-    end
-
-    @testset "2.16 Hyperbolic arctangent function" begin
-        DifferentialAlgebra.initialize!(k, 1)
-
-        x = TaylorPolynomial(1, 1)
-        f = atanh(x)
-
-        jj = Vector{UInt32}(undef, 1)
-        for i in 0:k
-            jj[1] = i
-            a_da = DifferentialAlgebra.coefficient(f, jj)
-            if iseven(i)
-                a_exact = 0.0
-            else
-                a_exact = 1 / i
-            end
-            # Compare the analytic 1/i coefficients with an absolute tolerance.
-            @test isapprox(a_da, a_exact, atol = 1.0e-12)
+            p = DifferentialAlgebra.nthroot(1 + x, n)
+            expected = [prod(1 // n - j for j in 0:(k - 1); init = 1) / factorial(big(k)) for k in 0:order]
+            @test [coefficient(p, [k]) for k in 0:order] ≈ Float64.(expected) atol = 1.0e-15
         end
     end
 end

@@ -135,3 +135,13 @@ end
     @test_throws DomainError taylor_expand((u, p, t) -> [Inf], [1.0], 0.0)
     @test δ(0.3) == 0.3 # No algebra changes, even on failure.
 end
+
+@testset "Tangent series and recorded integrals" begin
+    s = TimeSeries([0.0, 1.0, zeros(6)...])
+    for (f, signs) in ((tan, ones(8)), (tanh, [(-1)^((k - 1) ÷ 2) for k in 1:8]))
+        expected = [0, 1, 0, 1 / 3, 0, 2 / 15, 0, 17 / 315] .* signs
+        @test f(s).coefficients ≈ expected
+        expansion = only(taylor_expand((u, p, t) -> [f(t)], [0.0], 0.0; order = 8))
+        @test expansion.coefficients ≈ [0; expected ./ (1:8)]
+    end
+end

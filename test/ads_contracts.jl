@@ -1,7 +1,7 @@
 using Test, DifferentialAlgebra
 using IntervalArithmetic
 
-isdefined(@__MODULE__, :IntervalTestSupport) || include("support/intervals.jl")
+include("support/intervals.jl")
 using .IntervalTestSupport: DA, IA, IF, IB, subset, interval_contains, sameinterval
 
 function contract_contains(parent::NamedTuple, child::NamedTuple)
@@ -192,11 +192,11 @@ end
 end
 
 @testset "Closed tree queries and shared multi-output snapshots" begin
-    legacy = adaptive_map(v -> 2, [interval(-1, 1)]; estimator = IntervalBound(), order = 3, atol = 1.0e-6, splitter = :width)
+    explicit_fit = adaptive_map(v -> 2, [interval(-1, 1)]; estimator = IntervalBound(), order = 3, atol = 1.0e-6, splitter = :width)
     canonical = adaptive_map(v -> 2, [interval(-1, 1)]; estimator = IntervalBound())
-    @test max_order(legacy) == 3 && max_order(canonical) == 5
-    @test degree(legacy) == degree(canonical) == 0
-    @test sameinterval(enclose(legacy), enclose(canonical))
+    @test max_order(explicit_fit) == 3 && max_order(canonical) == 5
+    @test degree(explicit_fit) == degree(canonical) == 0
+    @test sameinterval(enclose(explicit_fit), enclose(canonical))
     for T in (Float64, BigFloat)
         f(v) = [v[1]^2, v[1]^3, 7]
         box = [interval(T, -1, 1)]
