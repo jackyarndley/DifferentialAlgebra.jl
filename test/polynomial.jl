@@ -89,8 +89,6 @@ end
         @test polyerror(atan(x, p), atan(x / p)) < 1.0e-14
         @test polyerror(hypot(x, p), sqrt(x * x + p * p)) < 1.0e-14
         @test polyerror(mod(p + 3, 3), p) == 0
-        @test DifferentialAlgebra.constant_term(round(TaylorPolynomial(2.3) + x)) == 2
-        @test DifferentialAlgebra.constant_term(trunc(TaylorPolynomial(-2.3) + x)) == -2
         @test iszero(sqrt(TaylorPolynomial())) && iszero(cbrt(TaylorPolynomial()))
         @test iszero(hypot(TaylorPolynomial(), TaylorPolynomial()))
         @test isless(1.0, p) && !isless(p, 1.0)

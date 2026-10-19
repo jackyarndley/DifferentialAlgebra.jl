@@ -64,6 +64,7 @@ makedocs(
             [topic => [title => "generated/$name.md" for (title, name) in entries] for (topic, entries) in groups]...,
         ],
         "API reference" => "api.md",
+        "API migration" => "migration.md",
         "Mathematical background" => "background.md",
         "References" => "references.md",
         "Contributing" => "contributing.md",

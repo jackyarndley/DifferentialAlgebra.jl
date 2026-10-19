@@ -158,8 +158,6 @@ end
     x, y = variable.(1:DifferentialAlgebra.nvariables())
     @test DifferentialAlgebra.constant_term(hypot(TaylorPolynomial(3.0e200), TaylorPolynomial(4.0e200))) ≈ 5.0e200
     @test DifferentialAlgebra.constant_term(hypot(TaylorPolynomial(3.0e-200), TaylorPolynomial(4.0e-200))) ≈ 5.0e-200
-    @test DifferentialAlgebra.constant_term(round(TaylorPolynomial(Inf))) == Inf
-    @test DifferentialAlgebra.constant_term(trunc(TaylorPolynomial(-Inf))) == -Inf
     @test DifferentialAlgebra.coefficient_norm(mod(-1.5 + x, 2) - (0.5 + x)) == 0
     setprecision(256) do
         DifferentialAlgebra.set_coefficient_tolerance!(BigFloat(1) - BigFloat(2)^(-100))

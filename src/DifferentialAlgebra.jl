@@ -19,7 +19,7 @@ export PiecewisePolygonMap, PolygonPatch
 export continuous_map, ContinuousTaylorMap, blend_weights
 export TimeSeries, taylor_expand, TaylorMethod
 export TaylorModel, taylor_models, polynomial, remainder, domain, enclose
-export CompiledTaylorModel, validated_adaptive_map, PiecewiseTaylorModel, TaylorModelPatch
+export CompiledTaylorModel, PiecewiseTaylorModel, TaylorModelPatch
 
 include("basis.jl")
 include("polynomial.jl")

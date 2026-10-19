@@ -133,10 +133,7 @@ fit([1//2, 1//4])               # Interval at a physical point
 ```
 
 Finite ordinary endpoint vectors can also be passed to `adaptive_map` with
-this estimator. `validated_adaptive_map` remains a convenience entry point;
-its preserved defaults are `order=3`, `atol=1e-6`, `splitter=:width`, whereas
-`adaptive_map` defaults to `order=5`, `atol=1e-8`, `splitter=:tail`.
-Both apply the same acceptance test. See the
+this estimator. See the
 [interval manual](interval-models.md#Certified-domain-splitting) for its proof.
 
 ## Split directions

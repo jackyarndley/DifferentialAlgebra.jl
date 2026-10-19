@@ -93,48 +93,6 @@ function Base.show(io::IO, a::PiecewiseTaylorModel)
     return print(io, "PiecewiseTaylorModel(", length(a.patches), " patches, ", noutputs(a), " outputs, ", nvariables(a), " variables, ", a.converged ? "converged" : "unresolved", ")")
 end
 
-"""
-    validated_adaptive_map(
-        f, box; order = 3, atol = 1.0e-6,
-        max_depth = 20, max_patches = 1024, strict = true,
-        names = nothing, table_bytes = 32 * 1024^2,
-        splitter = :width, directions = nothing
-    )
-
-Reevaluate the original deterministic function `f(coordinates)` with native
-Taylor-model inputs on each child box. `f` returns a model/real scalar or a
-nonempty vector of models/reals. Domains are guaranteed decorated intervals
-with Float64 or BigFloat endpoints. Each output's uniform absolute enclosure
-error relative to its retained midpoint polynomial must be at most `atol`
-(a positive scalar or one positive tolerance per output). This bound includes
-retained coefficient rounding and the absolute remainder; samples and ordinary
-DA tail estimates are not used for acceptance.
-
-This is a thin compatibility wrapper for `adaptive_map(...; estimator=IntervalBound())`.
-Its preserved defaults are `order=3`, `atol=1e-6`, `splitter=:width`; the canonical
-interface defaults to `order=5`, `atol=1e-8`, `splitter=:tail`.
-`:width` bisects the longest side relative to the initial box, skipping fixed
-coordinates. `:tail` uses nonlinear retained tails and coefficient uncertainty
-from unsatisfied outputs to select an axis, falling back to relative widths.
-The scalar remainder has no exact directional attribution.
-`:oriented` selects a 2D exact convex polygon partition with automatic or supplied
-projection directions. Direction scores are heuristic; acceptance remains rigorous.
-Recompute `f` on both children: restricting a previously constructed model does
-not shrink its remainder. Invalid function domains throw, including when a
-loose whole-model enclosure cannot establish validity. No time integration or
-verified inversion is performed. The callback must not change algebra settings.
-
-Resource limits throw by default. `strict=false` retains valid unresolved patches
-with their status and `converged=false`. Construction uses a temporary algebra
-and restores the caller's algebra, including on failure. Returned snapshots own
-their data and remain numerically valid independently of the global algebra.
-"""
-function validated_adaptive_map(
-        f, box; order::Integer = 3, atol = 1.0e-6, splitter::Symbol = :width, kwargs...
-    )
-    return adaptive_map(f, box; estimator = IntervalBound(), order, atol, splitter, kwargs...)
-end
-
 function adaptive_map(
         f, previous::PiecewiseTaylorModel; order::Integer = max_order(previous),
         estimator::ADSEstimator = previous._estimator, kwargs...

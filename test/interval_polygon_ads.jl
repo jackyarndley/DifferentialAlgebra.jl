@@ -57,7 +57,7 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         @test refined.converged && length(refined.patches) > length(a.patches)
         @test sum(p -> domain_area(domain(p)), refined.patches) == 4
         @test all(p -> IA.sup(abs(only(p.error_bounds))) <= 1 // 64, refined.patches)
-        same = validated_adaptive_map(f, [z, z]; order = 1, atol = 1 // 16, splitter = :oriented, table_bytes = budget)
+        same = adaptive_map(f, [z, z]; order = 1, atol = 1 // 16, splitter = :oriented, table_bytes = budget, estimator = IntervalBound())
         @test sameinterval(enclose(same), before)
         endpoints = adaptive_map(f, T[-1, -1], T[1, 1]; estimator = IntervalBound(), splitter = :oriented, order = 1, atol = 1 // 16, table_bytes = budget)
         @test sameinterval(enclose(endpoints), before)

@@ -51,4 +51,7 @@ Base.getindex(v::ShiftedVector, i::Int) = v.data[i + 1]
     @test s.coefficients isa Vector{Float64}
     @test coefficient(s, 0) == 1
     @test TimeSeries(1:3).coefficients == [1, 2, 3]
+    for f in (round, trunc), p in (x + 2.3, TaylorPolynomial(Inf))
+        @test_throws MethodError f(p)
+    end
 end

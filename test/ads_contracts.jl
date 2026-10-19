@@ -190,7 +190,7 @@ end
 end
 
 @testset "Closed tree queries and shared multi-output snapshots" begin
-    legacy = validated_adaptive_map(v -> 2, [interval(-1, 1)])
+    legacy = adaptive_map(v -> 2, [interval(-1, 1)]; estimator = IntervalBound(), order = 3, atol = 1.0e-6, splitter = :width)
     canonical = adaptive_map(v -> 2, [interval(-1, 1)]; estimator = IntervalBound())
     @test max_order(legacy) == 3 && max_order(canonical) == 5
     @test degree(legacy) == degree(canonical) == 0
@@ -231,10 +231,6 @@ end
             end
             @test sameinterval(enclose(owned), enclose(a))
         end
-        compatible = validated_adaptive_map(f, box; order = 1, atol = 1 // 16, splitter = :width)
-        @test all(all(sameinterval.(domain(p), domain(q))) for (p, q) in zip(fit.patches, compatible.patches))
-        @test all(sameinterval.(enclose(fit), enclose(compatible)))
-        @test typeof(fit._estimator) === typeof(compatible._estimator)
         owned = copy(fit)
         @test owned.nodes !== fit.nodes
         @test first(owned.patches).models[1]._coordinates === first(owned.patches).models[2]._coordinates

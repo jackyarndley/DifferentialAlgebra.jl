@@ -200,7 +200,6 @@ Finite stored coefficients and remainders are required; overflow fails clearly.
 Select `estimator=IntervalBound()` in `adaptive_map` for the validated ADS
 method through the same construction driver as ordinary ADS. It reevaluates the original function with Taylor-model inputs on every
 child and uses rigorous interval bounds to decide whether a fit needs splitting.
-`validated_adaptive_map` remains a thin compatibility wrapper:
 
 ```julia
 f(v) = exp(v[1] + v[2]) * cos(v[1] * v[2])
@@ -213,9 +212,6 @@ enclose(a, [interval(Float64, 0, 1//4), interval(0)])
 fine = adaptive_map(f, a; atol = 1e-6)  # Fresh fits, saved estimator/order
 ```
 
-The wrapper explicitly preserves `order=3`, `atol=1e-6`, `splitter=:width`.
-The canonical `adaptive_map` defaults are `order=5`, `atol=1e-8`, `splitter=:tail`.
-With explicitly identical options their construction and acceptance are identical.
 Refinement preserves existing boundaries and defaults to the saved estimator
 and **requested retained order**, even when the stored outputs have lower degree.
 `degree(fit)` inspects the actual polynomial degree; `max_order(fit)` inspects

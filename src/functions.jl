@@ -292,13 +292,6 @@ function Base.hypot(a::TaylorPolynomial, b::TaylorPolynomial)
 end
 Base.hypot(a::TaylorPolynomial, b::Real) = hypot(promote(a, b)...)
 Base.hypot(a::Real, b::TaylorPolynomial) = hypot(promote(a, b)...)
-for fn in (:round, :trunc)
-    @eval function Base.$fn(a::TaylorPolynomial)
-        out = copy(a)
-        out.coeffs[1] = $fn(constant_term(a))
-        return finish!(out, out.len)
-    end
-end
 function Base.mod(a::TaylorPolynomial, p::Real)
     out = TaylorPolynomial{promote_type(coefficient_type(a), typeof(p))}(a)
     out.coeffs[1] = mod(constant_term(a), p)

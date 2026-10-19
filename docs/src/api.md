@@ -67,8 +67,7 @@ TaylorMethod
 `TaylorPolynomial{Interval{T}}` uses ordinary truncated polynomial arithmetic
 with interval coefficients. `TaylorModel` wraps that polynomial with an absolute
 remainder and validity-domain/normalization data. Construct adaptive partitions
-with `adaptive_map(...; estimator=IntervalBound())`; `validated_adaptive_map`
-is a compatibility wrapper with its original defaults.
+with `adaptive_map(...; estimator=IntervalBound())`.
 
 ```@docs
 enclose
@@ -78,7 +77,6 @@ taylor_models
 polynomial
 remainder
 domain
-validated_adaptive_map
 PiecewiseTaylorModel
 TaylorModelPatch
 ```
