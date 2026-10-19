@@ -1,0 +1,26 @@
+
+Multiplication table budget: 0
+Six-variable model construction: (seconds = 0.0001282, bytes = 97673, first_seconds = 0.0049458, compilation = 0.0047209)
+Model enclosure: (seconds = 7.870000000000001e-6, bytes = 5280, first_seconds = 0.0061222, compilation = 0.006067)
+Model width / remainder width: (0.062307791912239896, 7.919122357670971e-7)
+Certified six-variable box ADS: (seconds = 0.00017359, bytes = 131527, first_seconds = 0.0052057, compilation = 0.0047162)
+Certified ADS enclosure: (seconds = 1.058e-5, bytes = 7712, first_seconds = 0.4003109, compilation = 0.3999359)
+ADS patches / width / largest uniform fit error: (1, 0.062307791912239896, 4.083095687002589e-7)
+Ordinary polynomial construction: (seconds = 2.04e-6, bytes = 8272, first_seconds = 0.0043256, compilation = 0.0042867)
+Stored-polynomial enclosure: (seconds = 2.5450000000000002e-5, bytes = 6000, first_seconds = 0.0483896, compilation = 0.0483216)
+Stored-polynomial width: 0.062307000000003665
+Reusable ordinary multiplication: (seconds = 6.3e-7, bytes = 0, first_seconds = 0.0054946, compilation = 0.0054625)
+Reusable ordinary evaluation: (seconds = 9.0e-8, bytes = 0, first_seconds = 0.004177, compilation = 0.0041496)
+
+Multiplication table budget: 33554432
+Six-variable model construction: (seconds = 0.00012118, bytes = 97641, first_seconds = 0.0001529, compilation = 0.0)
+Model enclosure: (seconds = 7.82e-6, bytes = 5280, first_seconds = 2.16e-5, compilation = 0.0)
+Model width / remainder width: (0.062307791912239896, 7.919122357670971e-7)
+Certified six-variable box ADS: (seconds = 0.00016927, bytes = 131479, first_seconds = 0.0002015, compilation = 0.0)
+Certified ADS enclosure: (seconds = 1.055e-5, bytes = 7712, first_seconds = 3.52e-5, compilation = 0.0)
+ADS patches / width / largest uniform fit error: (1, 0.062307791912239896, 4.083095687002589e-7)
+Ordinary polynomial construction: (seconds = 1.89e-6, bytes = 5536, first_seconds = 7.3e-6, compilation = 0.0)
+Stored-polynomial enclosure: (seconds = 2.478e-5, bytes = 6000, first_seconds = 3.98e-5, compilation = 0.0)
+Stored-polynomial width: 0.062307000000003665
+Reusable ordinary multiplication: (seconds = 2.6e-7, bytes = 0, first_seconds = 4.7e-6, compilation = 0.0)
+Reusable ordinary evaluation: (seconds = 9.0e-8, bytes = 0, first_seconds = 6.0e-6, compilation = 0.0)

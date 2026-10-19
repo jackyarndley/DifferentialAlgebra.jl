@@ -3,7 +3,8 @@ using DifferentialAlgebra, IntervalArithmetic, LinearAlgebra
 import DiffEqBase, OrdinaryDiffEqCore
 include("measurement.jl")
 
-println((; julia = VERSION, source = pkgdir(DifferentialAlgebra)))
+revision = readchomp(`git -C $(pkgdir(DifferentialAlgebra)) rev-parse --short HEAD`)
+println((; julia = VERSION, revision, interval = Base.pkgversion(IntervalArithmetic), ode_core = Base.pkgversion(OrdinaryDiffEqCore)))
 for budget in (0, 32 * 1024^2)
     x = variables(6; order = 4, table_bytes = budget)
     p = exp(sum(x) / 6) + prod(x[1:3])
