@@ -6,6 +6,13 @@ import ForwardDiff: Dual
 @testset "Eigenpair validation and scalar result types" begin
     for T in (Int, Float32, Float64, BigFloat)
         variables(T, 1; order = 2)
+        # A one-element problem also supplies the working type for solvers that
+        # cannot handle empty systems (including GenericLinearAlgebra BigFloat).
+        expected = eigen(Symmetric(ones(T, 1, 1)))
+        values, vectors = DifferentialAlgebra.eigenpairs(Matrix{TaylorPolynomial{T}}(undef, 0, 0))
+        @test coefficient_type(eltype(values)) === eltype(expected.values)
+        @test coefficient_type(eltype(vectors)) === eltype(expected.vectors)
+        @test isempty(values) && size(vectors) == (0, 0)
         for A in (T[2 1; 1 4], T[2 0; 0 4])
             expected = eigen(Symmetric(A))
             values, vectors = DifferentialAlgebra.eigenpairs(TaylorPolynomial{T}.(A))

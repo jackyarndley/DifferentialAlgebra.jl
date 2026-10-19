@@ -65,3 +65,8 @@ end
 let matrix = [1 + x zero(x); zero(x) 1 - x]
     println((; path = :diagonal_eigenpairs, measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix))))
 end
+let matrix = Matrix{TaylorPolynomial{Int}}(undef, 0, 0)
+    measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix))
+    values, vectors = DifferentialAlgebra.eigenpairs(matrix)
+    println((; path = :empty_eigenpairs, types = (eltype(values), eltype(vectors)), measurement))
+end

@@ -67,7 +67,9 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
     n == m || throw(DimensionMismatch("Expected a square matrix"))
     if n == 0
         T = isconcretetype(eltype(A)) ? coefficient_type(eltype(A)) : Float64
-        return TaylorPolynomial{T}[], Matrix{TaylorPolynomial{T}}(undef, 0, 0)
+        # Match the scalar solver's real working type without an empty solve.
+        R = promote_type(Float32, typeof(zero(T) / sqrt(abs2(one(T)))))
+        return TaylorPolynomial{R}[], Matrix{TaylorPolynomial{R}}(undef, 0, 0)
     end
     for j in 1:n, i in 1:(j - 1)
         a, b = A[i, j], A[j, i]
