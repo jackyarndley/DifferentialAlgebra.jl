@@ -28,65 +28,6 @@ end
     @test degree(p + 1) == 3
 end
 
-# Scalar automatic differentiation supplies f^(k)(c), independently of the DA
-# coefficient recurrences and composition engine. These are numerical regression
-# expectations, not uniform interval inclusion oracles.
-function scalar_derivative(f, x, n)
-    return n == 0 ? f(x) : ForwardDiff.derivative(t -> scalar_derivative(f, t, n - 1), x)
-end
-
-# Expand f(2+h), h = a*x + b*y + c*x*z + d*y^2, directly by the multinomial
-# theorem. Counts of x*z and x are fixed by the target x/z exponents; enumerate
-# the possible y^2 counts. No polynomial multiplication or basis metadata is used.
-function multinomial_composition_coefficient(series, weights, alpha)
-    nxz = alpha[3]
-    nx = alpha[1] - nxz
-    nx < 0 && return zero(BigFloat)
-    value = zero(BigFloat)
-    for nyy in 0:(alpha[2] ÷ 2)
-        ny = alpha[2] - 2nyy
-        counts = (nx, ny, nxz, nyy)
-        k = sum(counts)
-        k < length(series) || continue
-        multiplicity = factorial(big(k)) ÷ prod(n -> factorial(big(n)), counts)
-        weight = prod(w^n for (w, n) in zip(weights, counts))
-        value += BigFloat(series[k + 1]) * BigFloat(multiplicity * weight)
-    end
-    return value
-end
-
-@testset "Multivariate coefficients from scalar derivatives" begin
-    setprecision(256) do
-        @testset "Combinatorial oracle identities" begin
-            series, weights = (1, 2, 3), (2 // 1, 3 // 1, 5 // 1, 7 // 1)
-            @test multinomial_composition_coefficient(series, weights, (0, 0, 0)) == 1
-            @test multinomial_composition_coefficient(series, weights, (0, 0, 1)) == 0
-            @test multinomial_composition_coefficient(series, weights, (1, 0, 1)) == 10
-            @test multinomial_composition_coefficient(series, weights, (0, 2, 0)) == 41
-            @test multinomial_composition_coefficient(series, weights, (1, 1, 1)) == 90
-            @test multinomial_composition_coefficient(series, weights, (2, 0, 2)) == 75
-        end
-        # Float64 inputs denote their stored binary values. Make those values
-        # exact rationals for the combinatorial part of the independent oracle.
-        weights = Rational{BigInt}.((0.1, 0.2, 0.05, 0.03))
-        for budget in (0, 32 * 1024^2)
-            x, y, z = variables(3; order = 6, table_bytes = budget)
-            p = 2 + 0.1x + 0.2y + 0.05x * z + 0.03y^2
-            for f in (sqrt, inv, exp, log, sin, cos, tan, atan, tanh, gamma, loggamma, erf)
-                @testset "$(f), table_bytes=$(budget)" begin
-                    series = [scalar_derivative(f, 2.0, k) / factorial(k) for k in 0:6]
-                    result = f(p)
-                    for i in 0:6, j in 0:(6 - i), k in 0:(6 - i - j)
-                        alpha = (i, j, k)
-                        expected = multinomial_composition_coefficient(series, weights, alpha)
-                        @test coefficient(result, collect(alpha)) ≈ expected atol = 1.0e-12 rtol = 0
-                    end
-                end
-            end
-        end
-    end
-end
-
 # Every matrix access checks the public order, including accesses inside the
 # eigenpair lifting loop. This deterministically detects hidden set_truncation_order! calls.
 struct OrderCheckedMatrix{T} <: AbstractMatrix{T}
@@ -167,53 +108,4 @@ end
     end
     @test DifferentialAlgebra.coefficient((1.0e308x + 1.0e-308y)^2, [1, 1]) ≈ 2
     @test_throws ArgumentError DifferentialAlgebra.multiindices(1000, 1000)
-end
-
-@testset "Complete special functions at coefficient precision" begin
-    for bits in (128, 256)
-        setprecision(bits) do
-            DifferentialAlgebra.initialize!(4, 1)
-            x = DifferentialAlgebra.variable(1, BigFloat)
-            tol = BigFloat(2)^(-bits + 30)
-            for n in 1:5
-                expected = (-1)^(n + 1) * factorial(big(n)) * (zeta(BigFloat(n + 1)) - 1)
-                @test DifferentialAlgebra.constant_term(polygamma(n, 2 + zero(x))) ≈ expected rtol = tol
-                a = -BigFloat(1) / 2 + x / 10
-                @test DifferentialAlgebra.coefficient_norm(polygamma(n, a + 1) - polygamma(n, a) - (-1)^n * factorial(big(n)) * a^(-n - 1)) < 100tol
-            end
-            # Independent 100-decimal-digit mpmath 1.4.1 reference values.
-            for (f, expected) in (
-                    (p -> besseli(2, p), "0.809196566007602118254159830538643220568413967382672328252350891607223341316661635156423216783493928"),
-                    (p -> besselk(2, p), "0.2096093039998351971497158542154000893596098104942351105661592886876975266704431100028063620394724142"),
-                )
-                @test DifferentialAlgebra.constant_term(f(BigFloat(17) / 8 + zero(x))) ≈ parse(BigFloat, expected) rtol = tol
-            end
-            expected = "344.6756950613542964686513088383632754343010336756080598637557812072204830205585200518156277649550717"
-            @test DifferentialAlgebra.constant_term(polygamma(3, -BigFloat(5) / 8 + zero(x))) ≈ parse(BigFloat, expected) rtol = tol
-            for center in (BigFloat(2), -BigFloat(1) / 2)
-                p = center + x / 10
-                @test gamma(p) isa TaylorPolynomial{BigFloat}
-                @test DifferentialAlgebra.coefficient_norm(gamma(p + 1) - p * gamma(p)) < 10tol
-                @test abs(DifferentialAlgebra.evaluate(gamma(p), [BigFloat(1) / 1000]) - gamma(center + BigFloat(1) / 10000)) < BigFloat(1.0e-16)
-            end
-            @test_throws DomainError polygamma(2, zero(x))
-            for center in (BigFloat(1) / 8, BigFloat(2), BigFloat(20), BigFloat(300)), n in (0, 2)
-                p = center + x / 100
-                i, k = besselix(n, p), besselkx(n, p)
-                @test i isa TaylorPolynomial{BigFloat} && k isa TaylorPolynomial{BigFloat}
-                @test DifferentialAlgebra.coefficient_norm(i * besselkx(n + 1, p) + besselix(n + 1, p) * k - inv(p)) < 100tol
-                @test DifferentialAlgebra.coefficient_norm(besseli(n, p) * exp(-p) - i) < 100tol
-                @test DifferentialAlgebra.coefficient_norm(besselk(n, p) * exp(p) - k) < 100tol
-            end
-            @test DifferentialAlgebra.coefficient_norm(besseli(1, -(2 + x)) + besseli(1, 2 + x)) < tol
-            @test DifferentialAlgebra.coefficient_norm(besseli(0, x) - (1 + x^2 / 4 + x^4 / 64)) < tol
-            @test_throws DifferentialAlgebra.TaylorError besselix(0, x)
-            @test_throws DomainError besselk(0, -one(x))
-        end
-    end
-    DifferentialAlgebra.initialize!(4, 1)
-    x = DifferentialAlgebra.variable(1, Float32)
-    for f in (gamma, loggamma, digamma, p -> polygamma(2, p), p -> besseli(2, p), p -> besselk(2, p), p -> besselix(2, p), p -> besselkx(2, p))
-        @test f(2 + x / 10) isa TaylorPolynomial{Float32}
-    end
 end

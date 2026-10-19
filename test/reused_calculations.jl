@@ -4,7 +4,7 @@ import DiffEqBase, OrdinaryDiffEqCore
 @testset "Hessian polynomial oracle" begin
     x, y, z = variables(3; order = 4)
     p = x^2 * y + 3x * y * z^2
-    expected = [2y 2x+3z^2 6y*z; 2x+3z^2 zero(x) 6x*z; 6y*z 6x*z 6x*y]
+    expected = [2y 2x + 3z^2 6y * z; 2x + 3z^2 zero(x) 6x * z; 6y * z 6x * z 6x * y]
     @test all(iszero, hessian(p) - expected)
 end
 

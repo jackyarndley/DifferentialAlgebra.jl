@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 @testset "Time series arithmetic" begin
     # Compare independent univariate and multivariate coefficient recurrences.
     x, = variables(1; order = 8)

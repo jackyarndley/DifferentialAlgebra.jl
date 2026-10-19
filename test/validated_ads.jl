@@ -46,7 +46,8 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         mixed = adaptive_map(
             v -> [v[1] * v[2], 3, v[1] - v[1]], [z, z];
             order = 1, atol = [1 // 4, 1 // 100, 1 // 100], table_bytes = budget
-        , estimator = IntervalBound(), splitter = :width)
+            , estimator = IntervalBound(), splitter = :width
+        )
         @test mixed.converged && length(mixed.patches) == 4
         @test noutputs(mixed) == 3
         @test all(p -> sameinterval(p.error_bounds[1], IA.interval(T, -1 // 4, 1 // 4)), mixed.patches)
@@ -64,14 +65,16 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         uncertain = adaptive_map(
             v -> IA.interval(T, -1 // 8, 1 // 8), [z];
             atol = 1 // 16, max_depth = 0, strict = false
-        , estimator = IntervalBound(), order = 3, splitter = :width)
+            , estimator = IntervalBound(), order = 3, splitter = :width
+        )
         @test !uncertain.converged && only(uncertain.patches).status == :max_depth
         @test IA.isthinzero(remainder(only(only(uncertain.patches).models)))
         @test sameinterval(only(only(uncertain.patches).error_bounds), IA.interval(T, -1 // 8, 1 // 8))
         incoming = adaptive_map(
             v -> TaylorModel(polynomial(v[1]), IA.interval(T, -1 // 8, 1 // 8), v[1]), [z];
             atol = 1 // 16, max_patches = 2, strict = false
-        , estimator = IntervalBound(), order = 3, splitter = :width)
+            , estimator = IntervalBound(), order = 3, splitter = :width
+        )
         @test !incoming.converged && length(incoming.patches) == 2
         @test all(p -> p.status == :max_patches && sameinterval(only(p.error_bounds), IA.interval(T, -1 // 8, 1 // 8)), incoming.patches)
         @test_throws ErrorException adaptive_map(v -> v[1]^2, [z]; order = 1, atol = 1 // 16, max_depth = 0, estimator = IntervalBound(), splitter = :width)

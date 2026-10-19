@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 @testset "Hessian" begin
 
     DifferentialAlgebra.initialize!(4, 4)

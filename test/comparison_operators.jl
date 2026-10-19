@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 @testset verbose = true "Comparison operators" begin
     @testset "Test ==" begin
         DifferentialAlgebra.initialize!(10, 4)

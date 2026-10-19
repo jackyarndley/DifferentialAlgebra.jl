@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 using OrdinaryDiffEqCore
 using SciMLBase
 using SciMLBase: successful_retcode

@@ -1,3 +1,5 @@
+using ForwardDiff
+using Test, DifferentialAlgebra
 @testset "Public interface and generic coefficients" begin
     x, y = variables(2; order = 4)
     @test [x, y] isa Vector{TaylorPolynomial{Float64}}

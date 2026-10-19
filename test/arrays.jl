@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 using LinearAlgebra
 
 @testset "Native arrays and broadcasting" begin

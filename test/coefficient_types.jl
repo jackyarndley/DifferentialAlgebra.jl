@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 using Test, LinearAlgebra, Random, GenericLinearAlgebra, SpecialFunctions
 
 function multiplication_allocations(out, a, b)

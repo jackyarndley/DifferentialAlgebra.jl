@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 @testset "Polynomial display" begin
     x, y = variables(2; order = 5)
     @test sprint(show, zero(x)) == "0.0"

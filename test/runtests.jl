@@ -1,72 +1,99 @@
-using DifferentialAlgebra
-using Test
+using SafeTestsets: @safetestset
 
-include("utils.jl")
-
-@testset verbose = true "DifferentialAlgebra tests" begin
-    @testset "Package loading" begin
-        @test !DifferentialAlgebra.isinitialized()
-        @test_throws ArgumentError max_order()
-        time_expansion = only(taylor_expand((u, p, t) -> u, [1.0], 0.0; order = 12))
-        @test time_expansion(0.1) ≈ exp(0.1)
-        @test !DifferentialAlgebra.isinitialized()
-        initial_map = adaptive_map(x -> 1 + x[1], [-1.0], [1.0])
-        @test !DifferentialAlgebra.isinitialized()
-        @test initial_map([0.3]) ≈ 1.3
-    end
-
-    @testset verbose = true "Tutorials" begin
-        include("tutorial_tests.jl")
-    end
-
-    @testset verbose = true "Validation tests" begin
-        include("validation_1.jl")
-        include("validation_2.jl")
-    end
-
-    @testset verbose = true "Operators" begin
-        include("comparison_operators.jl")
-    end
-
-    @testset verbose = true "Special Functions" begin
-        include("special_functions.jl")
-    end
-
-    @testset verbose = true "Linear Algebra" begin
-        include("linear_algebra.jl")
-    end
-
-    @testset verbose = true "Hessians" begin
-        include("hessians.jl")
-    end
-
-    @testset verbose = true "Statistics" begin
-        include("statistics.jl")
-    end
-
-    @testset verbose = true "Variables" begin
-        include("variables.jl")
-    end
-
-    include("polynomial.jl")
-    include("coefficient_types.jl")
-    include("recurrences.jl")
-    include("regressions.jl")
+# Modules isolate names, not the global algebra. Keep these tests sequential.
+@safetestset "loading" begin
+    include("loading.jl")
+end
+@safetestset "quality" begin
+    include("quality.jl")
+end
+@safetestset "configuration" begin
+    include("configuration.jl")
+end
+@safetestset "constructors" begin
     include("constructors.jl")
+end
+@safetestset "public api" begin
     include("public_api.jl")
+end
+@safetestset "api validation" begin
     include("api_validation.jl")
+end
+@safetestset "variables" begin
+    include("variables.jl")
+end
+@safetestset "polynomial" begin
+    include("polynomial.jl")
+end
+@safetestset "comparison operators" begin
+    include("comparison_operators.jl")
+end
+@safetestset "analytic series" begin
+    include("analytic_series.jl")
+end
+@safetestset "special functions" begin
+    include("special_functions.jl")
+end
+@safetestset "coefficient types" begin
+    include("coefficient_types.jl")
+end
+@safetestset "recurrences" begin
+    include("recurrences.jl")
+end
+@safetestset "regressions" begin
+    include("regressions.jl")
+end
+@safetestset "numerical edges" begin
     include("numerical_edges.jl")
-    include("reused_calculations.jl")
+end
+@safetestset "linear algebra" begin
+    include("linear_algebra.jl")
+end
+@safetestset "hessians" begin
+    include("hessians.jl")
+end
+@safetestset "statistics" begin
+    include("statistics.jl")
+end
+@safetestset "arrays" begin
     include("arrays.jl")
+end
+@safetestset "display" begin
     include("display.jl")
+end
+@safetestset "time series" begin
     include("time_series.jl")
+end
+@safetestset "sciml" begin
     include("sciml.jl")
+end
+@safetestset "taylor solver" begin
     include("taylor_solver.jl")
+end
+@safetestset "reused calculations" begin
+    include("reused_calculations.jl")
+end
+@safetestset "domain splitting" begin
     include("domain_splitting.jl")
+end
+@safetestset "polygon ads" begin
     include("polygon_ads.jl")
+end
+@safetestset "interval models" begin
     include("interval_models.jl")
+end
+@safetestset "validated ads" begin
     include("validated_ads.jl")
+end
+@safetestset "interval polygon ads" begin
     include("interval_polygon_ads.jl")
+end
+@safetestset "continuous ads" begin
     include("continuous_ads.jl")
+end
+@safetestset "ads contracts" begin
     include("ads_contracts.jl")
+end
+@safetestset "tutorial tests" begin
+    include("tutorial_tests.jl")
 end

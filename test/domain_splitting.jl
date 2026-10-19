@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 @testset "Automatic domain splitting" begin
     old_x, old_y = variables(2; order = 3, names = (:u, :v))
     set_truncation_order!(2)

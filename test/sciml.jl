@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 import DiffEqBase
 
 @testset "SciML scalar values and types" begin

@@ -1,3 +1,4 @@
+using Test, DifferentialAlgebra
 using LinearAlgebra, Random, SpecialFunctions
 
 # TaylorPolynomial equality intentionally compares constants. Check every coefficient instead.
@@ -133,20 +134,6 @@ end
         @test DifferentialAlgebra.truncation_order() == 3
         @test_throws ArgumentError DifferentialAlgebra.set_truncation_order!(6)
         DifferentialAlgebra.set_truncation_order!(5)
-    end
-
-    @testset "Special function derivatives" begin
-        DifferentialAlgebra.initialize!(4, 1)
-        DifferentialAlgebra.set_coefficient_tolerance!(0.0)
-        x = 2.3 + TaylorPolynomial(1, 1.0)
-        for f in (erf, erfc, gamma, loggamma, digamma)
-            @test DifferentialAlgebra.constant_term(f(x)) ≈ f(2.3) rtol = 2.0e-13
-        end
-        for f in (besselj, bessely, besseli, besselk, besselix, besselkx), n in (0, 1, 2)
-            @test DifferentialAlgebra.constant_term(f(n, x)) ≈ f(n, 2.3) rtol = 2.0e-13
-        end
-        @test polyerror(DifferentialAlgebra.trim(DifferentialAlgebra.differentiate(loggamma(x), 1) - digamma(x), 0, 3), 0) < 1.0e-12
-        @test polyerror(DifferentialAlgebra.trim(DifferentialAlgebra.differentiate(besselj(1, x), 1) - (besselj(0, x) - besselj(2, x)) / 2, 0, 3), 0) < 1.0e-12
     end
 
     @testset "Compiled maps and inversion" begin
