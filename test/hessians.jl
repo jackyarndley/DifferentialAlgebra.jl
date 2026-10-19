@@ -1,18 +1,19 @@
 using Test, DifferentialAlgebra
-@testset "Hessian" begin
-
-    DifferentialAlgebra.initialize!(4, 4)
-
-    v = [DifferentialAlgebra.random_polynomial() for i in 1:4]
-    a = @view v[:]
-
-    H1 = DifferentialAlgebra.hessian(a)
-    H2 = DifferentialAlgebra.hessian(v)
-
-    H3 = DifferentialAlgebra.hessian_tensor(a)
-    H4 = DifferentialAlgebra.hessian_tensor(v)
-
-    @test all(iszero, stack(H1, dims = 3) - stack(H2, dims = 3))
-    @test all(iszero, H3 - H4)
-    @test all(iszero, stack(H1, dims = 3) - H3)
+@testset "Hessians from independent polynomial derivatives" begin
+    x, y, z = variables(3; order = 4)
+    p, q = x^2 * y + 3x * y * z^2, y^2 + x * z
+    expected_p = [2y 2x + 3z^2 6y * z; 2x + 3z^2 zero(x) 6x * z; 6y * z 6x * z 6x * y]
+    expected_q = [zero(x) zero(x) one(x); zero(x) 2one(x) zero(x); one(x) zero(x) zero(x)]
+    @test all(iszero, hessian(p) - expected_p)
+    map = [p, q]
+    result = hessian(view(map, :))
+    @test all(iszero, result[1] - expected_p)
+    @test all(iszero, result[2] - expected_q)
+    tensor = DifferentialAlgebra.hessian_tensor(view(map, :))
+    @test all(iszero, tensor[:, :, 1] - expected_p)
+    @test all(iszero, tensor[:, :, 2] - expected_q)
+    # Symmetric entries and source polynomials own independent coefficients.
+    set_coefficient!(result[1][1, 2], [0, 0, 0], 99)
+    @test iszero(result[1][2, 1] - expected_p[2, 1])
+    @test iszero(p - (x^2 * y + 3x * y * z^2))
 end

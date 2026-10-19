@@ -1,6 +1,17 @@
 using Test, DifferentialAlgebra, Aqua
 
-# Inspect ambiguities owned by this package; dependencies own their additional
-# dispatch. Extension contracts and both fresh-process loading orders are tested
-# separately. All other Aqua checks use their defaults.
-Aqua.test_all(DifferentialAlgebra; ambiguities = (recursive = false,))
+Aqua.test_all(DifferentialAlgebra; unbound_args = false)
+
+@testset "Unbound arguments" begin
+    # Julia 1.10 flags these generated outer constructors: an empty Vararg tuple
+    # cannot infer its element type. Supported snapshots require nonempty domains
+    # and patches. Exempt exactly these five methods, not their types or any newly
+    # added overloads; newer Julia detectors already omit them.
+    constructors = (
+        DifferentialAlgebra.ModelCoordinates, PiecewisePolygonMap,
+        ContinuousTaylorMap, TaylorModelPatch, PiecewiseTaylorModel,
+    )
+    exceptions = Set(only(methods(T)) for T in constructors)
+    unbound = Test.detect_unbound_args(DifferentialAlgebra; recursive = true)
+    @test isempty(setdiff(unbound, exceptions))
+end

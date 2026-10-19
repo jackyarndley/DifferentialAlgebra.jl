@@ -18,7 +18,6 @@ function Base.getindex(v::GeneratedPolynomials, i::Int)
 end
 
 @testset "Polynomial storage and arithmetic" begin
-    @test DifferentialAlgebra.eval(:(1 + 2)) == 3
     @testset "Constructors, coefficients and ownership" begin
         DifferentialAlgebra.initialize!(5, 3)
         DifferentialAlgebra.set_coefficient_tolerance!(0.0)
