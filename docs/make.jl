@@ -72,3 +72,5 @@ makedocs(
 )
 
 include(joinpath(@__DIR__, "test_navigation.jl"))
+
+test_navigation(examples, joinpath(@__DIR__, "build"), destination)
