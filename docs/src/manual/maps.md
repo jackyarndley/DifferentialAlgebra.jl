@@ -54,6 +54,10 @@ residual = evaluate(f, inverse) .- [x, y]
 maximum(DifferentialAlgebra.coefficient_norm, residual)
 ```
 
+This residual uses the current arithmetic order and coefficient tolerance.
+See [Compare polynomials](getting-started.md#Compare-polynomials) for inspecting
+stored coefficients without filtering their difference.
+
 The linear part must be nonsingular. The inverse is constructed locally about
 the input origin and includes the shift by the map's constant value, so its
 arguments are output coordinates. For a zero-constant map, composition gives

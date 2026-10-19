@@ -2,7 +2,8 @@
     Monomial(coefficient, exponents)
 
 A coefficient and its vector of nonnegative integer exponents.
-The exponents are stored as `UInt32` values. Retrieve monomials from a polynomial
+`Monomial{T}` converts the coefficient to concrete type `T`. Integer exponents
+are checked before conversion to `UInt32`. Retrieve monomials from a polynomial
 with `DifferentialAlgebra.monomials(p)`.
 """
 struct Monomial{T <: Real}

@@ -80,8 +80,20 @@ constant_term(gradient(p))
 
 ## Compare polynomials
 
-Scalar comparisons use the constant part. To compare every coefficient, use
-`DifferentialAlgebra.coefficient_norm(p - q)`; `iszero(p)` also checks the full polynomial.
+Scalar comparisons use the constant part. `coefficient_norm(p)` and `iszero(p)`
+inspect all stored coefficients. Subtraction applies the current order and
+coefficient tolerance, so `coefficient_norm(p - q)` measures the resulting
+truncated, filtered difference. To compare every stored coefficient of two
+polynomials in the same algebra, inspect coefficients before subtracting scalars:
+
+```@example basics
+q = p + x^4
+indices = DifferentialAlgebra.multiindices(max_order(p), nvariables(p))
+maximum(abs(coefficient(p, alpha) - coefficient(q, alpha)) for alpha in indices)
+```
+
+Use scalar `isapprox` on the coefficient pairs when an approximate comparison
+is intended.
 
 Calling `variables` again starts a new algebra and invalidates existing
 polynomials. See [Configuration and storage](configuration.md) when managing

@@ -1,4 +1,22 @@
-# API migration from `17f74cc`
+# API migrations
+
+From `720b46c`:
+
+- Import `erf`, `erfc`, `gamma`, `loggamma`, `besselj`, `bessely`, `besseli`,
+  `besselk`, `besselix`, and `besselkx` from SpecialFunctions. Their polynomial
+  methods remain supported; the redundant `DifferentialAlgebra` aliases are removed.
+- Coefficient norms return floating norm types, including for integer coefficients.
+  Converting `Monomial{T}(coefficient, integer_exponents)` constructors are restored;
+  negative exponents and values beyond `UInt32` are rejected.
+- `eigenpairs` requires symmetry for scalar and polynomial matrices, inspecting
+  all stored coefficients. Polynomial outputs use the scalar eigensolver's types.
+- Horner composition, normalization, quotient construction, and repeated
+  derivatives preserve intermediate coefficients until filtering the completed result.
+  Repeated derivatives and Hessians retain intermediate degrees needed
+  to produce the requested result at the working order. Both `abs` branches
+  discard terms above that order.
+
+From `17f74cc`:
 
 - Replace `push_order!`/`pop_order!` with exception-safe `with_order(order) do … end`.
 - Exponent and repeated calculus count vectors now require exactly one entry per

@@ -308,7 +308,6 @@ function Base.mod(a::TaylorPolynomial, p::Real)
 end
 
 for fn in (:erf, :erfc)
-    @eval const $fn = SpecialFunctions.$fn
     @eval function SpecialFunctions.$fn(a::TaylorPolynomial)
         x = constant_term(a); c0 = SpecialFunctions.$fn(x)
         n = a.algebra.cutoff
@@ -320,8 +319,6 @@ for fn in (:erf, :erfc)
         return integral_series(a, c0, derivative)
     end
 end
-const loggamma = SpecialFunctions.loggamma
-const gamma = SpecialFunctions.gamma
 function derivative_series(f, a::TaylorPolynomial, c0)
     a.len == 1 && return TaylorPolynomial(c0)
     x = constant_term(a)
@@ -384,7 +381,6 @@ function bessel_series(fn, n::Integer, a::TaylorPolynomial, q::Int, s)
     return series(a, c)
 end
 for (fn, q) in ((:besselj, 1), (:bessely, 1), (:besseli, -1), (:besselk, -1), (:besselix, -1), (:besselkx, -1))
-    @eval const $fn = SpecialFunctions.$fn
     @eval SpecialFunctions.$fn(n::Integer, a::TaylorPolynomial) = bessel_series(
         SpecialFunctions.$fn, n, a, $q,
         $(fn == :besselix ? :(sign(constant_term(a))) : fn == :besselkx ? :(-one(constant_term(a))) : :(zero(constant_term(a))))

@@ -19,6 +19,11 @@ import ForwardDiff: Dual
         @test_throws ArgumentError DifferentialAlgebra.eigenpairs(A)
         @test_throws ArgumentError DifferentialAlgebra.eigenpairs(TaylorPolynomial.(A))
     end
+    x, = variables(Int, 1; order = 2)
+    A = [2 + x one(x); one(x) 4 - x]
+    values, vectors = DifferentialAlgebra.eigenpairs(A)
+    @test eltype(values) === eltype(vectors) === TaylorPolynomial{Float64}
+    @test maximum(coefficient_norm, A * vectors - vectors * Diagonal(values)) < 1.0e-13
     @test_throws DimensionMismatch DifferentialAlgebra.eigenpairs(ones(2, 3))
     x, = variables(1; order = 4)
     A = [2 + x one(x) + x^4; one(x) 4 + x]

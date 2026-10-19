@@ -227,6 +227,7 @@ Compute a norm over all polynomial coefficients.
 Type zero returns the maximum absolute coefficient; type one returns their
 absolute sum; higher integer types use the corresponding power norm.
 Unlike scalar polynomial comparisons, this includes nonconstant coefficients.
+The result uses the floating norm type of the coefficients, as in `LinearAlgebra.norm`.
 """
 function coefficient_norm(a::TaylorPolynomial, p::Real = 0)
     valid(a)

@@ -28,6 +28,7 @@ Base.getindex(v::ShiftedVector, i::Int) = v.data[i + 1]
         @test_throws ArgumentError f(x, counts)
     end
     @test_throws ArgumentError set_coefficient!(copy(x), counts, 2)
+    @test_throws ArgumentError Monomial(1, counts)
     @test_throws ArgumentError evaluate(x, ShiftedVector([0.1, 0.2]))
     for T in (Real, AbstractFloat)
         @test_throws ArgumentError TaylorPolynomial{T}()

@@ -50,9 +50,8 @@ estimators report heuristic errors; `estimator=IntervalBound()` uses rigorous
 interval error bounds. Both reevaluate the original callback on refined children
 and retain the requested order and selected estimator for subsequent refinement.
 See [domain splitting](docs/src/manual/domain-splitting.md) for both patterns.
-`validated_adaptive_map` is a compatibility wrapper with preserved defaults
-`order=3`, `atol=1e-6`, `splitter=:width`; `adaptive_map` defaults to `order=5`,
-`atol=1e-8`, `splitter=:tail` for boxes. The
+`adaptive_map` defaults to `order=5`, `atol=1e-8`, `splitter=:tail` for boxes.
+See the [migration note](docs/src/migration.md) for the former validated wrapper's defaults. The
 [interval fitting example](examples/interval_models.jl) plots enclosures,
 partitions, and accepted error bounds. `splitter=:oriented` adds 2D convex polygon
 ADS with automatic or supplied projection directions to all four error methods;
