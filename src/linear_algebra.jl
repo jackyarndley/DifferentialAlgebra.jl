@@ -80,7 +80,7 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
     R, V = eltype(F.values), eltype(F.vectors)
     if all(iszero(A[i, j]) for i in 1:n for j in 1:n if i != j)
         permutation = sortperm(constant_term.(LinearAlgebra.diag(A)))
-        return TaylorPolynomial{R}.(LinearAlgebra.diag(A)[permutation]), TaylorPolynomial{V}.(F.vectors)
+        return TaylorPolynomial{R}.(LinearAlgebra.diag(A)[permutation]), TaylorPolynomial{V}.(Matrix{V}(I, n, n)[:, permutation])
     end
     values, vectors = TaylorPolynomial{R}.(F.values), TaylorPolynomial{V}.(F.vectors)
     all(a -> a.len == 1, A) && return values, vectors

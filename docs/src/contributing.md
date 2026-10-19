@@ -94,9 +94,8 @@ Add new pages under a topic heading in `docs/src/examples.md`; these headings al
 generate the sidebar groups. The build checks that every script is registered
 exactly once. `collapselevel=3` keeps every tutorial topic and its links expanded
 on every page, including direct links into another topic. After rendering,
-`docs/test_navigation.jl` checks every HTML sidebar, resolves all tutorial links,
-and checks each tutorial's linked PNG assets. Run it separately after a build
-with `julia --project=docs docs/test_navigation.jl`; it supports both local flat
+`docs/test_navigation.jl` checks catalog destinations, local HTML links, and each
+referenced tutorial figure during the build. These checks support both local flat
 URLs and CI's directory URLs. The rendering helper in `docs/literate.jl` converts Makie's
 embedded display images to links that work with both local and deployed URLs.
 Generated pages, build output and local manifests are excluded from version control.

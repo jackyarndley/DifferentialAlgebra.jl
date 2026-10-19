@@ -5,6 +5,7 @@ ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 OrdinaryDiffEqCore = "bbf590c4-e513-4bbe-9b18-05decba2e5d8"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [sources]
 DifferentialAlgebra = {path = ".."}
@@ -14,4 +15,5 @@ DiffEqBase = "6, 7"
 ForwardDiff = "1"
 IntervalArithmetic = "1.0.12"
 OrdinaryDiffEqCore = "4.18"
+SpecialFunctions = "2"
 julia = "1.10"
