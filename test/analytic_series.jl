@@ -208,7 +208,7 @@ end
     @test constant_term(acos(one(x))) == 0
 end
 
-# Expand f(2+h), h = a*x + b*y + c*x*z + d*y^2, directly by the multinomial
+# Expand f(c+h), h = a*x + b*y + c*x*z + d*y^2, directly by the multinomial
 # theorem. Counts of x*z and x are fixed by the target x/z exponents; enumerate
 # the possible y^2 counts. No polynomial multiplication or basis metadata is used.
 function multinomial_composition_coefficient(series, weights, alpha)
@@ -244,15 +244,36 @@ end
         weights = Rational{BigInt}.((0.1, 0.2, 0.05, 0.03))
         for budget in (0, 32 * 1024^2)
             x, y, z = variables(3; order = 6, table_bytes = budget)
-            p = 2 + 0.1x + 0.2y + 0.05x * z + 0.03y^2
-            for f in (sqrt, inv, exp, log, sin, cos, tan, atan, tanh, gamma, loggamma, erf)
-                @testset "$(f), table_bytes=$(budget)" begin
-                    series = [scalar_derivative(f, 2.0, k) / factorial(k) for k in 0:6]
+            cases = (
+                (sqrt, 2.0), (inv, 2.0), (exp, 2.0), (log, 2.0),
+                (sin, 2.0), (cos, 2.0), (tan, 2.0), (atan, 2.0),
+                (tanh, 2.0), (gamma, 2.0), (loggamma, 2.0), (erf, 2.0),
+                (asin, 0.25), (acos, 0.25), (asinh, 0.25), (atanh, 0.25),
+                (acosh, 2.0), (sinh, 0.25), (cosh, 0.25), (cbrt, 2.0),
+                (log2, 2.0), (log10, 2.0), (erfc, 0.25), (digamma, 2.0),
+                (Base.Fix1(besselj, 2), 2.0), (Base.Fix1(bessely, 2), 2.0),
+                (Base.Fix1(besseli, 2), 2.0), (Base.Fix1(besselk, 2), 2.0),
+                (Base.Fix1(besselix, 2), 2.0), (Base.Fix1(besselkx, 2), 2.0),
+            )
+            argument = 2 + 0.1x + 0.2y + 0.05x * z + 0.03y^2
+            pair = sincos(argument)
+            @test all(isequal.(pair, (sin(argument), cos(argument))))
+            @test pair[1].coeffs !== pair[2].coeffs
+            @test all(p -> p.coeffs !== argument.coeffs, pair)
+            for (f, center) in cases
+                @testset "$(f) at $center, table_bytes=$budget" begin
+                    p = center + 0.1x + 0.2y + 0.05x * z + 0.03y^2
+                    series = [scalar_derivative(f, center, k) / factorial(k) for k in 0:6]
                     result = f(p)
                     for i in 0:6, j in 0:(6 - i), k in 0:(6 - i - j)
                         alpha = (i, j, k)
                         expected = multinomial_composition_coefficient(series, weights, alpha)
                         @test coefficient(result, collect(alpha)) ≈ expected atol = 1.0e-12 rtol = 0
+                        if f === sin || f === cos
+                            member = f === sin ? pair[1] : pair[2]
+                            actual = coefficient(member, collect(alpha))
+                            @test actual ≈ expected atol = 1.0e-12 rtol = 0
+                        end
                     end
                 end
             end
@@ -333,7 +354,7 @@ end
 @testset "Large integer exponents" begin
     for budget in (0, 32 * 1024^2)
         x, = variables(1; order = 2, table_bytes = budget)
-        for n in (2^31, big(10)^100, typemax(UInt))
+        for n in (big(2)^31, big(10)^100, typemax(UInt))
             @test isone(one(x)^n)
             @test iszero(x^n)
             p = (1 + x)^n

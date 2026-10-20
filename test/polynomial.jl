@@ -115,7 +115,6 @@ end
         @test polyerror(TaylorPolynomial() - x, -x) == 0
         bounds = DifferentialAlgebra.bounds(2 + 3x)
         @test bounds.lower <= -1 && bounds.upper >= 5
-        @test isfinite(DifferentialAlgebra.random_polynomial(; density = 0.2, scaled = false))
         @test DifferentialAlgebra.set_coefficient_tolerance!(1.0e-20) == 0
         @test DifferentialAlgebra.coefficient_tolerance() == 1.0e-20
         @test DifferentialAlgebra.set_truncation_order!(3) == 5
@@ -271,5 +270,25 @@ end
         @test map(point) == [sign * Inf, 1, 1]
         out, work = zeros(3), zeros(degree(map) + 1)
         @test evaluate!(out, map, point, work) == [sign * Inf, 1, 1]
+    end
+end
+
+@testset "Seeded random polynomial coefficients" begin
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        variables(T, 3; order = 6, table_bytes = budget)
+        for density in (0.0, 0.2, 1.0)
+            p = DifferentialAlgebra.random_polynomial(T; rng = Xoshiro(1), density)
+            q = DifferentialAlgebra.random_polynomial(T; rng = Xoshiro(1), density)
+            @test isequal(p, q)
+            @test p.coeffs !== q.coeffs
+            @test all(m -> abs(coefficient(m)) <= T(2)^(-degree(m)), monomials(p))
+            @test density == 0 ? iszero(p) : !iszero(p)
+            unscaled = DifferentialAlgebra.random_polynomial(
+                T; rng = Xoshiro(1), density, scaled = false
+            )
+            for m in monomials(unscaled)
+                @test coefficient(p, exponents(m)) == ldexp(coefficient(m), -degree(m))
+            end
+        end
     end
 end

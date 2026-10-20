@@ -170,7 +170,6 @@ end
         DifferentialAlgebra.set_coefficient_tolerance!(0.0)
     end
     DifferentialAlgebra.initialize!(70, 1)
-    @test isfinite(DifferentialAlgebra.random_polynomial())
     @test_throws ArgumentError besselj(typemin(Int), TaylorPolynomial(1.0))
 end
 
@@ -199,5 +198,21 @@ end
         values = zeros(T, 2)
         @test_throws InexactError values[1] = 1 + x
         @test values == zeros(T, 2)
+    end
+end
+
+@testset "Inferred coefficient operations" begin
+    for T in (
+                Int, BigInt, UInt8, UInt64, UInt128, Rational{Int}, Rational{BigInt},
+                Float32, Float64, BigFloat,
+            ), budget in (0, 32 * 1024^2)
+        x, y = variables(T, 2; order = 4, table_bytes = budget)
+        p, q = one(x) + x + T(2) * y, T(3) * one(x) + y
+        @test @inferred(p + q) isa TaylorPolynomial{T}
+        @test @inferred(p * q) isa TaylorPolynomial{T}
+        R = typeof(inv(one(T)))
+        @test @inferred(inv(q)) isa TaylorPolynomial{R}
+        @test @inferred(evaluate(p, T[1, 2])) == T(6)
+        @test @inferred(coefficient(p, [1, 0])) == one(T)
     end
 end

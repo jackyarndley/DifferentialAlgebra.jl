@@ -35,3 +35,28 @@ end
     # Independent standard normal probability between -1 and 1.
     @test primitive(1.0) - primitive(-1.0) ≈ 0.6826894921370859 atol = 1.0e-12
 end
+
+@testset "Gradient components and owning contexts" begin
+    for T in (Float32, Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
+        x, y, z = variables(T, 3; order = 4, table_bytes = budget)
+        p = 3x^2 * y + 2x * y^2 + 5z
+        expected = [6x * y + 2y^2, 3x^2 + 4x * y, 5one(z)]
+        # A different current factory must not change an object's variable count.
+        result = DifferentialAlgebra.with_algebra(2, 1) do _
+            gradient(p)
+        end
+        @test length(result) == 3
+        @test all(iszero, result - expected)
+        @test all(d -> d.algebra === p.algebra, result)
+        @test all(i -> result[i].coeffs !== p.coeffs, eachindex(result))
+        @test result[1].coeffs !== result[2].coeffs
+        snapshot = copy(p.coeffs)
+        set_coefficient!(result[1], [0, 0, 0], 11)
+        @test p.coeffs == snapshot
+        with_order(1) do
+            g = gradient(p)
+            @test all(iszero, g[1:2])
+            @test iszero(g[3] - 5)
+        end
+    end
+end
