@@ -95,5 +95,15 @@ jobs:
           Pkg.add([
               PackageSpec(name = "ForwardDiff", version = "0.10.36"),
               PackageSpec(name = "LinearAlgebra"), PackageSpec(name = "Test"),
+              PackageSpec(name = "SafeTestsets"),
           ])
-          include(joinpath(checkout, "test", "polygon_ads.jl"))
+          using SafeTestsets: @safetestset
+          @safetestset "Public API" begin
+              include(joinpath(pwd(), "test", "public_api.jl"))
+          end
+          @safetestset "Time series" begin
+              include(joinpath(pwd(), "test", "time_series.jl"))
+          end
+          @safetestset "Polygon ADS" begin
+              include(joinpath(pwd(), "test", "polygon_ads.jl"))
+          end
