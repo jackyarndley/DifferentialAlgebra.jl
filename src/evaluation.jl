@@ -276,7 +276,8 @@ function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:Taylor
     size(A, 2) == length(x) || throw(DimensionMismatch("Linear map dimensions differ"))
     ctx = valid(first(x))
     T = foldl((R, a) -> promote_type(R, coefficient_type(a)), x; init = eltype(A))
-    result = [allocate(ctx, T) for _ in axes(A, 1)]
+    capacity = min(maximum(a -> a.len, x), ctx.basis.ends[ctx.cutoff + 1])
+    result = [allocate(ctx, T, capacity) for _ in axes(A, 1)]
     for j in eachindex(x), i in eachindex(result)
         c = A[i, j]
         coefficient_iszero(c) && continue

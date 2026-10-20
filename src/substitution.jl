@@ -3,12 +3,13 @@ function affine_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Rea
     ctx = valid(p); b = ctx.basis
     1 <= from <= b.variables && 1 <= to <= b.variables || throw(ArgumentError("Variable index out of bounds"))
     T = promote_type(coefficient_type(p), typeof(a), typeof(c))
-    result = allocate(ctx, T)
+    degree = b.degrees[p.len]
+    result = allocate(ctx, T, b.ends[min(degree, cutoff) + 1])
     powers = zeros(Int, b.variables)
     # Precompute scalar powers once, including 0^0 = 1 for constant terms.
     a, c = coefficient_convert(T, a), coefficient_convert(T, c)
-    ap, cp = ones(T, b.order + 1), ones(T, b.order + 1)
-    for k in 1:b.order
+    ap, cp = ones(T, degree + 1), ones(T, degree + 1)
+    for k in 1:degree
         ap[k + 1], cp[k + 1] = ap[k] * a, cp[k] * c
     end
     for i in 1:p.len

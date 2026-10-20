@@ -360,7 +360,7 @@ function Base.atan(y::TaylorPolynomial, x::TaylorPolynomial)
     p = inverse_series(ratio, Val(:atan); filter = false)
     !use_x && scale!(p, p, -one(coefficient_type(p)); filter = false)
     p.coeffs[1] = atan(y0, x0)
-    return finish!(p)
+    return finish!(p, p.len)
 end
 # Scalar promotion is internal to these operations and must not filter the input.
 function scalar_argument(a::TaylorPolynomial, b::Real)

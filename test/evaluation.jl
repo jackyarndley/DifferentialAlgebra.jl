@@ -4,6 +4,16 @@ using ForwardDiff, IntervalArithmetic
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, interval_contains
 
+@testset "Compact polynomial linear transforms" begin
+    for budget in (0, 32 * 1024^2)
+        x = variables(6; order = 10, table_bytes = budget)
+        result = DifferentialAlgebra._linear_transform([2 3; 0 4], [1 + x[1], x[6]])
+        @test iszero(result[1] - (2 + 2x[1] + 3x[6]))
+        @test iszero(result[2] - 4x[6])
+        @test all(p -> length(p.coeffs) <= 7, result)
+    end
+end
+
 @testset "Direct numeric evaluation" begin
     for T in (Float32, Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
         x, y, z = variables(T, 3; order = 4, table_bytes = budget)

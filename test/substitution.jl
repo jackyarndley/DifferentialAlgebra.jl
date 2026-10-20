@@ -4,6 +4,19 @@ using IntervalArithmetic
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, sameinterval, interval_contains
 
+@testset "Affine substitutions retain compact low-degree storage" begin
+    for budget in (0, 32 * 1024^2), T in (Float64, Rational{BigInt})
+        x = variables(T, 6; order = 10, table_bytes = budget)
+        p = 1 + x[1] * x[6]
+        translated = DifferentialAlgebra.translate_variable(p, 6, 2, 3)
+        @test iszero(translated - (1 + 3x[1] + 2x[1] * x[6]))
+        @test length(translated.coeffs) <= binomial(6 + 2, 2)
+        substituted = DifferentialAlgebra.substitute(p, 6, 3)
+        @test iszero(substituted - (1 + 3x[1]))
+        @test length(substituted.coeffs) <= binomial(6 + 2, 2)
+    end
+end
+
 @testset "Exact affine binomial factors" begin
     for T in (Int, Rational{Int})
         x, = variables(T, 1; order = 60)

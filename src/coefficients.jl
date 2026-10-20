@@ -155,7 +155,11 @@ function calculus(
     else
         coefficient_type(a)
     end
-    out = allocate(ctx, T)
+    degree = b.degrees[a.len]
+    output_degree = operation === :integrate ? degree + 1 :
+        operation === :differentiate ? degree - 1 : degree - p
+    capacity = b.ends[clamp(output_degree, 0, order) + 1]
+    out = allocate(ctx, T, capacity)
     exponents = zeros(Int, b.variables)
     for i in 1:a.len
         c = a.coeffs[i]
