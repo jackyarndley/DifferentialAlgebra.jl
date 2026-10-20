@@ -9,6 +9,12 @@ end
 const CURRENT_ALGEBRA = Ref{Union{Nothing, Algebra}}(nothing)
 const ALGEBRA_LOCK = ReentrantLock() # Serializes algebra initialization.
 
+# Keep kernel policy reads separate from basis/storage ownership.
+@inline current_algebra() = CURRENT_ALGEBRA[]
+@inline working_order(ctx::Algebra) = ctx.cutoff
+@inline float_tolerance(ctx::Algebra) = ctx.epsilon
+@inline big_tolerance(ctx::Algebra) = ctx.big_epsilon
+
 # A real multivariate Taylor polynomial with coefficients of type T.
 """
     TaylorPolynomial{T}(c = zero(T))
@@ -40,7 +46,7 @@ end
 Base.showerror(io::IO, e::TaylorError) = print(io, "DifferentialAlgebra: ", e.message)
 
 @inline function ready()
-    ctx = CURRENT_ALGEBRA[]
+    ctx = current_algebra()
     ctx === nothing && throw(ArgumentError("Call initialize!(order, variables) first"))
     return ctx
 end
@@ -100,7 +106,7 @@ from the actual stored `degree`. Taylor models report their fixed retained order
 """
 max_order() = ready().basis.order
 # Internal initialization query for loading regressions.
-isinitialized() = CURRENT_ALGEBRA[] !== nothing && CURRENT_ALGEBRA[].active
+isinitialized() = current_algebra() !== nothing && current_algebra().active
 
 # Temporary maps own their compiled coefficients. Restore the caller's algebra,
 # including the uninitialized state, even if the callback fails or reinitializes.
@@ -138,13 +144,13 @@ nmonomials() = last(ready().basis.ends)
 
 Current working order, bounded by the algebra's `max_order()`.
 """
-truncation_order() = ready().cutoff
+truncation_order() = working_order(ready())
 """
     coefficient_tolerance()
 
 Absolute threshold used to discard small floating-point coefficients.
 """
-coefficient_tolerance() = something(ready().big_epsilon, ready().epsilon)
+coefficient_tolerance() = something(big_tolerance(ready()), float_tolerance(ready()))
 """
     set_truncation_order!(order = max_order())
 
@@ -154,7 +160,7 @@ order is one; zero selects one. Prefer `with_order` for temporary changes.
 function set_truncation_order!(n::Integer = max_order())
     ctx = ready()
     0 <= n <= ctx.basis.order || throw(ArgumentError("Invalid truncation order"))
-    old = ctx.cutoff
+    old = working_order(ctx)
     ctx.cutoff = max(1, Int(n)) # Working orders are positive.
     return old
 end
@@ -211,11 +217,13 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 
 @inline keep(c::Real, epsilon::Float64) = !coefficient_iszero(c)
 @inline keep(c::AbstractFloat, epsilon::Float64) = !(abs(c) <= epsilon)
-@inline keep(c::Real, ctx::Algebra) = keep(c, ctx.epsilon)
-@inline keep(c::AbstractFloat, ctx::Algebra) = ctx.big_epsilon === nothing ? keep(c, ctx.epsilon) : !(abs(c) <= ctx.big_epsilon)
-@inline keep(c::BigFloat, ctx::Algebra) = !(abs(c) <= something(ctx.big_epsilon, ctx.epsilon))
+@inline keep(c::Real, ctx::Algebra) = keep(c, float_tolerance(ctx))
+@inline keep(c::AbstractFloat, ctx::Algebra) = big_tolerance(ctx) === nothing ?
+    keep(c, float_tolerance(ctx)) : !(abs(c) <= big_tolerance(ctx))
+@inline keep(c::BigFloat, ctx::Algebra) =
+    !(abs(c) <= something(big_tolerance(ctx), float_tolerance(ctx)))
 @inline function finish!(a::TaylorPolynomial, n::Int = length(a.coeffs); filter::Bool = true)
-    if filter && (a.algebra.epsilon != 0 || a.algebra.big_epsilon !== nothing)
+    if filter && (float_tolerance(a.algebra) != 0 || big_tolerance(a.algebra) !== nothing)
         @inbounds for i in 1:n
             keep(a.coeffs[i], a.algebra) || (a.coeffs[i] = zero(eltype(a.coeffs)))
         end

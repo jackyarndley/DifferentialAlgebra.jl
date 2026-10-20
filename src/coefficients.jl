@@ -140,7 +140,7 @@ working order and coefficient tolerance. Both inputs must share an algebra.
 """
 function coefficient_product(a::TaylorPolynomial, b::TaylorPolynomial)
     ctx = compatible(a, b)
-    n = min(a.len, b.len, ctx.basis.ends[ctx.cutoff + 1])
+    n = min(a.len, b.len, ctx.basis.ends[working_order(ctx) + 1])
     out = allocate(ctx, promote_type(coefficient_type(a), coefficient_type(b)), n)
     @inbounds for i in 1:n
         out.coeffs[i] = a.coeffs[i] * b.coeffs[i]
@@ -149,7 +149,7 @@ function coefficient_product(a::TaylorPolynomial, b::TaylorPolynomial)
 end
 function calculus(
         a::TaylorPolynomial, v::Integer, operation::Symbol, p::Integer = 1;
-        order::Int = a.algebra.cutoff, filter::Bool = true
+        order::Int = working_order(a.algebra), filter::Bool = true
     )
     ctx = valid(a); b = ctx.basis
     1 <= v <= b.variables ||
@@ -226,12 +226,17 @@ for fn in (:differentiate, :integrate)
         for (i, n) in enumerate(counts)
             for _ in 1:n
                 remaining -= 1
-                order = $(fn === :differentiate) ? ctx.cutoff + min(remaining, ctx.basis.order - ctx.cutoff) : ctx.cutoff
+                order = if $(fn === :differentiate)
+                    working_order(ctx) +
+                        min(remaining, ctx.basis.order - working_order(ctx))
+                else
+                    working_order(ctx)
+                end
                 out = calculus(out, i, $(QuoteNode(fn)); order, filter = false)
                 iszero(out) && return out
             end
         end
-        return finish!(out, min(out.len, ctx.basis.ends[ctx.cutoff + 1]))
+        return finish!(out, min(out.len, ctx.basis.ends[working_order(ctx) + 1]))
     end
 end
 function degree_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0)
@@ -379,7 +384,7 @@ by `estimate_norms`. This coefficient-decay heuristic is not a rigorous bound.
 """
 function convergence_radius(p::TaylorPolynomial, tolerance::Real, type::Integer = 1)
     isfinite(tolerance) && tolerance > 0 || throw(ArgumentError("Tolerance must be positive and finite"))
-    degree = valid(p).cutoff + 1
+    degree = working_order(valid(p)) + 1
     estimate = estimate_norms(p, 0, type, degree)[end]
     return (tolerance / estimate)^(one(float(estimate)) / degree)
 end

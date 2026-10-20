@@ -28,7 +28,7 @@ For a vector of polynomials, return a vector of Hessian matrices.
 """
 function hessian(a::TaylorPolynomial)
     ctx = valid(a)
-    order = min(ctx.cutoff + 1, ctx.basis.order)
+    order = min(working_order(ctx) + 1, ctx.basis.order)
     first_derivatives = [calculus(a, i, :differentiate; order, filter = false) for i in 1:nvariables(a)]
     return [differentiate(p, j) for p in first_derivatives, j in eachindex(first_derivatives)]
 end
@@ -77,7 +77,7 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         return TaylorPolynomial{R}[], Matrix{TaylorPolynomial{R}}(undef, 0, 0)
     end
     ctx = valid(first(A))
-    limit = ctx.basis.ends[ctx.cutoff + 1]
+    limit = ctx.basis.ends[working_order(ctx) + 1]
     for j in 1:n, i in 1:(j - 1)
         a, b = A[i, j], A[j, i]
         stop = min(limit, max(a.len, b.len))
@@ -115,7 +115,7 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         J = [A0 - lambda0 * I -v0; permutedims(v0) zero(R)]
         Ji = inv(J)
         v, lambda = copy(vectors[:, k]), values[k]
-        for degree in 1:ctx.cutoff
+        for degree in 1:working_order(ctx)
             residual = eigen_residual(A, v, lambda, degree)
             correction = _linear_transform(Ji, residual)
             v = v - correction[1:n]

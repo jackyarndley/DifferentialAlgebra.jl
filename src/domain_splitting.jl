@@ -245,8 +245,9 @@ function ads_outputs(value)
 end
 
 function ads_check_context(ctx, order = ctx.basis.order)
-    CURRENT_ALGEBRA[] === ctx && ctx.cutoff == order && iszero(ctx.epsilon) &&
-        ctx.big_epsilon === nothing || throw(ArgumentError("The callback changed the algebra configuration"))
+    current_algebra() === ctx && working_order(ctx) == order &&
+        iszero(float_tolerance(ctx)) && big_tolerance(ctx) === nothing ||
+        throw(ArgumentError("The callback changed the algebra configuration"))
     return nothing
 end
 

@@ -65,6 +65,7 @@ the other coordinates. This uses the
 affine-substitution coefficient rules of `translate_variable`.
 """
 scale_variable(p::TaylorPolynomial, v::Integer, a::Real = 1) = affine_variable(p, v, v, a, 0)
-substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) = affine_variable(p, v, v, 0, value; cutoff = valid(p).cutoff)
+substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) =
+    affine_variable(p, v, v, 0, value; cutoff = working_order(valid(p)))
 
 substitute(a::AbstractArray{<:TaylorPolynomial}, i::Integer, value::Real = 0) = substitute.(a, i, value)

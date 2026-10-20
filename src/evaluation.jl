@@ -238,7 +238,7 @@ function sparse_multiply!(out::TaylorPolynomial{T}, oi, a, ai, b, bi, marks, sta
     return out
 end
 evaluate(map::CompiledMap, args::AbstractVector{<:TaylorPolynomial}) =
-    compose(map, args, composition_algebra(map).cutoff)
+    compose(map, args, working_order(composition_algebra(map)))
 function evaluate(a::TaylorPolynomial{T}, args::AbstractVector{<:Real}) where {T}
     Base.require_one_based_indexing(args)
     any(x -> x isa TaylorPolynomial, args) && return only(evaluate(compile(a), args))
@@ -297,7 +297,7 @@ function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:Taylor
     size(A, 2) == length(x) || throw(DimensionMismatch("Linear map dimensions differ"))
     ctx = valid(first(x))
     T = foldl((R, a) -> promote_type(R, coefficient_type(a)), x; init = eltype(A))
-    capacity = min(maximum(a -> a.len, x), ctx.basis.ends[ctx.cutoff + 1])
+    capacity = min(maximum(a -> a.len, x), ctx.basis.ends[working_order(ctx) + 1])
     result = [allocate(ctx, T, capacity) for _ in axes(A, 1)]
     for j in eachindex(x), i in eachindex(result)
         c = A[i, j]
@@ -336,10 +336,10 @@ function invert(f::AbstractVector{<:TaylorPolynomial})
     nonlinear = compile(_linear_transform(Ainv, trim.(f, 2)))
     result = linear_inverse
     # Explicit local orders avoid changing the context or racing other readers.
-    for degree in 2:ctx.cutoff
+    for degree in 2:working_order(ctx)
         result = linear_inverse - compose(nonlinear, result, degree)
     end
-    return compose(compile(result), x - c, ctx.cutoff)
+    return compose(compile(result), x - c, working_order(ctx))
 end
 
 # Call syntax delegates to the same numeric evaluation and composition methods.

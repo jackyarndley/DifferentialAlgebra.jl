@@ -47,7 +47,8 @@ Base.real(a::TaylorPolynomial) = copy(a)
 Base.abs2(a::TaylorPolynomial) = a * a
 function Base.:+(a::TaylorPolynomial)
     ctx = valid(a)
-    return a.len <= ctx.basis.ends[ctx.cutoff + 1] ? copy(a) : trim(a, 0, ctx.cutoff)
+    return a.len <= ctx.basis.ends[working_order(ctx) + 1] ?
+        copy(a) : trim(a, 0, working_order(ctx))
 end
 negative_coefficient_type(::Type{T}) where {T} = T
 negative_coefficient_type(::Type{Bool}) = Int
@@ -108,7 +109,7 @@ end
 @inline function weighted_sum!(
         out::TaylorPolynomial, a::TaylorPolynomial, alpha::Real,
         b::TaylorPolynomial, beta::Real;
-        order::Int = a.algebra.cutoff, filter::Bool = true
+        order::Int = working_order(a.algebra), filter::Bool = true
     )
     ctx = compatible(a, b)
     valid(out) === ctx || throw(ArgumentError("Different output context"))
@@ -127,7 +128,7 @@ end
 function Base.muladd(alpha::Real, a::TaylorPolynomial, b::TaylorPolynomial)
     ctx = compatible(a, b)
     T = promote_type(typeof(alpha), coefficient_type(a), coefficient_type(b))
-    n = min(max(a.len, b.len), ctx.basis.ends[ctx.cutoff + 1])
+    n = min(max(a.len, b.len), ctx.basis.ends[working_order(ctx) + 1])
     return weighted_sum!(allocate_undef(ctx, T, n), a, alpha, b, one(T))
 end
 Base.muladd(a::TaylorPolynomial, alpha::Real, b::TaylorPolynomial) = muladd(alpha, a, b)
@@ -149,12 +150,15 @@ for (op, sign) in ((:+, 1), (:-, -1))
         ctx = compatible(a, b)
         R = promote_type(T, S)
         $sign < 0 && (R = negative_coefficient_type(R))
-        n = min(max(a.len, b.len), ctx.basis.ends[ctx.cutoff + 1])
+        n = min(max(a.len, b.len), ctx.basis.ends[working_order(ctx) + 1])
         out = allocate_undef(ctx, R, n)
         return weighted_sum!(out, a, one(R), b, degree_factor(one(R), $sign) * one(R))
     end
 end
-function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order::Int = a.algebra.cutoff, filter::Bool = true)
+function scale!(
+        out::TaylorPolynomial, a::TaylorPolynomial, factor::Real;
+        order::Int = working_order(a.algebra), filter::Bool = true
+    )
     ctx = compatible(out, a)
     n = min(a.len, ctx.basis.ends[order + 1])
     reserve!(out, n)
@@ -167,7 +171,10 @@ function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order:
 end
 function scaled(a::TaylorPolynomial{T}, b::Real; filter::Bool = true) where {T <: Real}
     ctx = valid(a)
-    out = allocate_undef(ctx, promote_type(T, typeof(b)), min(a.len, ctx.basis.ends[ctx.cutoff + 1]))
+    out = allocate_undef(
+        ctx, promote_type(T, typeof(b)),
+        min(a.len, ctx.basis.ends[working_order(ctx) + 1])
+    )
     return scale!(out, a, b; filter)
 end
 Base.:*(a::TaylorPolynomial, b::Real) = scaled(a, b)
@@ -178,7 +185,7 @@ function scalar_sum(
     ctx = valid(a)
     R = promote_type(T, typeof(b))
     OP !== :add && (R = negative_coefficient_type(R))
-    n = min(a.len, ctx.basis.ends[ctx.cutoff + 1])
+    n = min(a.len, ctx.basis.ends[working_order(ctx) + 1])
     out = allocate_undef(ctx, R, n)
     @inbounds for i in 1:n
         c = coefficient_convert(R, a.coeffs[i])
@@ -259,13 +266,17 @@ function multiply!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomi
     return finish!(out, n; filter)
 end
 "Multiply into reusable polynomial storage; scalar arithmetic may still allocate."
-LinearAlgebra.mul!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial) = multiply!(out, a, b, a.algebra.cutoff)
+LinearAlgebra.mul!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial) =
+    multiply!(out, a, b, working_order(a.algebra))
 function product(
         a::TaylorPolynomial{T}, b::TaylorPolynomial{S}; filter::Bool = true
     ) where {T <: Real, S <: Real}
     ctx = compatible(a, b)
-    n = ctx.basis.ends[min(ctx.cutoff, ctx.basis.degrees[a.len] + ctx.basis.degrees[b.len]) + 1]
-    return multiply!(allocate_undef(ctx, promote_type(T, S), n), a, b, ctx.cutoff; filter)
+    order = min(working_order(ctx), ctx.basis.degrees[a.len] + ctx.basis.degrees[b.len])
+    n = ctx.basis.ends[order + 1]
+    return multiply!(
+        allocate_undef(ctx, promote_type(T, S), n), a, b, working_order(ctx); filter
+    )
 end
 Base.:*(a::TaylorPolynomial, b::TaylorPolynomial) = product(a, b)
 # Base's negative literal-power fallback filters inv(a) before raising it again.
@@ -282,7 +293,7 @@ function integer_power(a::TaylorPolynomial, n::Integer; filter::Bool = true)
         TaylorPolynomial{coefficient_type(a)}([one(coefficient_type(a))], 1, ctx), 1;
         filter
     )
-    n > ctx.cutoff && coefficient_iszero(a.coeffs[1]) && return zero(a)
+    n > working_order(ctx) && coefficient_iszero(a.coeffs[1]) && return zero(a)
     n == 1 && return scaled(a, one(coefficient_type(a)); filter)
     n == 2 && return product(a, a; filter)
     while iseven(n)

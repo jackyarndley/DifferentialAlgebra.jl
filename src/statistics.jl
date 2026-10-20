@@ -38,7 +38,7 @@ This function never changes the working order.
 """
 function central_moments(mgf::TaylorPolynomial, no::Integer)
     ctx = valid(mgf)
-    0 <= no <= ctx.cutoff || throw(
+    0 <= no <= working_order(ctx) || throw(
         ArgumentError(
             "Central moment order must be between zero and the working order; " *
                 "use with_order explicitly for a higher order"

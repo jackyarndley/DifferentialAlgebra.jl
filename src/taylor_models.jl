@@ -47,7 +47,11 @@ function model_valid(a::TaylorModel)
 end
 function model_arithmetic(a::TaylorModel)
     ctx = model_valid(a)
-    ctx.cutoff == a._order || throw(ArgumentError("Taylor-model arithmetic requires working order $(a._order); use with_order"))
+    working_order(ctx) == a._order || throw(
+        ArgumentError(
+            "Taylor-model arithmetic requires working order $(a._order); use with_order"
+        )
+    )
     return ctx
 end
 function model_compatible(a::TaylorModel, b::TaylorModel)
