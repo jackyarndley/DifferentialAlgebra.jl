@@ -300,26 +300,28 @@ end
 ads_leaf(::DomainNode{T}, patch) where {T} = DomainNode(0, zero(T), 0, 0, patch)
 ads_node_value(node::DomainNode, point) = point[node.axis]
 ads_query_bounds(node::DomainNode, query) = (query[1][node.axis], query[2][node.axis])
+ads_point_left(node, point) = ads_node_value(node, point) <= node.midpoint
 function ads_point_patch(nodes, point)
     node = first(nodes)
     while node.patch == 0
-        node = nodes[ads_node_value(node, point) <= node.midpoint ? node.left : node.right]
+        node = nodes[ads_point_left(node, point) ? node.left : node.right]
     end
     return node.patch
 end
 
 # Closed-set queries visit both sides of a shared face. In particular a subbox
 # cannot be routed using its midpoint. Geometry supplies bounds on each cut.
-ads_visit_left(node, lo, hi) = lo <= node.midpoint
-ads_visit_right(node, lo, hi) = hi >= node.midpoint
+ads_visit_left(node, query, lo, hi) = lo <= node.midpoint
+ads_visit_right(node, query, lo, hi) = hi >= node.midpoint
 function ads_visit_intersections(f, nodes, query, index = 1)
     node = nodes[index]
     if node.patch != 0
         f(node.patch)
     else
         lo, hi = ads_query_bounds(node, query)
-        ads_visit_left(node, lo, hi) && ads_visit_intersections(f, nodes, query, node.left)
-        ads_visit_right(node, lo, hi) &&
+        ads_visit_left(node, query, lo, hi) &&
+            ads_visit_intersections(f, nodes, query, node.left)
+        ads_visit_right(node, query, lo, hi) &&
             ads_visit_intersections(f, nodes, query, node.right)
     end
     return nothing

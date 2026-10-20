@@ -27,8 +27,8 @@ struct ContinuityNode
 end
 ads_query_bounds(node::ContinuityNode, query) =
     (query[1][node.axis], query[2][node.axis])
-ads_visit_left(node::ContinuityNode, lo, hi) = lo <= node.left_upper
-ads_visit_right(node::ContinuityNode, lo, hi) = hi >= node.right_lower
+ads_visit_left(node::ContinuityNode, query, lo, hi) = lo <= node.left_upper
+ads_visit_right(node::ContinuityNode, query, lo, hi) = hi >= node.right_lower
 function continuity_index!(nodes, patches, indices)
     index = length(nodes) + 1
     push!(nodes, ContinuityNode(0, 0, 0, 0, 0, first(indices)))

@@ -38,8 +38,67 @@ struct PolygonNode
     left::Int
     right::Int
     patch::Int
+    axis::Int
+    bounds::Tuple{Float64, Float64}
 end
+PolygonNode(normal, midpoint, left, right, patch) = PolygonNode(
+    normal, midpoint, left, right, patch, 0,
+    (Float64(midpoint, RoundDown), Float64(midpoint, RoundUp))
+)
 PolygonNode() = PolygonNode((zero(PolygonReal), zero(PolygonReal)), zero(PolygonReal), 0, 0, 0)
+
+# Current-frame rows come first; refinement may retain cuts in older frames.
+# Nodes store a row index, so each distinct projection is bounded once per query.
+struct PolygonLookup
+    directions::Matrix{Float64}
+    bounds::Tuple{Matrix{Float64}, Matrix{Float64}}
+    domain::Tuple{Matrix{Float64}, Matrix{Float64}}
+end
+function polygon_lookup(polygon, B, nodes)
+    normals = PolygonPoint[(B[i, 1], B[i, 2]) for i in 1:2]
+    rows = Dict(normal => i for (i, normal) in enumerate(normals))
+    for (i, node) in enumerate(nodes)
+        node.patch != 0 && continue
+        axis = get(rows, node.normal, 0)
+        if axis == 0
+            push!(normals, node.normal)
+            axis = length(normals)
+            rows[node.normal] = axis
+        end
+        nodes[i] = PolygonNode(
+            node.normal, node.midpoint, node.left, node.right, node.patch,
+            axis, node.bounds
+        )
+    end
+    projections = [normal[j] for normal in normals, j in 1:2]
+    return PolygonLookup(
+        Float64.(B), ads_float_bounds(projections), polygon_filter(polygon)
+    )
+end
+
+mutable struct PolygonQuery{P}
+    point::P
+    bounds::Tuple{Vector{Float64}, Vector{Float64}}
+    exact::Union{Nothing, PolygonPoint}
+end
+function polygon_exact!(query::PolygonQuery)
+    query.exact === nothing && (query.exact = polygon_real.(query.point))
+    return query.exact::PolygonPoint
+end
+ads_query_bounds(node::PolygonNode, query::PolygonQuery) =
+    (query.bounds[1][node.axis], query.bounds[2][node.axis])
+function ads_visit_left(node::PolygonNode, query::PolygonQuery, lo, hi)
+    hi <= node.bounds[1] && return true
+    lo > node.bounds[2] && return false
+    return ads_node_value(node, polygon_exact!(query)) <= node.midpoint
+end
+function ads_visit_right(node::PolygonNode, query::PolygonQuery, lo, hi)
+    lo >= node.bounds[2] && return true
+    hi < node.bounds[1] && return false
+    return ads_node_value(node, polygon_exact!(query)) >= node.midpoint
+end
+ads_point_left(node::PolygonNode, query::PolygonQuery) =
+    ads_visit_left(node, query, ads_query_bounds(node, query)...)
 
 """
     PiecewisePolygonMap
@@ -53,6 +112,7 @@ accessors and `copy` own their data; internal arrays are read-only.
 struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator, O <: NamedTuple}
     _domain::ConvexPolygon{T}
     _directions::Matrix{PolygonReal}
+    _lookup::PolygonLookup
     patches::Vector{PolygonPatch{T, P}}
     nodes::Vector{PolygonNode}
     _order::Int
@@ -76,7 +136,8 @@ noutputs(a::PiecewisePolygonMap) = noutputs(first(ads_patches(a)))
 degree(a::PiecewisePolygonMap) = maximum(degree, ads_patches(a))
 max_order(a::PiecewisePolygonMap) = a._order
 Base.copy(a::PiecewisePolygonMap) = PiecewisePolygonMap(
-    copy(a._domain), deepcopy(a._directions), deepcopy(ads_patches(a)), deepcopy(a.nodes),
+    copy(a._domain), deepcopy(a._directions), deepcopy(a._lookup),
+    deepcopy(ads_patches(a)), deepcopy(a.nodes),
     a._order, a._scalar, a._estimator, deepcopy(a._options), a.converged
 )
 Base.deepcopy_internal(a::PiecewisePolygonMap, copies::IdDict) = get!(() -> copy(a), copies, a)
@@ -231,8 +292,9 @@ function ads_finalize(::PolygonADS, polygon, p, depth, status, order)
     return PolygonPatch(polygon, ads_local_patch(p.payload, p.geometry, p.errors, depth, status, order))
 end
 function ads_result(g::PolygonADS, patches, nodes, scalar, options)
+    lookup = polygon_lookup(g.root, g.B, nodes)
     return PiecewisePolygonMap(
-        copy(g.root), deepcopy(g.B), patches, nodes, options.order, scalar,
+        copy(g.root), deepcopy(g.B), lookup, patches, nodes, options.order, scalar,
         options.estimator, ads_saved_options(options),
         all(p -> p.status == :converged, patches)
     )
@@ -288,23 +350,28 @@ function polygon_construct(
     end
 end
 
-function polygon_point(a, point)
+function polygon_query(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == 2 || throw(DimensionMismatch("Provide two physical coordinates"))
     point isa AbstractVector && Base.require_one_based_indexing(point)
     x = (
-        polygon_real(continuity_primal(point[1])),
-        polygon_real(continuity_primal(point[2])),
+        continuity_primal(point[1]), continuity_primal(point[2]),
     )
-    polygon_contains(a._domain, x) || throw(DomainError(point, "Point lies outside the polygon domain"))
-    return x
+    all(isfinite, x) || throw(ArgumentError("Physical coordinates must be finite"))
+    bounds = ads_float_bounds(x)
+    polygon_contains_filtered(a._domain, x, bounds, a._lookup.domain) ||
+        throw(DomainError(point, "Point lies outside the polygon domain"))
+    return PolygonQuery(x, ads_project_bounds(a._lookup.bounds, bounds), nothing)
 end
 function evaluate(a::PiecewisePolygonMap, point)
     a._estimator isa IntervalBound && return polygon_interval_query(a, point; point = true)
-    x = polygon_point(a, point)
+    x = polygon_query(a, point)
     patch = ads_point_patch(a.nodes, x)
     p = ads_patches(a)[patch]._patch
     T = evaluation_type(eltype(p.center), point)
-    projected = T.(a._directions) * T[point[1], point[2]]
+    coordinates = T[point[1], point[2]]
+    B = continuity_primal(first(coordinates)) isa Float64 ?
+        a._lookup.directions : T.(a._directions)
+    projected = B * coordinates
     z = map(projected, p.center, p.radius) do value, center, radius
         iszero(radius) ? zero(T) : (value - center) / radius
     end

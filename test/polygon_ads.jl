@@ -141,3 +141,103 @@ end
     end
     @test all(v -> isfinite(fit(v)), polygon_vertices(tri))
 end
+
+
+include("support/polygon_queries.jl")
+using .PolygonQueryTestSupport: exact_patch, exact_evaluate, face_points
+
+@testset "Filtered polygon routing retains exact decisions across frames" begin
+    DA = DifferentialAlgebra
+    f(v) = v[1]^2 + v[2]^2
+    for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
+        polygon = ConvexPolygon(
+            [
+                (-one(T), -one(T)), (one(T), -one(T)),
+                (one(T), one(T)), (-one(T), one(T)),
+            ]
+        )
+        original = adaptive_map(
+            f, polygon; directions = :axes,
+            order = 1, atol = 1 // 8, table_bytes = budget
+        )
+        fit = adaptive_map(
+            f, original; directions = [1 1 // 3; -1 // 3 1],
+            atol = 1 // 16, table_bytes = budget
+        )
+        refined = adaptive_map(
+            f, fit; directions = [1 -1 // 5; 1 // 5 1],
+            atol = 1 // 32, table_bytes = budget
+        )
+        for a in (original, fit, refined)
+            query = DA.polygon_query(a, [0.123, 0.234])
+            @test DA.ads_point_patch(a.nodes, query) == exact_patch(a, [0.123, 0.234])
+            @test query.exact === nothing
+            for face in face_points(a)
+                points = (collect(face), Float64[face...])
+                for point in points
+                    @test DA.ads_point_patch(a.nodes, DA.polygon_query(a, point)) ==
+                        exact_patch(a, point)
+                    @test a(point) ≈ exact_evaluate(a, point)
+                end
+                point = Float64[face...]
+                for axis in 1:2, neighbor in (prevfloat, nextfloat)
+                    x = copy(point)
+                    x[axis] = neighbor(x[axis])
+                    if DA.polygon_contains(a._domain, Rational{BigInt}.(x))
+                        @test DA.ads_point_patch(a.nodes, DA.polygon_query(a, x)) ==
+                            exact_patch(a, x)
+                    else
+                        @test_throws DomainError a(x)
+                    end
+                end
+            end
+            b = copy(a)
+            @test b._lookup.directions !== a._lookup.directions
+            @test b._lookup.bounds[1] !== a._lookup.bounds[1]
+            @test b._lookup.domain[1] !== a._lookup.domain[1]
+            @test a(T[1 // 7, 2 // 9]) ≈ exact_evaluate(a, T[1 // 7, 2 // 9])
+        end
+        @test size(refined._lookup.bounds[1], 1) >= 4
+        # The root oblique cut crosses the origin. A nonzero tangent point
+        # needs the exact fallback to decide the side of its rounded projection.
+        oblique = adaptive_map(
+            f, polygon; directions = [1 1 // 3; -1 // 3 1],
+            order = 1, atol = 1 // 8, table_bytes = budget
+        )
+        n = first(oblique.nodes).normal
+        point = [n[2] / 7, -n[1] / 7]
+        query = DA.polygon_query(oblique, point)
+        @test DA.ads_point_patch(oblique.nodes, query) == exact_patch(oblique, point)
+        @test query.exact !== nothing
+        for invalid in ([Inf, 0], [NaN, 0])
+            @test_throws ArgumentError refined(invalid)
+        end
+    end
+end
+
+@testset "Filtered routing preserves promoted polynomial and dual evaluation" begin
+    DA = DifferentialAlgebra
+    f(v) = exp(v[1] + 2v[2])
+    polygon = ConvexPolygon([(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)])
+    for budget in (0, 32 * 1024^2)
+        fit = adaptive_map(
+            f, polygon; directions = [1 1 // 3; -1 // 3 1],
+            order = 3, atol = 1 // 16, table_bytes = budget
+        )
+        @test length(fit.patches) > 1
+        for point in ([0.123, 0.234], [-0.321, 0.432])
+            oracle(x) = exact_evaluate(fit, x)
+            @test fit(point) == oracle(point)
+            @test ForwardDiff.gradient(fit, point) ≈ ForwardDiff.gradient(oracle, point)
+            @test ForwardDiff.hessian(fit, point) ≈ ForwardDiff.hessian(oracle, point)
+        end
+        setprecision(512) do
+            point = BigFloat[1 // 7, 2 // 9]
+            oracle(x) = exact_evaluate(fit, x)
+            @test fit(point) isa BigFloat
+            @test fit(point) == oracle(point)
+            @test ForwardDiff.gradient(fit, point) ≈ ForwardDiff.gradient(oracle, point)
+            @test ForwardDiff.hessian(fit, point) ≈ ForwardDiff.hessian(oracle, point)
+        end
+    end
+end

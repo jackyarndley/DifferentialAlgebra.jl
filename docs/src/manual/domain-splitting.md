@@ -192,7 +192,10 @@ geometry. All function expansions cover each polygon's bounding parallelogram.
 Certified arithmetic rounds outward on that cover and requires the function
 to be valid on the entire cover, which can extend beyond the physical polygon.
 No polygon-specific optimization bounder is implemented. Point and subdomain
-queries enforce the original physical polygon. Interval queries hull every
+queries enforce the original physical polygon. Cached floating bounds decide
+containment and routing away from faces; ambiguous comparisons use exact rational
+geometry. Each query projects onto the distinct retained frame directions once,
+including old directions preserved by refinement. Interval queries hull every
 overlapping patch, including shared edges. Polygon snapshots survive algebra
 changes, and public geometry accessors own their data.
 

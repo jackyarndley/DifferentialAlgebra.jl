@@ -160,3 +160,67 @@ end
         )
     end
 end
+
+
+include("support/polygon_queries.jl")
+using .PolygonQueryTestSupport: face_points
+
+function scan_polygon_point(a, point)
+    exact = Rational{BigInt}.(point)
+    projected = a._directions * collect(exact)
+    result = nothing
+    for patch in DA.ads_patches(a)
+        DA.polygon_contains(patch._domain, exact) || continue
+        values = map(patch._patch.models) do model
+            T = IA.numtype(typeof(model._remainder))
+            box = [
+                IA.intersect_interval(
+                    interval(T, projected[i]),
+                    model._coordinates.box[i]; dec = :auto
+                ) for i in 1:2
+            ]
+            enclose(model, box)
+        end
+        result = result === nothing ? values : IA.hull.(result, values; dec = :auto)
+    end
+    return a._scalar ? only(result) : result
+end
+
+@testset "Filtered interval point routing visits every closed face" begin
+    f(v) = v[1]^2 + v[2]^2
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        polygon = ConvexPolygon(
+            [
+                (-one(T), -one(T)), (one(T), -one(T)),
+                (one(T), one(T)), (-one(T), one(T)),
+            ]
+        )
+        a = adaptive_map(
+            f, polygon; estimator = IntervalBound(), directions = :axes,
+            order = 1, atol = 1 // 8, table_bytes = budget
+        )
+        a = adaptive_map(
+            f, a; directions = [1 1 // 3; -1 // 3 1],
+            atol = 1 // 16, table_bytes = budget
+        )
+        for point in vcat(face_points(a), [(1 // 7, 2 // 9), (0, 0)])
+            exact = Rational{BigInt}.(point)
+            visited = Int[]
+            DA.ads_visit_intersections(
+                i -> push!(visited, i), a.nodes,
+                DA.polygon_query(a, exact)
+            )
+            matching = findall(DA.ads_patches(a)) do p
+                DA.polygon_contains(p._domain, exact)
+            end
+            @test issubset(matching, visited)
+            @test sameinterval(a(point), scan_polygon_point(a, point))
+            @test isguaranteed(a(point))
+            @test in_interval(sum(x -> x^2, point), a(point))
+        end
+        @test sameinterval(
+            a([interval(T, 0), interval(T, 0)]),
+            scan_polygon_point(a, [0, 0])
+        )
+    end
+end
