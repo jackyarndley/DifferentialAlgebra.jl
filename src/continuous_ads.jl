@@ -188,6 +188,7 @@ function continuous_map(
 end
 
 continuity_primal(x::Union{Integer, Rational, AbstractFloat}) = x
+continuity_primal(x::AbstractIrrational) = float(x)
 continuity_primal(x) = throw(ArgumentError("Provide scalar physical coordinates; use enclose for intervals and load ForwardDiff for dual queries"))
 function continuity_point(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == nvariables(a) || throw(DimensionMismatch("Provide exactly one physical coordinate per variable"))
@@ -202,7 +203,7 @@ function continuity_taper(t, order)
     return order == 0 ? u : order == 1 ? u^2 * (1 + 2t) : u^3 * (1 + 3t + 6t^2)
 end
 function continuity_weight(p, z, exact, order)
-    T = eltype(p.center)
+    T = eltype(z)
     weight = one(first(z))
     for i in eachindex(z)
         x = exact[i]
@@ -215,8 +216,8 @@ function continuity_weight(p, z, exact, order)
 end
 function continuity_coordinates(a, point)
     exact = continuity_point(a, point)
-    T = eltype(first(a._patches).center)
-    z = T.(a._directions) * collect(point)
+    T = evaluation_type(eltype(first(a._patches).center), point)
+    z = T.(a._directions) * T[point...]
     order = a.continuity == :c0 ? 0 : a.continuity == :c1 ? 1 : 2
     weights = [continuity_weight(p, z, exact, order) for p in a._patches]
     return z, weights

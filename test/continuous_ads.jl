@@ -7,6 +7,19 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 exact_derivative(f, x, n) = n == 0 ? f(x) : ForwardDiff.derivative(t -> exact_derivative(f, t, n - 1), x)
 const RContinuity = Rational{BigInt}
 
+@testset "Irrational physical coordinates" begin
+    f(v) = v[1]^2 + v[2] / 2
+    box = adaptive_map(f, [-4, -4], [4, 4]; order = 2)
+    polygon = ConvexPolygon([(-4, -4), (4, -4), (4, 4), (-4, 4)])
+    oriented = adaptive_map(f, polygon; directions = [1 1; -1 1], order = 2)
+    for fit in (box, oriented)
+        smooth = continuous_map(f, fit)
+        for point in ((π, 0), [π, 0])
+            @test smooth(point) ≈ f(point)
+        end
+    end
+end
+
 @testset "Compact tapers and exact one-sided continuity oracles" begin
     # Independent power-basis coefficients; endpoint jets prove the regularity,
     # rather than relying on finite differences of plotted samples.

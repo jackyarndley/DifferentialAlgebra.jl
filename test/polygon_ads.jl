@@ -1,5 +1,36 @@
 using Test, DifferentialAlgebra
 using LinearAlgebra
+using ForwardDiff
+
+@testset "Promoted polygon queries and coefficient derivatives" begin
+    polygon = ConvexPolygon([(-4, -4), (4, -4), (4, 4), (-4, 4)])
+    for budget in (0, 32 * 1024^2)
+        f(v) = 2 + v[1]^2 + v[1] * v[2] / 4 - v[2]
+        fit = adaptive_map(
+            f, polygon; directions = [1 1; -1 1], order = 2,
+            table_bytes = budget
+        )
+        for point in ([0.25, -0.5], [0.25, 0.25], [4.0, 4.0])
+            expected = [2point[1] + point[2] / 4, point[1] / 4 - 1]
+            @test ForwardDiff.gradient(fit, point) ≈ expected
+            @test ForwardDiff.hessian(fit, point) ≈ [2 1 / 4; 1 / 4 0]
+        end
+        setprecision(256) do
+            point = [BigFloat(1) / 3, BigFloat(1) / 7]
+            @test fit(point) isa BigFloat
+            @test fit(Tuple(point)) isa BigFloat
+            @test fit(point) ≈ f(point) rtol = 32eps(BigFloat)
+        end
+        @test fit((π, 0)) ≈ f((π, 0))
+        @test fit([π, 0]) ≈ f([π, 0])
+        vector_fit = adaptive_map(
+            v -> [f(v), 3v[1] - v[2]], polygon;
+            directions = :axes, order = 2, table_bytes = budget
+        )
+        @test ForwardDiff.jacobian(vector_fit, [0.25, -0.5]) ≈ [3 / 8 -15 / 16; 3 -1]
+        @test vector_fit(BigFloat[0.25, -0.5]) isa Vector{BigFloat}
+    end
+end
 
 @testset "Exact polygon geometry and ordinary oriented ADS" begin
     DA = DifferentialAlgebra

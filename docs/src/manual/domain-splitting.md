@@ -190,6 +190,12 @@ queries enforce the original physical polygon. Interval queries hull every
 overlapping patch, including shared edges. Polygon snapshots survive algebra
 changes, and public geometry accessors own their data.
 
+Ordinary polygon evaluation preserves promoted coordinate types, including
+`BigFloat` and ForwardDiff dual numbers. Containment and patch selection use the
+primal coordinates; polynomial evaluation retains their partials. Irrational
+coordinates such as `π` use their floating values for containment, consistently
+with ordinary box and continuous maps.
+
 These methods return `PiecewisePolygonMap`. They support 2D positive-area convex
 domains, scalar/vector outputs and refinement from an existing polygon map.
 Higher-dimensional and fixed-coordinate domains continue to use box ADS.

@@ -270,7 +270,11 @@ end
 
 function polygon_point(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == 2 || throw(DimensionMismatch("Provide two physical coordinates"))
-    x = (polygon_real(point[1]), polygon_real(point[2]))
+    point isa AbstractVector && Base.require_one_based_indexing(point)
+    x = (
+        polygon_real(continuity_primal(point[1])),
+        polygon_real(continuity_primal(point[2])),
+    )
     polygon_contains(a._domain, x) || throw(DomainError(point, "Point lies outside the polygon domain"))
     return x
 end
@@ -279,8 +283,8 @@ function evaluate(a::PiecewisePolygonMap, point)
     x = polygon_point(a, point)
     patch = ads_point_patch(a.nodes, x)
     p = a.patches[patch]._patch
-    T = eltype(p.center)
-    projected = T.(collect(polygon_project(a._directions, x)))
+    T = evaluation_type(eltype(p.center), point)
+    projected = T.(a._directions) * T[point[1], point[2]]
     z = map(projected, p.center, p.radius) do value, center, radius
         iszero(radius) ? zero(T) : (value - center) / radius
     end
