@@ -2,6 +2,13 @@
 
 ## 0.2.0 (unreleased)
 
+- Working orders and filtering tolerances are task-local. Configure workers
+  explicitly: new tasks start with full order and zero tolerance and do not
+  inherit temporary ADS contexts. Independent ADS builds may overlap read-only
+  calculations. Global `initialize!` still invalidates the old default's
+  polynomials; inside a temporary construction it replaces only that task's
+  algebra. Object-based helpers retain their owning basis.
+
 - Certified ADS retries analytic domain failures on child cells. A failure that
   remains at a splitting limit raises an `ErrorException` with its cause, including
   with `strict=false`; only valid models can form unresolved patches.

@@ -50,6 +50,7 @@ function central_moments(mgf::TaylorPolynomial, no::Integer)
         )
     )
     mean = linear_part(mgf)
-    shift = sum(mean[i] * variable(i, coefficient_type(mgf)) for i in eachindex(mean))
+    T = coefficient_type(mgf)
+    shift = sum(mean[i] * TaylorPolynomial{T}(ctx, i, one(T)) for i in eachindex(mean))
     return raw_moments(exp(-shift) * mgf, no)
 end

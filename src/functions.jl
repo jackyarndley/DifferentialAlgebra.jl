@@ -80,7 +80,7 @@ function trig_recurrence(a::TaylorPolynomial, hyperbolic::Bool)
     x = constant_term(a); ctx = a.algebra; basis = ctx.basis
     s0, c0 = hyperbolic ? (sinh(x), cosh(x)) : sincos(x)
     T = typeof(s0)
-    a.len == 1 && return TaylorPolynomial{T}(s0), TaylorPolynomial{T}(c0)
+    a.len == 1 && return TaylorPolynomial{T}(ctx, s0), TaylorPolynomial{T}(ctx, c0)
     n = basis.ends[working_order(ctx) + 1]
     s, c = allocate_undef(ctx, T, n), allocate_undef(ctx, T, n)
     s.coeffs[1], c.coeffs[1] = s0, c0
@@ -148,7 +148,8 @@ end
 function Base.:^(a::TaylorPolynomial, p::AbstractFloat)
     R = promote_type(coefficient_type(a), typeof(p))
     isinteger(p) && typemin(Int32) < p <= typemax(Int32) && return convert(TaylorPolynomial{R}, a)^Int(p)
-    coefficient_iszero(a) && p > 0 && return zero(TaylorPolynomial{R})
+    coefficient_iszero(a) && p > 0 &&
+        return TaylorPolynomial{R}(valid(a), zero(R))
     return power_series(a, p, domain_call(x -> x^p, constant_term(a)))
 end
 Base.:^(a::TaylorPolynomial, p::Rational) = a^convert(float(promote_type(coefficient_type(a), typeof(p))), p)
@@ -525,7 +526,7 @@ function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where 
     ) &&
         throw(TaylorError("Bessel expansion is singular at zero"))
     c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
-    a.len == 1 && return TaylorPolynomial(c0)
+    a.len == 1 && return TaylorPolynomial{typeof(float(c0))}(valid(a), c0)
     if fn in (SpecialFunctions.besselj, SpecialFunctions.besseli, SpecialFunctions.besselix)
         return regular_bessel_series(fn, n, a, c0, s)
     end

@@ -98,13 +98,14 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         for value in values
             finish!(value, min(value.len, limit))
         end
-        vectors = TaylorPolynomial{R}.(Matrix{R}(I, n, n)[:, permutation])
+        vectors = TaylorPolynomial{R}.(Ref(ctx), Matrix{R}(I, n, n)[:, permutation])
         return values, vectors
     end
     A0 = Matrix{T}(constant_term.(A))
     F = LinearAlgebra.eigen(LinearAlgebra.Symmetric(A0))
     R, V = eltype(F.values), eltype(F.vectors)
-    values, vectors = TaylorPolynomial{R}.(F.values), TaylorPolynomial{V}.(F.vectors)
+    values = TaylorPolynomial{R}.(Ref(ctx), F.values)
+    vectors = TaylorPolynomial{V}.(Ref(ctx), F.vectors)
     all(a -> all(coefficient_iszero, @view(a.coeffs[2:min(a.len, limit)])), A) &&
         return values, vectors
     scale = max(one(R), maximum(abs, F.values; init = zero(R)))

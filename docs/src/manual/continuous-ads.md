@@ -125,8 +125,8 @@ failures on a complete overlap cover also throw.
 The wrapper owns its compiled polynomials, certificates and geometry. `copy`
 and domain/error accessors own their storage; changing a source map cannot
 change the wrapper. Snapshots survive algebra reinitialization. Internal arrays
-are read-only implementation data. Construction restores the caller's algebra;
-do not overlap construction with other global-algebra calculations.
+are read-only implementation data. Construction uses a task-local temporary
+algebra and restores the caller's configuration, including on failure.
 Numeric evaluation and certified enclosure queries use a balanced tree of
 outward support bounds. Floating filters exclude distant supports; ambiguous
 face checks use exact rational geometry. Numeric evaluation allocates in

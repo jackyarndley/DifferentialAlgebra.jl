@@ -11,8 +11,9 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
 Examples have a separate dependency environment.
 Each test file imports its dependencies and includes its own helpers. SafeTestsets
-isolates file namespaces; the dispatcher runs files sequentially because algebra
-configuration is global. Fresh-process checks also verify optional extension loading.
+isolates file namespaces; the dispatcher runs files sequentially because global
+initialization invalidates its existing polynomials. Fresh-process checks also
+verify optional extension loading.
 Aqua checks package quality, including unbound type arguments.
 
 The test suite uses Julia code and inline inputs. Function-coefficient tests

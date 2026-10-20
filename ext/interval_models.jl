@@ -113,7 +113,7 @@ function TaylorModel(value::Real, reference::TaylorModel{I}) where {I <: Interva
     model_context(reference)
     value isa TaylorPolynomial && throw(ArgumentError("Supply an explicit absolute remainder when constructing a model from a polynomial"))
     c = checked_interval(DA.coefficient_convert(I, value); guaranteed = true)
-    p = TaylorPolynomial{I}(deepcopy(c))
+    p = TaylorPolynomial{I}(DA.model_valid(reference), deepcopy(c))
     return model_result(p, zero(I), reference._coordinates, reference._order)
 end
 function TaylorModel(p::TaylorPolynomial, r::Real, reference::TaylorModel{I}) where {I <: Interval}

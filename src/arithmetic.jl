@@ -26,8 +26,10 @@ Base.zero(::Type{TaylorPolynomial}) = TaylorPolynomial()
 Base.one(::Type{TaylorPolynomial}) = TaylorPolynomial(1.0)
 Base.zero(::Type{TaylorPolynomial{T}}) where {T <: Real} = TaylorPolynomial{T}(zero(T))
 Base.one(::Type{TaylorPolynomial{T}}) where {T <: Real} = TaylorPolynomial{T}(one(T))
-Base.zero(a::TaylorPolynomial{T}) where {T <: Real} = (valid(a); TaylorPolynomial{T}(zero(T)))
-Base.one(a::TaylorPolynomial{T}) where {T <: Real} = (valid(a); TaylorPolynomial{T}(one(T)))
+Base.zero(a::TaylorPolynomial{T}) where {T <: Real} =
+    TaylorPolynomial{T}(valid(a), zero(T))
+Base.one(a::TaylorPolynomial{T}) where {T <: Real} =
+    TaylorPolynomial{T}(valid(a), one(T))
 Base.float(a::TaylorPolynomial) = convert(float(typeof(a)), a)
 Base.float(::Type{TaylorPolynomial}) = TaylorPolynomial{Float64}
 Base.float(::Type{TaylorPolynomial{T}}) where {T <: Real} = TaylorPolynomial{float(T)}

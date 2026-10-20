@@ -1,19 +1,60 @@
 mutable struct Algebra
     basis::MonomialBasis
     names::Vector{String}
-    cutoff::Int
-    epsilon::Float64
-    big_epsilon::Union{Nothing, BigFloat}
     active::Bool
 end
 const CURRENT_ALGEBRA = Ref{Union{Nothing, Algebra}}(nothing)
 const ALGEBRA_LOCK = ReentrantLock() # Serializes algebra initialization.
 
-# Keep kernel policy reads separate from basis/storage ownership.
-@inline current_algebra() = CURRENT_ALGEBRA[]
-@inline working_order(ctx::Algebra) = ctx.cutoff
-@inline float_tolerance(ctx::Algebra) = ctx.epsilon
-@inline big_tolerance(ctx::Algebra) = ctx.big_epsilon
+# Temporary contexts are strong scope bindings. Policies for the shared global
+# default use weak references so an idle task cannot retain obsolete tables.
+mutable struct AlgebraState
+    const owner::Union{Algebra, WeakRef}
+    cutoff::Int
+    epsilon::Float64
+    big_epsilon::Union{Nothing, BigFloat}
+    const parent::Union{Nothing, AlgebraState}
+end
+const ALGEBRA_STATE_KEY = gensym(:DifferentialAlgebraState)
+@inline function algebra_state()
+    state = get(task_local_storage(), ALGEBRA_STATE_KEY, nothing)
+    return state::Union{Nothing, AlgebraState}
+end
+@inline function state_algebra(state::AlgebraState)
+    owner = state.owner
+    return owner isa Algebra ? owner : owner.value::Union{Nothing, Algebra}
+end
+@inline function current_algebra()
+    state = algebra_state()
+    return state !== nothing && state.owner isa Algebra ? state.owner : CURRENT_ALGEBRA[]
+end
+@inline function algebra_settings(ctx::Algebra)
+    state = algebra_state()
+    while state !== nothing
+        state_algebra(state) === ctx && return state
+        state = state.parent
+    end
+    return nothing
+end
+@inline function working_order(ctx::Algebra)
+    state = algebra_settings(ctx)
+    return state === nothing ? ctx.basis.order : state.cutoff
+end
+@inline function float_tolerance(ctx::Algebra)
+    state = algebra_settings(ctx)
+    return state === nothing ? 0.0 : state.epsilon
+end
+@inline function big_tolerance(ctx::Algebra)
+    state = algebra_settings(ctx)
+    return state === nothing ? nothing : state.big_epsilon
+end
+function current_settings(ctx::Algebra)
+    state = algebra_state()
+    state !== nothing && state_algebra(state) === ctx && return state
+    state = AlgebraState(WeakRef(ctx), ctx.basis.order, 0.0, nothing, nothing)
+    task_local_storage(ALGEBRA_STATE_KEY, state)
+    return state
+end
 
 # A real multivariate Taylor polynomial with coefficients of type T.
 """
@@ -63,27 +104,60 @@ end
 """
     initialize!(order, n; names = nothing, table_bytes = 32 * 1024^2)
 
-Initialize the global algebra with maximum total degree `order` and `n` variables.
-Existing polynomials become invalid. Both dimensions must be positive.
+Initialize the global default algebra with maximum degree `order` and `n` variables.
+Inside a temporary construction scope, reinitialize only that task's algebra.
+Existing polynomials of the replaced algebra become invalid. Both dimensions
+must be positive.
 Use [`variables`](@ref) to initialize and construct the variables in one call.
 `table_bytes` bounds lookup tables, excluding polynomial storage and basis metadata.
 Configure the algebra before launching concurrent calculations.
 `names` is an optional tuple or vector of distinct symbol or string identifiers
 used when displaying polynomials. The default labels are `x₁`, `x₂`, and so on.
 """
-function initialize!(no::Integer, nv::Integer; names = nothing, table_bytes::Integer = 32 * 1024^2)
-    1 <= no <= 65535 && 1 <= nv <= 1024 || throw(ArgumentError("Invalid order or variable count"))
-    nm = binomial(big(no) + nv, nv)
-    nm * nv <= 32 * 1024^2 && nm <= typemax(Int32) || throw(ArgumentError("Monomial basis is too large"))
-    0 <= table_bytes <= typemax(Int) || throw(ArgumentError("Invalid lookup-table budget"))
-    labels = variable_labels(names, Int(nv))
-    lock(ALGEBRA_LOCK) do
-        old = CURRENT_ALGEBRA[]
-        basis = old !== nothing && old.basis.order == no && old.basis.variables == nv && old.basis.table_bytes == table_bytes ? old.basis : MonomialBasis(Int(no), Int(nv); table_bytes = Int(table_bytes))
-        old !== nothing && (old.active = false)
-        CURRENT_ALGEBRA[] = Algebra(basis, labels, Int(no), 0.0, nothing, true)
+function initialize!(
+        no::Integer, nv::Integer; names = nothing,
+        table_bytes::Integer = 32 * 1024^2
+    )
+    state = algebra_state()
+    if state !== nothing && state.owner isa Algebra
+        old = state.owner
+        ctx = make_algebra(no, nv, old; names, table_bytes)
+        old.active = false
+        task_local_storage(
+            ALGEBRA_STATE_KEY,
+            AlgebraState(ctx, ctx.basis.order, 0.0, nothing, state.parent)
+        )
+    else
+        lock(ALGEBRA_LOCK) do
+            old = CURRENT_ALGEBRA[]
+            ctx = make_algebra(no, nv, old; names, table_bytes)
+            old !== nothing && (old.active = false)
+            CURRENT_ALGEBRA[] = ctx
+            task_local_storage(
+                ALGEBRA_STATE_KEY,
+                AlgebraState(WeakRef(ctx), ctx.basis.order, 0.0, nothing, nothing)
+            )
+        end
     end
     return nothing
+end
+function make_algebra(
+        no::Integer, nv::Integer, old;
+        names = nothing, table_bytes::Integer = 32 * 1024^2
+    )
+    1 <= no <= 65535 && 1 <= nv <= 1024 ||
+        throw(ArgumentError("Invalid order or variable count"))
+    nm = binomial(big(no) + nv, nv)
+    nm * nv <= 32 * 1024^2 && nm <= typemax(Int32) ||
+        throw(ArgumentError("Monomial basis is too large"))
+    0 <= table_bytes <= typemax(Int) ||
+        throw(ArgumentError("Invalid lookup-table budget"))
+    labels = variable_labels(names, Int(nv))
+    reusable = old !== nothing && old.basis.order == no &&
+        old.basis.variables == nv && old.basis.table_bytes == table_bytes
+    basis = reusable ? old.basis :
+        MonomialBasis(Int(no), Int(nv); table_bytes = Int(table_bytes))
+    return Algebra(basis, labels, true)
 end
 
 function variable_labels(names, n::Int)
@@ -110,21 +184,17 @@ isinitialized() = current_algebra() !== nothing && current_algebra().active
 
 # Temporary maps own their compiled coefficients. Restore the caller's algebra,
 # including the uninitialized state, even if the callback fails or reinitializes.
-function with_algebra(f, order, n; kwargs...)
-    return lock(ALGEBRA_LOCK) do
-        previous = CURRENT_ALGEBRA[]
-        active = previous !== nothing && previous.active
-        temporary = nothing
+function with_algebra(f::F, order, n; kwargs...) where {F}
+    ctx = make_algebra(order, n, current_algebra(); kwargs...)
+    state = AlgebraState(ctx, ctx.basis.order, 0.0, nothing, algebra_state())
+    return task_local_storage(ALGEBRA_STATE_KEY, state) do
         try
-            initialize!(order, n; kwargs...)
-            temporary = ready()
-            return f(temporary)
+            return f(ctx)
         finally
-            current = CURRENT_ALGEBRA[]
-            current !== nothing && current !== previous && (current.active = false)
-            temporary !== nothing && (temporary.active = false)
-            CURRENT_ALGEBRA[] = previous
-            previous !== nothing && (previous.active = active)
+            current = algebra_state()
+            current !== nothing && current.owner isa Algebra &&
+                (current.owner.active = false)
+            ctx.active = false
         end
     end
 end
@@ -142,39 +212,41 @@ nmonomials() = last(ready().basis.ends)
 """
     truncation_order()
 
-Current working order, bounded by the algebra's `max_order()`.
+The current task's working order, bounded by the algebra's `max_order()`.
 """
 truncation_order() = working_order(ready())
 """
     coefficient_tolerance()
 
-Absolute threshold used to discard small floating-point coefficients.
+The current task's absolute threshold for discarding small floating coefficients.
 """
 coefficient_tolerance() = something(big_tolerance(ready()), float_tolerance(ready()))
 """
     set_truncation_order!(order = max_order())
 
-Set the working total degree and return the previous order. The minimum working
+Set this task's working total degree and return the previous order. The minimum working
 order is one; zero selects one. Prefer `with_order` for temporary changes.
 """
 function set_truncation_order!(n::Integer = max_order())
     ctx = ready()
     0 <= n <= ctx.basis.order || throw(ArgumentError("Invalid truncation order"))
-    old = working_order(ctx)
-    ctx.cutoff = max(1, Int(n)) # Working orders are positive.
+    state = current_settings(ctx)
+    old = state.cutoff
+    state.cutoff = max(1, Int(n)) # Working orders are positive.
     return old
 end
 """
     set_coefficient_tolerance!(tolerance)
 
-Set a finite, nonnegative coefficient filtering threshold and return its previous
+Set this task's finite, nonnegative filtering threshold and return its previous
 value. Exact real coefficient types retain all nonzero coefficients.
 """
 function set_coefficient_tolerance!(value::Real)
     isfinite(value) && value >= 0 || throw(ArgumentError("Epsilon must be finite and nonnegative"))
     ctx = ready(); old = coefficient_tolerance()
-    ctx.epsilon = Float64(value)
-    ctx.big_epsilon = value isa BigFloat ? copy(value) : nothing
+    state = current_settings(ctx)
+    state.epsilon = Float64(value)
+    state.big_epsilon = value isa BigFloat ? copy(value) : nothing
     return old
 end
 
@@ -182,20 +254,21 @@ end
     with_order(f, order)
 
 Run `f()` with a temporary truncation order, restoring the previous order even
-if `f` throws. Use `with_order(order) do ... end`. Like other algebra settings,
-this is global configuration and must not change during concurrent calculations.
+if `f` throws. Use `with_order(order) do ... end`. Order and filtering settings
+are task-local. Newly spawned tasks use full order and zero tolerance unless
+they configure their own settings; temporary construction scopes are not inherited.
 Arithmetic results, including scalar addition, unary signs and integer powers,
 discard terms above the working order. Copying, coefficient conversion and
 inspection preserve the stored polynomial; changing the order alone does not
 alter existing storage. Discarding terms is not a certified error estimate.
 """
 function with_order(f::F, order::Integer) where {F}
-    algebra = ready()
+    state = current_settings(ready())
     previous = set_truncation_order!(order)
     try
         return f()
     finally
-        algebra.cutoff = previous
+        state.cutoff = previous
     end
 end
 
@@ -217,15 +290,26 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 
 @inline keep(c::Real, epsilon::Float64) = !coefficient_iszero(c)
 @inline keep(c::AbstractFloat, epsilon::Float64) = !(abs(c) <= epsilon)
-@inline keep(c::Real, ctx::Algebra) = keep(c, float_tolerance(ctx))
-@inline keep(c::AbstractFloat, ctx::Algebra) = big_tolerance(ctx) === nothing ?
-    keep(c, float_tolerance(ctx)) : !(abs(c) <= big_tolerance(ctx))
-@inline keep(c::BigFloat, ctx::Algebra) =
-    !(abs(c) <= something(big_tolerance(ctx), float_tolerance(ctx)))
+@inline keep(c::Real, epsilon::Float64, precise) = keep(c, epsilon)
+@inline keep(c::AbstractFloat, epsilon::Float64, precise) = precise === nothing ?
+    keep(c, epsilon) : !(abs(c) <= precise)
+@inline keep(c::BigFloat, epsilon::Float64, precise) =
+    !(abs(c) <= something(precise, epsilon))
+@inline function keep(c::Real, ctx::Algebra)
+    state = algebra_settings(ctx)
+    return state === nothing ? keep(c, 0.0) :
+        keep(c, state.epsilon, state.big_epsilon)
+end
 @inline function finish!(a::TaylorPolynomial, n::Int = length(a.coeffs); filter::Bool = true)
-    if filter && (float_tolerance(a.algebra) != 0 || big_tolerance(a.algebra) !== nothing)
-        @inbounds for i in 1:n
-            keep(a.coeffs[i], a.algebra) || (a.coeffs[i] = zero(eltype(a.coeffs)))
+    if filter
+        state = algebra_settings(a.algebra)
+        epsilon = state === nothing ? 0.0 : state.epsilon
+        precise = state === nothing ? nothing : state.big_epsilon
+        if epsilon != 0 || precise !== nothing
+            @inbounds for i in 1:n
+                keep(a.coeffs[i], epsilon, precise) ||
+                    (a.coeffs[i] = zero(eltype(a.coeffs)))
+            end
         end
     end
     @inbounds while n > 1 && coefficient_iszero(a.coeffs[n])
@@ -266,13 +350,21 @@ function TaylorPolynomial{T}() where {T <: Real}
 end
 function TaylorPolynomial{T}(x::Real) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
-    ctx = ready()
+    return TaylorPolynomial{T}(ready(), x)
+end
+# Explicit owning contexts keep object-based operations independent of factories
+# bound to the current task's temporary algebra.
+function TaylorPolynomial{T}(ctx::Algebra, x::Real) where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     c = coefficient_convert(T, x)
     return TaylorPolynomial{T}([keep(c, ctx) ? c : zero(T)], 1, ctx)
 end
 function TaylorPolynomial{T}(i::Integer, c::Real) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
-    ctx = ready()
+    return TaylorPolynomial{T}(ready(), i, c)
+end
+function TaylorPolynomial{T}(ctx::Algebra, i::Integer, c::Real) where {T <: Real}
+    isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     0 <= i <= ctx.basis.variables || throw(ArgumentError("Variable index out of bounds"))
     a = allocate(ctx, T, Int(i) + 1)
     a.coeffs[i + 1] = coefficient_convert(T, c)

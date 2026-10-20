@@ -348,10 +348,11 @@ With `strict = false`, the map covers the entire box and reports
 `:max_depth`, `:max_patches` or `:roundoff` on unresolved patches.
 Check `map.converged` before using the result.
 
-Construction restores the caller's algebra and existing polynomials even
-on failure. Callbacks must not change algebra settings. Construction must
-not overlap other polynomial calculations using the global algebra;
-numeric evaluation of completed maps is independent of it.
+Construction uses a task-local temporary algebra and restores the caller's
+configuration on failure. Independent builders and read-only polynomial
+calculations may overlap. Callbacks must not change their algebra settings.
+Reinitializing the global default still invalidates its polynomials and must not
+overlap readers. Numeric evaluation of completed maps is independent of it.
 
 See the [method comparison](../generated/ads_methods.md) for partitions and
 measured errors, and the [analytic Kepler map](../generated/ads_kepler.md)
