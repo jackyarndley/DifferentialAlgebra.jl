@@ -54,7 +54,8 @@ end
 
 function ads_options(;
         order, atol, rtol, estimator, splitter, guard_order, max_depth, max_patches,
-        check_points, strict, splitters = (:tail, :width)
+        check_points, strict, splitters = (:tail, :width), names = nothing,
+        table_bytes::Integer = 32 * 1024^2
     )
     ads_check_order(order, guard_order, estimator)
     splitter in splitters || throw(ArgumentError("Unsupported ADS splitter: $splitter"))
@@ -63,11 +64,41 @@ function ads_options(;
     estimator isa IntervalBound && (!iszero(rtol) || check_points) &&
         throw(ArgumentError("IntervalBound uses positive absolute bounds, no guard degrees and no sampled acceptance"))
     ads_check_atol(atol, rtol, estimator)
+    0 <= table_bytes <= typemax(Int) ||
+        throw(ArgumentError("Invalid lookup-table budget"))
     return (;
-        order = Int(order), working_order = Int(order + guard_order), atol, rtol,
+        order = Int(order), working_order = Int(order + guard_order),
+        atol = deepcopy(atol), rtol = deepcopy(rtol),
         estimator, splitter, max_depth = Int(max_depth), max_patches = Int(max_patches),
-        check_points, strict,
+        check_points, strict, names = deepcopy(names), table_bytes = Int(table_bytes),
     )
+end
+
+function ads_saved_options(options)
+    return deepcopy(
+        (;
+            order = options.order, atol = options.atol, rtol = options.rtol,
+            splitter = options.splitter,
+            guard_order = options.working_order - options.order,
+            max_depth = options.max_depth, max_patches = options.max_patches,
+            check_points = options.check_points, strict = options.strict,
+            names = options.names, table_bytes = options.table_bytes,
+        )
+    )
+end
+function ads_refinement_options(previous, estimator; kwargs...)
+    saved = deepcopy(previous._options)
+    guard_order = 0
+    if estimator isa GuardedTail
+        guard_order = previous._estimator isa GuardedTail ? saved.guard_order : 2
+    end
+    check_points = saved.check_points
+    if estimator isa IntervalBound
+        check_points = false
+    elseif previous._estimator isa IntervalBound
+        check_points = true
+    end
+    return (; saved..., guard_order, check_points, kwargs...)
 end
 
 function ads_check_partition(partition, options)
@@ -156,7 +187,8 @@ function ads_result(g::BoxADS, patches::Vector{TaylorPatch{T, C}}, nodes, scalar
     return PiecewiseTaylorMap(
         deepcopy(g.root.lo), deepcopy(g.root.hi), patches, nodes, max_degree, options.order,
         scalar,
-        options.estimator, all(p -> p.status == :converged, patches)
+        options.estimator, ads_saved_options(options),
+        all(p -> p.status == :converged, patches)
     )
 end
 

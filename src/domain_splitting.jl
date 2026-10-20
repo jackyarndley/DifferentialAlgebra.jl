@@ -49,9 +49,10 @@ Construction and refinement own the domain endpoints, including BigFloat data;
 `domain(map)` returns independent bounds.
 Shared faces belong to the lower child of a split. Extrapolation is rejected.
 `max_order(map)` is the requested retained order; `degree(map)` is the largest
-actual stored polynomial degree. Refinement defaults to the saved order and estimator.
+actual stored polynomial degree. Refinement inherits its construction options;
+explicit keywords override individual saved values.
 """
-struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator}
+struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator, O <: NamedTuple}
     lower::Vector{T}
     upper::Vector{T}
     patches::Vector{TaylorPatch{T, C}}
@@ -60,6 +61,7 @@ struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator}
     _order::Int
     scalar::Bool
     _estimator::E
+    _options::O
     converged::Bool
 end
 nvariables(map::PiecewiseTaylorMap) = length(map.lower)
@@ -69,7 +71,8 @@ max_order(map::PiecewiseTaylorMap) = map._order
 domain(map::PiecewiseTaylorMap) = (lower = deepcopy(map.lower), upper = deepcopy(map.upper))
 Base.copy(map::PiecewiseTaylorMap) = PiecewiseTaylorMap(
     deepcopy(map.lower), deepcopy(map.upper), deepcopy(map.patches), deepcopy(map.nodes),
-    map.max_degree, map._order, map.scalar, map._estimator, map.converged
+    map.max_degree, map._order, map.scalar, map._estimator,
+    deepcopy(map._options), map.converged
 )
 
 function Base.show(io::IO, map::PiecewiseTaylorMap)
@@ -137,21 +140,27 @@ function adaptive_map(f, lower::AbstractVector{<:Real}, upper::AbstractVector{<:
 end
 
 """
-    adaptive_map(f, previous::PiecewiseTaylorMap; order = max_order(previous), estimator = previous._estimator, kwargs...)
+    adaptive_map(f, previous::PiecewiseTaylorMap; kwargs...)
 
 Refine an existing partition using the same options as `adaptive_map(f, lower,
 upper)`. Each patch is reevaluated with `f`; the input map is unchanged. Existing
 boundaries are retained, and `max_depth` and `max_patches` apply to the entire
 tree. Supply the original function, not `previous` as a surrogate: subdividing
 an already truncated polynomial cannot recover missing information.
-The retained order defaults to the originally requested order, even if an output
-has accidentally lower degree; the estimator defaults to the saved selection.
+Order, estimator, tolerances, limits, guard degrees, point checks, splitter,
+strictness, names and table budget default to their saved construction values.
+The saved order can exceed the actual retained degree. Changing the estimator
+adopts compatible guard and point-check defaults unless explicitly overridden.
+Stored tolerance and name vectors are owned by each map.
 """
 function adaptive_map(
-        f, previous::PiecewiseTaylorMap; order::Integer = max_order(previous),
+        f, previous::PiecewiseTaylorMap;
         estimator::ADSEstimator = previous._estimator, kwargs...
     )
-    return ads_construct(StaticMap(f), previous.lower, previous.upper, previous; order, estimator, kwargs...)
+    options = ads_refinement_options(previous, estimator; kwargs...)
+    return ads_construct(
+        StaticMap(f), previous.lower, previous.upper, previous; estimator, options...
+    )
 end
 
 struct StaticMap{F}
@@ -190,7 +199,7 @@ function ads_construct(
     directions === nothing || throw(ArgumentError("Supply directions with splitter=:oriented"))
     options = ads_options(;
         order, atol, rtol, estimator, splitter, guard_order,
-        max_depth, max_patches, check_points, strict
+        max_depth, max_patches, check_points, strict, names, table_bytes
     )
     T = mapreduce(x -> typeof(float(x)), promote_type, Iterators.flatten((lower, upper)))
     T <: AbstractFloat && isconcretetype(T) || throw(ArgumentError("Bounds must convert to a concrete floating-point type"))

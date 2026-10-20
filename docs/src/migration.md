@@ -67,3 +67,6 @@ Variable names supplied both positionally and by keyword now raise
 any variable name has more than one character, and parenthesize the components
 of `Complex{TaylorPolynomial}`. Mixed ForwardDiff dual/polynomial arithmetic
 preserves coefficient partials without requiring explicit polynomial constants.
+
+ADS refinement now inherits the original tolerances and construction options,
+including resource limits. Supply keywords explicitly to change them.

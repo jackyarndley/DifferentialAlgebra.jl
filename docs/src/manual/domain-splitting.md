@@ -251,7 +251,11 @@ certified_fine = adaptive_map(f, certified; atol = 1e-6)
 (max_order(certified_fine), enclose(certified_fine, [interval(0.2), interval(-0.1)]))
 ```
 
-Refinement defaults to the saved estimator and requested retained order.
+Refinement inherits the estimator, requested order, tolerances, limits,
+guard degrees, point checks, splitter, strictness, names and table budget.
+Explicit keywords override individual settings. Tolerance and name vectors are
+copied. Changing estimators chooses compatible guard and point-check defaults,
+unless those are supplied explicitly.
 `max_order(map)` reports that order; `degree(map)` reports the largest actual
 stored degree. `domain`, `nvariables`, `noutputs`, `max_order`, `degree` and
 patch `status` apply consistently across the box and polygon result types.

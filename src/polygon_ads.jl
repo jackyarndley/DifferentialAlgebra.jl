@@ -45,7 +45,7 @@ and enclosure include the remainders. Other estimators return ordinary numeric
 approximations. Snapshots survive algebra reinitialization. Public geometry
 accessors and `copy` own their data; internal arrays are read-only.
 """
-struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator}
+struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator, O <: NamedTuple}
     _domain::ConvexPolygon{T}
     _directions::Matrix{PolygonReal}
     patches::Tuple{Vararg{PolygonPatch{T, P}}}
@@ -53,6 +53,7 @@ struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator}
     _order::Int
     _scalar::Bool
     _estimator::E
+    _options::O
     converged::Bool
 end
 domain(a::PiecewisePolygonMap) = copy(a._domain)
@@ -67,7 +68,10 @@ nvariables(::PiecewisePolygonMap) = 2
 noutputs(a::PiecewisePolygonMap) = noutputs(first(a.patches))
 degree(a::PiecewisePolygonMap) = maximum(degree, a.patches)
 max_order(a::PiecewisePolygonMap) = a._order
-Base.copy(a::PiecewisePolygonMap) = PiecewisePolygonMap(copy(a._domain), deepcopy(a._directions), deepcopy(a.patches), deepcopy(a.nodes), a._order, a._scalar, a._estimator, a.converged)
+Base.copy(a::PiecewisePolygonMap) = PiecewisePolygonMap(
+    copy(a._domain), deepcopy(a._directions), deepcopy(a.patches), deepcopy(a.nodes),
+    a._order, a._scalar, a._estimator, deepcopy(a._options), a.converged
+)
 Base.deepcopy_internal(a::PiecewisePolygonMap, copies::IdDict) = get!(() -> copy(a), copies, a)
 (a::PiecewisePolygonMap)(point) = evaluate(a, point)
 Base.show(io::IO, a::PiecewisePolygonMap) = print(io, "PiecewisePolygonMap(", length(a.patches), " polygons, ", a.converged ? "converged" : "unresolved", ")")
@@ -98,10 +102,12 @@ end
 function adaptive_map(
         f, previous::PiecewisePolygonMap;
         estimator::ADSEstimator = previous._estimator,
-        order::Integer = max_order(previous),
         directions = split_directions(previous), kwargs...
     )
-    return polygon_construct(f, domain(previous); estimator, order, directions, partition = previous, kwargs...)
+    options = ads_refinement_options(previous, estimator; kwargs...)
+    return polygon_construct(
+        f, domain(previous); estimator, directions, partition = previous, options...
+    )
 end
 
 # Sensitivity only selects a frame. Neither midpoints nor these nearest-rounded
@@ -215,7 +221,11 @@ function ads_finalize(::PolygonADS, polygon, p, depth, status, order)
     return PolygonPatch(polygon, ads_local_patch(p.payload, p.geometry, p.errors, depth, status, order))
 end
 function ads_result(g::PolygonADS, patches, nodes, scalar, options)
-    return PiecewisePolygonMap(copy(g.root), deepcopy(g.B), Tuple(patches), nodes, options.order, scalar, options.estimator, all(p -> p.status == :converged, patches))
+    return PiecewisePolygonMap(
+        copy(g.root), deepcopy(g.B), Tuple(patches), nodes, options.order, scalar,
+        options.estimator, ads_saved_options(options),
+        all(p -> p.status == :converged, patches)
+    )
 end
 
 function ads_relative_width(g::PolygonADS, cover, i)
@@ -242,7 +252,8 @@ function polygon_construct(
     ) where {T}
     settings = ads_options(;
         order, atol, rtol, estimator, splitter, guard_order,
-        max_depth, max_patches, check_points, strict, splitters = (:oriented, :tail, :width)
+        max_depth, max_patches, check_points, strict,
+        splitters = (:oriented, :tail, :width), names, table_bytes
     )
     ads_check_partition(partition, settings)
     _, scales = polygon_probe(polygon)

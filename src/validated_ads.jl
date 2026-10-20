@@ -69,16 +69,18 @@ bound met the requested tolerance. Even unresolved patches retain valid model
 enclosures. Numeric point and subbox queries include remainders, reject queries
 outside the physical domain and remain valid after algebra reinitialization.
 Queries use a partition tree and include both closed sides of shared faces.
-Refinement reevaluates the original callback and defaults to the saved estimator
-and requested retained order, which can exceed `degree(map)`.
+Refinement reevaluates the original callback and inherits the saved construction
+options, including its tolerances and limits. The requested retained order can
+exceed `degree(map)`. Explicit keywords override saved values.
 """
-struct PiecewiseTaylorModel{T <: Real, N, E <: ADSEstimator}
+struct PiecewiseTaylorModel{T <: Real, N, E <: ADSEstimator, O <: NamedTuple}
     _domain::Tuple{Vararg{T}}
     patches::Tuple{Vararg{TaylorModelPatch{T}}}
     nodes::Vector{N}
     _order::Int
     _scalar::Bool
     _estimator::E
+    _options::O
     converged::Bool
 end
 domain(a::PiecewiseTaylorModel) = collect(deepcopy(a._domain))
@@ -87,16 +89,20 @@ noutputs(a::PiecewiseTaylorModel) = length(first(a.patches).models)
 max_order(a::PiecewiseTaylorModel) = a._order
 degree(a::PiecewiseTaylorModel) = maximum(degree(m) for p in a.patches for m in p.models)
 (a::PiecewiseTaylorModel)(point) = evaluate(a, point)
-Base.copy(a::PiecewiseTaylorModel) = PiecewiseTaylorModel(deepcopy(a._domain), deepcopy(a.patches), deepcopy(a.nodes), a._order, a._scalar, a._estimator, a.converged)
+Base.copy(a::PiecewiseTaylorModel) = PiecewiseTaylorModel(
+    deepcopy(a._domain), deepcopy(a.patches), deepcopy(a.nodes), a._order,
+    a._scalar, a._estimator, deepcopy(a._options), a.converged
+)
 Base.deepcopy_internal(a::PiecewiseTaylorModel, copies::IdDict) = get!(() -> copy(a), copies, a)
 function Base.show(io::IO, a::PiecewiseTaylorModel)
     return print(io, "PiecewiseTaylorModel(", length(a.patches), " patches, ", noutputs(a), " outputs, ", nvariables(a), " variables, ", a.converged ? "converged" : "unresolved", ")")
 end
 
 function adaptive_map(
-        f, previous::PiecewiseTaylorModel; order::Integer = max_order(previous),
+        f, previous::PiecewiseTaylorModel;
         estimator::ADSEstimator = previous._estimator, kwargs...
     )
     estimator isa IntervalBound || throw(ArgumentError("Validated box refinement requires IntervalBound"))
-    return interval_ads(f, domain(previous); partition = previous, order, kwargs...)
+    options = ads_refinement_options(previous, estimator; kwargs...)
+    return interval_ads(f, domain(previous); partition = previous, options...)
 end

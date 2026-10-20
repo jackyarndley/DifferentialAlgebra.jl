@@ -4,6 +4,101 @@ using IntervalArithmetic
 include("support/intervals.jl")
 using .IntervalTestSupport: DA, IA, IF, IB, subset, interval_contains, sameinterval
 
+function contract_contains(parent::NamedTuple, child::NamedTuple)
+    return all(parent.lower .<= child.lower) && all(child.upper .<= parent.upper)
+end
+contract_contains(parent::ConvexPolygon, child::ConvexPolygon) =
+    all(v -> DA.polygon_contains(parent, v), polygon_vertices(child))
+function contract_contains(
+        parent::AbstractVector{<:Interval}, child::AbstractVector{<:Interval}
+    )
+    return all(subset.(child, parent))
+end
+contract_value(actual::Interval, exact) = interval_contains(actual, exact)
+contract_value(actual::Real, exact) = isapprox(actual, exact; atol = 1.0e-12)
+contract_same(a::Interval, b::Interval) = sameinterval(a, b)
+contract_same(a::Real, b::Real) = a == b
+contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
+
+@testset "Refinement inherits owned construction options" begin
+    square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+    for estimator in (GuardedTail(), LastTerms(), IntervalBound()),
+            polygon in (false, true), budget in (0, 32 * 1024^2)
+        guard = estimator isa GuardedTail ? 3 : 0
+        names, atol = ["q", "r"], [1 // 8, 1 // 16]
+        observed = Tuple{Int, Int, Tuple{String, String}}[]
+        function f(v)
+            p = v[1] isa TaylorPolynomial ? v[1] :
+                v[1] isa TaylorModel ? getfield(v[1], :_polynomial) : nothing
+            if p !== nothing
+                push!(
+                    observed, (
+                        truncation_order(), p.algebra.basis.table_bytes,
+                        Tuple(p.algebra.names),
+                    )
+                )
+            end
+            return [v[1]^2 + v[2], v[2]]
+        end
+        options = (;
+            estimator, order = 2, atol, rtol = 0, guard_order = guard,
+            max_depth = 0, max_patches = 17, check_points = false,
+            strict = false, splitter = :width, names, table_bytes = budget,
+        )
+        source = polygon ? adaptive_map(f, square; directions = :axes, options...) :
+            adaptive_map(f, [-1, -1], [1, 1]; options...)
+        atol[1], names[1] = 99, "changed"
+        owned = copy(source)
+        @test owned._options.atol !== source._options.atol
+        @test owned._options.names !== source._options.names
+        empty!(observed)
+        refined = adaptive_map(f, owned)
+        @test !isempty(observed)
+        @test all(==((2 + guard, budget, ("q", "r"))), observed)
+        @test refined._options.atol == [1 // 8, 1 // 16]
+        @test refined._options.max_depth == 0 && refined._options.max_patches == 17
+        @test !refined._options.strict && !refined._options.check_points
+        @test refined._options.splitter == :width && iszero(refined._options.rtol)
+        @test length(refined.patches) == length(source.patches) == 1
+        actual = refined([1 // 4, -1 // 2])
+        @test all(contract_value.(actual, [-7 // 16, -1 // 2]))
+        revised = adaptive_map(
+            f, refined; atol = [1 // 4, 1 // 8], max_depth = 1, max_patches = 19
+        )
+        @test revised._options.atol == [1 // 4, 1 // 8]
+        @test revised._options.max_depth == 1 && revised._options.max_patches == 19
+        @test refined._options.atol == [1 // 8, 1 // 16]
+    end
+end
+
+@testset "Refinement beyond the constructor's default patch limit" begin
+    f(v) = v[1]^2
+    source = adaptive_map(
+        f, [-1.0], [1.0]; order = 1, estimator = LastTerms(),
+        atol = 1 // 2^22, max_patches = 3000, max_depth = 12, table_bytes = 0
+    )
+    # A linear Taylor fit to x² has exact endpoint error r². This dyadic
+    # tolerance requires radius 1/2048 and hence 2048 equal-width patches.
+    @test length(source.patches) == 2048
+    refined = adaptive_map(f, source)
+    @test refined.converged && length(refined.patches) == 2048
+    @test abs(refined([0.123]) - 0.123^2) <= 1 // 2^22
+end
+
+@testset "Changing estimators adopts compatible guard defaults" begin
+    f(v) = v[1]^2
+    source = adaptive_map(
+        f, [-1.0], [1.0]; order = 2, guard_order = 3,
+        atol = 1 // 8, max_depth = 0, strict = false
+    )
+    retained = adaptive_map(f, source; estimator = LastTerms())
+    @test retained._options.guard_order == 0
+    guarded = adaptive_map(f, retained; estimator = GuardedTail())
+    @test guarded._options.guard_order == 2
+    explicit = adaptive_map(f, retained; estimator = GuardedTail(), guard_order = 1)
+    @test explicit._options.guard_order == 1
+end
+
 @testset "Invalid tolerances reject before callback evaluation" begin
     square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
     for geometry in (:box, :oriented, :polygon)
@@ -47,17 +142,6 @@ using .IntervalTestSupport: DA, IA, IF, IB, subset, interval_contains, sameinter
     fit = adaptive_map(first, [-1.0], [1.0]; atol = 0, rtol = 0.001)
     @test fit.converged && fit([0.25]) == 0.25
 end
-
-function contract_contains(parent::NamedTuple, child::NamedTuple)
-    return all(parent.lower .<= child.lower) && all(child.upper .<= parent.upper)
-end
-contract_contains(parent::ConvexPolygon, child::ConvexPolygon) = all(v -> DA.polygon_contains(parent, v), polygon_vertices(child))
-contract_contains(parent::AbstractVector{<:Interval}, child::AbstractVector{<:Interval}) = all(subset.(child, parent))
-contract_value(actual::Interval, exact) = interval_contains(actual, exact)
-contract_value(actual::Real, exact) = isapprox(actual, exact; atol = 1.0e-12)
-contract_same(a::Interval, b::Interval) = sameinterval(a, b)
-contract_same(a::Real, b::Real) = a == b
-contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
 
 @testset "Shared ADS construction contracts" begin
     square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])

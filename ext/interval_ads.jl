@@ -135,7 +135,10 @@ function DA.ads_local_patch(fit::ValidatedFit, box, errors, depth, status, order
     return DA.TaylorModelPatch(compile_models(fit.models), deepcopy(errors), depth, status)
 end
 function DA.ads_result(g::DA.BoxADS, patches::Vector{DA.TaylorModelPatch{I}}, nodes, scalar, options) where {I}
-    return DA.PiecewiseTaylorModel(g.root, Tuple(patches), nodes, options.order, scalar, options.estimator, all(p -> p.status == :converged, patches))
+    return DA.PiecewiseTaylorModel(
+        g.root, Tuple(patches), nodes, options.order, scalar, options.estimator,
+        DA.ads_saved_options(options), all(p -> p.status == :converged, patches)
+    )
 end
 
 function DA.interval_ads(
@@ -152,7 +155,8 @@ function DA.interval_ads(
     T in (Float64, BigFloat) || throw(ArgumentError("Certified ADS supports Float64 or BigFloat endpoints"))
     options = DA.ads_options(;
         order, atol, rtol, estimator = DA.IntervalBound(), splitter,
-        guard_order, check_points, max_depth, max_patches, strict, splitters = (:tail, :width, :oriented)
+        guard_order, check_points, max_depth, max_patches, strict,
+        splitters = (:tail, :width, :oriented), names, table_bytes
     )
     original = Tuple(deepcopy(asinterval(Interval{T}, x)) for x in box)
     if splitter == :oriented
