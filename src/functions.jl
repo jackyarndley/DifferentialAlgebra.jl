@@ -393,28 +393,42 @@ end
 SpecialFunctions.polygamma(n::Integer, a::TaylorPolynomial) = polygamma_series(a, n)
 SpecialFunctions.digamma(a::TaylorPolynomial) = polygamma_series(a, 0)
 
-# Bessel's second-order differential equation supplies all higher derivatives.
+# Neighboring-order derivative identities keep the regular J/I solutions stable
+# near zero. Each stage forms Taylor coefficients directly, avoiding large
+# binomial/factorial intermediates and reusing the scalar seeds.
+function regular_bessel_series(fn, n, a, c0, s)
+    x = constant_term(a)
+    coefficient_iszero(x) && fn === SpecialFunctions.besselix &&
+        throw(TaylorError("Scaled Bessel I is not analytic at zero"))
+    cutoff = a.algebra.cutoff
+    values = [
+        k == 0 ? c0 : scalar_bessel(fn, n + k, x) for k in (-cutoff):cutoff
+    ]
+    c = Vector{typeof(c0)}(undef, cutoff + 1)
+    c[1] = c0
+    subtract = fn === SpecialFunctions.besselj
+    for k in 1:cutoff
+        for j in 1:(2(cutoff - k) + 1)
+            neighbor = subtract ? (values[j] - values[j + 2]) / 2 :
+                values[j] / 2 + values[j + 2] / 2
+            values[j] = (neighbor - s * values[j + 1]) / k
+        end
+        c[k + 1] = values[cutoff - k + 1]
+    end
+    return series(a, c)
+end
+
+# Bessel's second-order differential equation supplies the singular Y/K solutions.
 # With y=exp(s*x)*z, scaled I/K remain scaled throughout (no overflow-prone unscaling).
 function bessel_series(fn, n::Integer, a::TaylorPolynomial, q::Int, s)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
     x = constant_term(a); c0 = scalar_bessel(fn, n, x)
     a.len == 1 && return TaylorPolynomial(c0)
-    cutoff = a.algebra.cutoff
-    if coefficient_iszero(x)
-        fn in (SpecialFunctions.besselj, SpecialFunctions.besseli) || throw(TaylorError("Bessel expansion is singular at zero"))
-        c = zeros(typeof(c0), cutoff + 1)
-        order = abs(n)
-        if order <= cutoff
-            sign = n < 0 && fn === SpecialFunctions.besselj && isodd(order) ? -1 : 1
-            value = convert(typeof(c0), sign) / convert(typeof(c0), big(2)^order * factorial(big(order)))
-            for k in order:2:cutoff
-                c[k + 1] = value
-                m = (k - order) ÷ 2 + 1
-                value *= -q / (convert(typeof(c0), 4) * m * (m + order))
-            end
-        end
-        return series(a, c)
+    if fn in (SpecialFunctions.besselj, SpecialFunctions.besseli, SpecialFunctions.besselix)
+        return regular_bessel_series(fn, n, a, c0, s)
     end
+    cutoff = a.algebra.cutoff
+    coefficient_iszero(x) && throw(TaylorError("Bessel expansion is singular at zero"))
     c = zeros(typeof(c0), cutoff + 1); c[1] = c0
     lower, upper = scalar_bessel(fn, n - 1, x), scalar_bessel(fn, n + 1, x)
     neighbor = fn in (SpecialFunctions.besselj, SpecialFunctions.bessely) ? (lower - upper) / 2 :

@@ -65,3 +65,49 @@ end
         @test f(2 + x / 10) isa TaylorPolynomial{Float32}
     end
 end
+
+# Differentiate the convergent series at the origin term by term. Exact integer
+# binomial/factorial factors and 1024-bit arithmetic provide an oracle independent
+# of the neighboring-order recurrence used by the polynomial implementation.
+function origin_bessel_coefficient(n, center, k, modified)
+    value = zero(center)
+    first_term = max(0, cld(k - n, 2))
+    for m in first_term:(first_term + 500)
+        degree = n + 2m
+        numerator = binomial(big(degree), k) * center^(degree - k)
+        denominator = big(2)^degree * factorial(big(m)) * factorial(big(n + m))
+        term = numerator / denominator
+        !modified && isodd(m) && (term = -term)
+        value += term
+        abs(term) <= eps(center) * abs(value) && return value
+    end
+    error("Independent Bessel series did not converge")
+end
+
+@testset "Regular Bessel functions near the origin" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 20, table_bytes = budget)
+        for center in (1.0e-3, 0.05, 0.1), n in 0:3
+            for (f, modified) in ((besselj, false), (besseli, true))
+                p = f(n, center + x)
+                expected = setprecision(BigFloat, 1024) do
+                    [origin_bessel_coefficient(n, BigFloat(center), k, modified) for k in 0:20]
+                end
+                for k in 0:20
+                    @test coefficient(p, [k]) ≈ Float64(expected[k + 1]) rtol = 2.0e-12
+                end
+                # Small steps keep truncation below the numerical regression tolerance.
+                step = 0.1
+                reference = setprecision(BigFloat, 1024) do
+                    origin_bessel_coefficient(n, BigFloat(center) + step, 0, modified)
+                end
+                @test p([step]) ≈ Float64(reference) rtol = 2.0e-12
+            end
+        end
+        tiny = besselj(2, 1.0e-160 + x)
+        @test all(isfinite, tiny.coeffs[1:tiny.len])
+        @test coefficient(tiny, [2]) ≈ 1 / 8
+        @test besselj(3, 1.0e-3 + x)([0.1]) ≈ besselj(3, 0.101) rtol = 1.0e-12
+        @test besseli(2, 0.1 + x)([1.0]) ≈ besseli(2, 1.1) rtol = 1.0e-12
+    end
+end
