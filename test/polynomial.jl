@@ -246,3 +246,18 @@ end
         @test coefficient(x - 2x, [1]) == -1
     end
 end
+
+@testset "Value-preserving operations return owned storage" begin
+    x, y = variables(2; order = 3)
+    for f in (
+            +, float, real, conj, p -> convert(typeof(p), p),
+            p -> convert(TaylorPolynomial, p),
+        )
+        p = 1 + x + y^2
+        q = f(p)
+        @test q !== p && q.coeffs !== p.coeffs
+        @test coefficient(q, [1, 0]) == 1
+        set_coefficient!(q, [1, 0], 5)
+        @test coefficient(p, [1, 0]) == 1
+    end
+end

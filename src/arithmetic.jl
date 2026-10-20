@@ -9,9 +9,9 @@ function TaylorPolynomial{T}(a::TaylorPolynomial) where {T <: Real}
     )
     return finish!(out, a.len; filter = false)
 end
-Base.convert(::Type{TaylorPolynomial}, a::TaylorPolynomial) = a
+Base.convert(::Type{TaylorPolynomial}, a::TaylorPolynomial) = copy(a)
 Base.convert(::Type{TaylorPolynomial}, x::Real) = TaylorPolynomial(x)
-Base.convert(::Type{TaylorPolynomial{T}}, a::TaylorPolynomial{T}) where {T <: Real} = a
+Base.convert(::Type{TaylorPolynomial{T}}, a::TaylorPolynomial{T}) where {T <: Real} = copy(a)
 Base.convert(::Type{TaylorPolynomial{T}}, a::TaylorPolynomial) where {T <: Real} = TaylorPolynomial{T}(a)
 Base.convert(::Type{TaylorPolynomial{T}}, x::Real) where {T <: Real} = TaylorPolynomial{T}(x)
 Base.promote_rule(::Type{TaylorPolynomial{T}}, ::Type{TaylorPolynomial{S}}) where {T <: Real, S <: Real} = TaylorPolynomial{promote_type(T, S)}
@@ -42,12 +42,12 @@ end
 Base.Float64(a::TaylorPolynomial) = scalar_value(Float64, a)
 Base.Float32(a::TaylorPolynomial) = scalar_value(Float32, a)
 Base.BigFloat(a::TaylorPolynomial) = scalar_value(BigFloat, a)
-Base.conj(a::TaylorPolynomial) = a
-Base.real(a::TaylorPolynomial) = a
+Base.conj(a::TaylorPolynomial) = copy(a)
+Base.real(a::TaylorPolynomial) = copy(a)
 Base.abs2(a::TaylorPolynomial) = a * a
 function Base.:+(a::TaylorPolynomial)
     ctx = valid(a)
-    return a.len <= ctx.basis.ends[ctx.cutoff + 1] ? a : trim(a, 0, ctx.cutoff)
+    return a.len <= ctx.basis.ends[ctx.cutoff + 1] ? copy(a) : trim(a, 0, ctx.cutoff)
 end
 negative_coefficient_type(::Type{T}) where {T} = T
 negative_coefficient_type(::Type{Bool}) = Int
@@ -247,7 +247,7 @@ function Base.:^(a::TaylorPolynomial, n::Integer)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Exponent out of range"))
     ctx = valid(a)
     n == 0 && return one(a)
-    n == 1 && return finish!(copy(+a))
+    n == 1 && return finish!(+a)
     n == 2 && return product(a, a)
     power = n < 0 ? quotient(one(coefficient_type(a)), a; filter = false) : a
     n = abs(n)
