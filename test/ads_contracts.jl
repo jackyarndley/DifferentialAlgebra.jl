@@ -20,6 +20,51 @@ contract_same(a::Interval, b::Interval) = sameinterval(a, b)
 contract_same(a::Real, b::Real) = a == b
 contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
 
+@testset "Satisfied outputs do not steer refinement" begin
+    cases = (
+        (;
+            f = v -> [99 // 100 * v[1]^4, v[2]^2],
+            estimator = GuardedTail(), order = 1, guard_order = 3,
+            atol = [1 // 1, 99 // 100],
+        ),
+        (;
+            f = v -> [(v[1]^2 + v[1]^3 + v[1]^4) / 2, v[2]^4],
+            estimator = LastTerms(; degrees = 3), order = 4, guard_order = 0,
+            atol = [3 // 5, 9 // 10],
+        ),
+    )
+    for case in cases, polygon in (false, true), budget in (0, 32 * 1024^2)
+        (; f, estimator, order, guard_order, atol) = case
+        fit = adaptive_map(
+            f, [-1, -1], [1, 1]; estimator, order, guard_order, atol,
+            check_points = false, strict = false, max_patches = 2,
+            splitter = polygon ? :oriented : :tail,
+            directions = polygon ? :axes : nothing, table_bytes = budget
+        )
+        # Only y exceeds tolerance. Halving y makes both children pass;
+        # spending this two-patch budget on x leaves the y error unchanged.
+        @test fit.converged && length(fit.patches) == 2
+        if polygon
+            @test first(fit.nodes).normal == (0, 1)
+        else
+            @test first(fit.nodes).axis == 2
+        end
+    end
+end
+
+@testset "A represented low-degree polynomial needs no extrapolated splits" begin
+    for polygon in (false, true), budget in (0, 32 * 1024^2)
+        fit = adaptive_map(
+            v -> v[1] + v[1]^2, [-1, -1], [1, 1]; order = 5,
+            estimator = ExtrapolatedTail(), atol = 1 // 1000,
+            splitter = polygon ? :oriented : :tail,
+            directions = polygon ? :axes : nothing, table_bytes = budget
+        )
+        @test fit.converged && length(fit.patches) == 1
+        @test fit([1 // 4, 0]) == 5 // 16
+    end
+end
+
 @testset "Snapshot collections use owned vector storage" begin
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
         f(v) = [v[1]^2 + v[2]^2, v[1]]

@@ -78,12 +78,6 @@ function ads_flow_result(result, time)
     return result.state
 end
 
-function ads_same_shape(p, first_patch)
-    p.scalar == first_patch.scalar && length(p.errors) == length(first_patch.errors) ||
-        throw(DimensionMismatch("The flow changed output shape"))
-    eltype(p.errors) === eltype(first_patch.errors) || throw(ArgumentError("The flow changed coefficient type"))
-    return nothing
-end
 
 function ads_flow_check(value, box, probes, states, ctx, options)
     p = ads_analyze(value, box, options, ctx)

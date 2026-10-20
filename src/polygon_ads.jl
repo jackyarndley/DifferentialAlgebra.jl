@@ -266,11 +266,10 @@ function polygon_construct(
         splitters = (:oriented, :tail, :width), names, table_bytes
     )
     ads_check_partition(partition, settings)
-    _, scales = polygon_probe(polygon)
+    probe, scales = polygon_probe(polygon)
     options = (; settings..., scales)
     return with_algebra(max(2, options.working_order), 2; names, table_bytes) do ctx
         B, A = if directions === nothing || directions === :auto
-            probe, _ = polygon_probe(polygon)
             probe_options = (; options..., order = 2, working_order = 2, check_points = false)
             candidate = with_order(2) do
                 polygon_candidate(f, probe, Matrix{PolygonReal}(I, 2, 2), Matrix{PolygonReal}(I, 2, 2), probe_options, ctx, estimator; probe = true)

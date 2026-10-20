@@ -108,12 +108,15 @@ function continuity_candidate(f, lo, hi, A, options, ctx, estimator::ADSEstimato
     box = ads_geometry(T.(lo), T.(hi))
     all(i -> isfinite(box.radius[i]) && (lo[i] == hi[i] || box.radius[i] > 0), eachindex(lo)) || throw(ArgumentError("Unrepresentable overlap domain"))
     x = [variable(i, T) for i in eachindex(lo)]
-    callback(z) = f(T.(A) * z)
-    settings = (; order = options.order, working_order = ctx.basis.order, atol = 1, rtol = 0, estimator, check_points = options.check_points)
-    candidate = ads_candidate(StaticMap(callback), box, x, ctx, settings, false)
+    transform = T.(A)
+    callback(z) = f(transform * z)
+    candidate = ads_static_fit(StaticMap(callback), box, x, ctx, options)
     C = eltype(candidate.errors)
     C <: AbstractFloat || throw(ArgumentError("Ordinary continuity fits require floating coefficients"))
-    return (; center = box.center, radius = box.radius, map = candidate.payload, certificates = nothing, errors = candidate.errors, scalar = candidate.scalar)
+    return (;
+        center = box.center, radius = box.radius, map = candidate.compiled,
+        certificates = nothing, errors = candidate.errors, scalar = candidate.scalar,
+    )
 end
 continuity_errors(patches) = map(j -> maximum(p -> p.errors[j], patches), eachindex(first(patches).errors))
 function continuity_check_tolerance(errors, atol)
@@ -172,7 +175,10 @@ function continuous_map(
     atol === nothing || ads_check_atol(atol, 0, estimator)
     layout = continuity_layout(fit)
     T = continuity_scalar_type(fit)
-    options = (; order = Int(order), T, check_points)
+    options = (;
+        order = Int(order), working_order = Int(order + guard_order),
+        atol, rtol = 0, estimator, T, check_points, names, table_bytes,
+    )
     return with_algebra(Int(order + guard_order), length(layout.bounds[1]); names, table_bytes) do ctx
         patches = nothing
         for core in layout.cores

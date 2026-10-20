@@ -10,6 +10,14 @@ struct ADSCandidate{G, P, E, C, T}
     accepted::Bool
 end
 
+function ads_same_shape(p, reference)
+    p.scalar == reference.scalar && length(p.errors) == length(reference.errors) ||
+        throw(DimensionMismatch("The callback changed output shape"))
+    eltype(p.errors) === eltype(reference.errors) ||
+        throw(ArgumentError("The callback changed coefficient type"))
+    return nothing
+end
+
 # A failed analytic fit has neither a payload nor an output shape. Subdivide it
 # geometrically until a valid model establishes the concrete patch storage type.
 struct ADSDomainFailure{G, E, T}
@@ -267,9 +275,7 @@ function ads_build!(problem, geometry, ctx, options, first_candidate, nodes, pen
             patch_count += 1
             continue
         end
-        p.scalar == first_candidate.scalar && length(p.errors) == length(first_candidate.errors) ||
-            throw(DimensionMismatch("The map changed output shape"))
-        eltype(p.errors) === eltype(first_candidate.errors) || throw(ArgumentError("The map changed coefficient type between patches"))
+        ads_same_shape(p, first_candidate)
         axis, status = ads_candidate_status(p, geometry, depth, patch_count, options)
         if status == :split
             ads_enqueue_split!(geometry, box, p, depth, node, axis, nodes, pending)

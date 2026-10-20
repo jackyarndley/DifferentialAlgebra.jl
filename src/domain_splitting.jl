@@ -320,18 +320,30 @@ end
 function ads_assess(p, options)
     C = eltype(p.errors)
     tolerance = ads_tolerances(C, options.atol, options.rtol, length(p.errors)) .+ C(options.rtol) .* p.scale
-    accepted = all(j -> isfinite(p.errors[j]) && p.errors[j] <= tolerance[j], eachindex(tolerance))
+    accepted = true
+    for j in eachindex(tolerance)
+        if isfinite(p.errors[j]) && p.errors[j] <= tolerance[j]
+            for i in axes(p.contributions, 2)
+                p.contributions[j, i] = zero(C)
+            end
+        else
+            accepted = false
+        end
+    end
     return ADSCandidate(p.geometry, p.compiled, p.errors, p.contributions, tolerance, p.scalar, accepted)
 end
 
-function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
+function ads_static_fit(problem::StaticMap, box, x, ctx, options)
     p = ads_analyze(problem.f(box.center .+ box.radius .* x), box, options, ctx)
     if options.check_points
         probes = ads_probes(box)
         ads_check_points!(p, probes, (problem.f(point) for (point, _, _) in probes))
     end
     ads_check_context(ctx, options.working_order)
-    return ads_assess(p, options)
+    return p
+end
+function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
+    return ads_assess(ads_static_fit(problem, box, x, ctx, options), options)
 end
 
 ads_ratio(error, tolerance) = iszero(tolerance) ? (iszero(error) ? zero(error) : oftype(error, Inf)) : error / tolerance

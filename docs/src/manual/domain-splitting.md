@@ -148,8 +148,8 @@ this estimator. See the
 tail coefficients when halved, scaled by each output's tolerance. Axis
 point discrepancies supplement the scores; ties use relative box widths.
 
-For IntervalBound, only unsatisfied outputs contribute to direction scores.
-The heuristic focuses on the last two nonlinear retained degrees and
+Only unsatisfied outputs contribute to direction scores. For IntervalBound,
+the heuristic focuses on the last two nonlinear retained degrees and
 lower-degree coefficient uncertainty, excluding large exact affine variation.
 It cannot attribute a scalar remainder exactly; absent directional information
 falls back to relative widths. Complete rigorous fitting errors still decide
