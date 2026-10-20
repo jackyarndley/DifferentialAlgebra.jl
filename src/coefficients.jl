@@ -324,7 +324,9 @@ function random_polynomial(::Type{T} = Float64; rng = Random.default_rng(), dens
     return finish!(a)
 end
 # Map calculus preserves the shape of ordinary arrays, including views.
-trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer = max_order()) = trim.(a, low, high)
+trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer) = trim.(a, low)
+trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer) =
+    trim.(a, low, high)
 differentiate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = differentiate.(a, i)
 integrate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = integrate.(a, i)
 

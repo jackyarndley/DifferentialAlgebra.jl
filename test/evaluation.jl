@@ -4,6 +4,34 @@ using ForwardDiff, IntervalArithmetic
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, interval_contains
 
+@testset "Inverse construction uses the input's algebra" begin
+    for T in (Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
+        root, = variables(1; order = 2)
+        DifferentialAlgebra.with_algebra(5, 2; table_bytes = budget) do _
+            x, y = variable(1, T), variable(2, T)
+            full, partial = [2x + y^2, y], [2x + x^2]
+            result = fetch(
+                Threads.@spawn begin
+                    complete = invert(full)
+                    incomplete = only(invert(partial))
+                    (; complete, incomplete, dimensions = nvariables(), order = max_order())
+                end
+            )
+            @test result.dimensions == 1 && result.order == 2
+            @test all(p -> p.algebra === x.algebra, result.complete)
+            @test result.incomplete.algebra === x.algebra
+            @test isequal(result.complete, [x / 2 - y^2 / 2, y])
+            # Inverse of 2x+x^2 is sqrt(1+u)-1; use exact binomial coefficients.
+            for k in 0:5
+                expected = k == 0 ? 0 : (1 // 2, -1 // 8, 1 // 16, -5 // 128, 7 // 256)[k]
+                @test coefficient(result.incomplete, [k, 0]) == expected
+            end
+            @test coefficient(partial[1], [1, 0]) == 2
+        end
+        @test variable(1).algebra === root.algebra && max_order() == 2
+    end
+end
+
 @testset "Compact polynomial linear transforms" begin
     for budget in (0, 32 * 1024^2)
         x = variables(6; order = 10, table_bytes = budget)

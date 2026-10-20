@@ -322,9 +322,10 @@ function invert(f::AbstractVector{<:TaylorPolynomial})
     all(a -> valid(a) === ctx, f) || throw(ArgumentError("Different polynomial contexts"))
     T = mapreduce(coefficient_type, promote_type, f)
     if length(f) < nv
-        return invert(vcat(f, [variable(i, T) for i in (length(f) + 1):nv]))[1:length(f)]
+        identities = [TaylorPolynomial{T}(ctx, i, one(T)) for i in (length(f) + 1):nv]
+        return invert(vcat(f, identities))[1:length(f)]
     end
-    x = [variable(i, T) for i in 1:nv]
+    x = [TaylorPolynomial{T}(ctx, i, one(T)) for i in 1:nv]
     c, A = constant_term.(f), linear_part(f)
     Ainv = try
         lu(A) \ Matrix{T}(I, nv, nv)

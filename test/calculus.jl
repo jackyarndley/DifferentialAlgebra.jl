@@ -2,6 +2,28 @@ using Test, DifferentialAlgebra
 
 include("support/coefficients.jl")
 
+@testset "Array trimming keeps each polynomial's stored order" begin
+    for budget in (0, 32 * 1024^2)
+        root, = variables(1; order = 2)
+        DifferentialAlgebra.with_algebra(5, 2; table_bytes = budget) do _
+            x, y = variable(1), variable(2)
+            inputs = [x^4 y^5]
+            result, explicit = fetch(
+                Threads.@spawn (
+                    DifferentialAlgebra.trim(view(inputs, :, :), 0),
+                    DifferentialAlgebra.trim(inputs, 0, 2),
+                )
+            )
+            @test size(result) == size(inputs)
+            @test isequal(result, inputs)
+            @test all(iszero, explicit)
+            @test all(result[i] !== inputs[i] for i in eachindex(inputs))
+            @test all(result[i].coeffs !== inputs[i].coeffs for i in eachindex(inputs))
+        end
+        @test variable(1).algebra === root.algebra && max_order() == 2
+    end
+end
+
 @testset "Polynomial differentiation and integration" begin
     x, y = variables(2; order = 5)
     p = 2 + x + 0.2y
