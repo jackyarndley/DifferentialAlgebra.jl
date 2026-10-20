@@ -129,7 +129,7 @@ It requires IntervalArithmetic, `rtol=0`, `guard_order=0` and
 `check_points=false` (selected automatically). Its callbacks accept Taylor-model
 inputs, and returned values retain their remainder and domain:
 
-```julia
+```@example certified_ads
 using DifferentialAlgebra, IntervalArithmetic
 box = fill(interval(Float64, -1, 1), 2)
 fit = adaptive_map(v -> (v[1]+v[2])^2, box;
@@ -165,7 +165,8 @@ truncated polynomial alone would not recover omitted terms.
 
 ### Oriented and polygonal splitting
 
-```julia
+```@example certified_polygon
+using DifferentialAlgebra, IntervalArithmetic
 fit = adaptive_map(v -> (v[1]+v[2])^2, [-1, -1], [1, 1];
                    estimator=IntervalBound(), splitter=:oriented,
                    order=1, atol=1//16)
@@ -298,9 +299,7 @@ the flow; choose the ODE solver's tolerances separately.
 
 Passing a tuple `(t0, tf)` selects a three-argument propagator:
 
-```julia
-advance(state, (tstart, tend), monitor)
-```
+`advance(state, (tstart, tend), monitor)`
 
 After each accepted step, call `monitor(state, time)`. A return value of
 `true` requests an immediate stop; `false` permits continuation. Return

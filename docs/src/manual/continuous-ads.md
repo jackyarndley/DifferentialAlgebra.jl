@@ -6,11 +6,11 @@ the original static function. It supports ordinary box ADS, interval box ADS
 and 2D oriented/polygon ADS. The original partition and its evaluation behavior
 are preserved.
 
-```julia
+```@example continuous_ordinary
 using DifferentialAlgebra, ForwardDiff
 f(v) = exp(v[1] + v[2]) + (v[1] - v[2])^2
-fit = adaptive_map(f, [-1., -1.], [1., 1.]; order=3, atol=1e-4)
-smooth = continuous_map(f, fit; continuity=:c2, order=4)
+fit = adaptive_map(f, [-1.0, -1.0], [1.0, 1.0]; order = 3, atol = 1e-4)
+smooth = continuous_map(f, fit; continuity = :c2, order = 4)
 smooth([0.2, -0.1])
 ForwardDiff.gradient(smooth, [0.2, -0.1])
 ForwardDiff.hessian(smooth, [0.2, -0.1])
@@ -73,16 +73,15 @@ ForwardDiff nor IntervalArithmetic and does not initialize an algebra.
 For ordinary sources, `smooth.error_estimate` reports the recomputed heuristic
 overlap indicators. For interval sources, use:
 
-```julia
+```@example continuous_certified
 using DifferentialAlgebra, IntervalArithmetic, ForwardDiff
 f(v) = (v[1] + v[2])^2
-fit = adaptive_map(f, fill(interval(-1,1),2);
-                   estimator=IntervalBound(), splitter=:oriented,
-                   order=1, atol=1//64)
-smooth = continuous_map(f, fit; continuity=:c2, atol=1//16)
-smooth([1//4,1//4])                 # Numeric surrogate S
+fit = adaptive_map(f, fill(interval(-1, 1), 2);
+    estimator = IntervalBound(), splitter = :oriented, order = 1, atol = 1//64)
+smooth = continuous_map(f, fit; continuity = :c2, atol = 1//16)
+smooth([1//4, 1//4])                # Numeric surrogate S
 smooth.error_bounds                 # Uniform original-function error f-S
-enclose(smooth, [1//4,1//4])         # Original function f at this point
+enclose(smooth, [1//4, 1//4])        # Original function f at this point
 enclose(smooth)                      # Original function f on the full domain
 ```
 

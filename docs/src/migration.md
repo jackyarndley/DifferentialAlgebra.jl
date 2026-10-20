@@ -16,8 +16,6 @@
   values as NG. Use `interval(value)`, `IntervalArithmetic.exact(value)`, or exact
   integers/rationals in model arithmetic and `IntervalBound` callbacks.
 
-From `24dc1a1`:
-
 - Compound analytic operations, integer powers (including negative literals),
   and polynomial exponentiation filter coefficients only after completing the
   result. The current task's tolerance and truncation order are unchanged.
@@ -26,8 +24,6 @@ From `24dc1a1`:
   norm types and stable accumulation are unchanged.
 - Diagonal polynomial eigenpairs derive scalar working types without a dense
   eigensolve; BigFloat and Rational{BigInt} diagonals need no optional solver.
-
-From `720b46c`:
 
 - Import `erf`, `erfc`, `gamma`, `loggamma`, `besselj`, `bessely`, `besseli`,
   `besselk`, `besselix`, and `besselkx` from SpecialFunctions. Their polynomial
@@ -44,8 +40,6 @@ From `720b46c`:
   to produce the requested result at the working order. Both `abs` branches
   discard terms above that order.
 
-From `17f74cc`:
-
 - Replace `push_order!`/`pop_order!` with exception-safe `with_order(order) do … end`.
 - Exponent and repeated calculus count vectors now require exactly one entry per
   variable, with nonnegative machine-sized counts. Pad omitted exponents with zeros
@@ -59,6 +53,9 @@ From `17f74cc`:
 - Derivative-preserving `round(p)` and `trunc(p)` are removed. Round
   `constant_term(p)` explicitly when a scalar result is intended. Julia's generic
   fallbacks do not provide polynomial rounding. `mod` retains its existing semantics.
+- Scalar conversion rejects nonconstant polynomials with `InexactError`; use
+  `constant_term(p)` to discard derivatives explicitly. Structural `isequal` and
+  `hash` include stored coefficients; ordinary `==` uses the constant part.
 - `float(p)` converts coefficients to match `float(typeof(p))`. Public storage
   constructors require concrete coefficient types. `TimeSeries(vector)` owns a
   vector of copied coefficients, including when given a view or range.

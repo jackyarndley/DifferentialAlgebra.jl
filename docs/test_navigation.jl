@@ -4,8 +4,6 @@ using Test
 # sidebar markup or requiring every standalone tutorial to produce a figure.
 function test_navigation(examples, buildroot, generated)
     buildroot = abspath(buildroot)
-    # deploydocs, rather than makedocs, writes these two version-selector files.
-    deployment_assets = (joinpath(buildroot, "siteinfo.js"), normpath(joinpath(buildroot, "..", "versions.js")))
     pagepath(name) = isfile(joinpath(buildroot, name * ".html")) ?
         joinpath(buildroot, name * ".html") : joinpath(buildroot, name, "index.html")
     @testset "Built catalog, local links and assets" begin
@@ -39,7 +37,7 @@ function test_navigation(examples, buildroot, generated)
                 path = first(split(href, r"[?#]"))
                 target = startswith(path, '/') ? joinpath(buildroot, path[2:end]) :
                     normpath(joinpath(dirname(page), path))
-                target in deployment_assets && continue
+                @test first(splitpath(relpath(target, buildroot))) != ".."
                 @test isfile(target) || isfile(joinpath(target, "index.html"))
             end
         end

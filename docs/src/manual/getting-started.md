@@ -46,7 +46,7 @@ chosen above, the following expression displays as `2.0 + 3.0 x - 1.0 y²`:
 Array displays use the same expressions. Julia's limited displays abbreviate
 long polynomials with `…`; `print(p)` or `string(p)` includes every term.
 Display is for reading, rather than a serialization format. Use
-`DifferentialAlgebra.monomials(p)` to inspect coefficient and exponent data.
+[`monomials(p)`](@ref monomials) to inspect coefficient and exponent data.
 
 ## Inspect and evaluate
 

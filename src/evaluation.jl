@@ -92,7 +92,7 @@ compile(a::TaylorPolynomial) = compile([a])
 Evaluate a compiled map into `result`. The three-argument method allocates
 intermediate storage and also supports composition. The four-argument method
 evaluates numerically into reusable buffers.
-`result` must have `DifferentialAlgebra.noutputs(map)` entries and `work` at least
+`result` must have `noutputs(map)` entries and `work` at least
 `DifferentialAlgebra.degree(map)+1` entries. Output, workspace and inputs must
 not overlap. The output and workspace have the same scalar element type.
 Scalar arithmetic may allocate even when these buffers are reused.

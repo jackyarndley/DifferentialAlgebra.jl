@@ -29,8 +29,8 @@ Keep their shared compatibility bounds aligned. The SciML minimums follow
 OrdinaryDiffEqCore 4.18: DiffEqBase 7.21.2 and SciMLBase 3.53. The standalone
 ForwardDiff extension supports 0.10.36 and 1; SciMLBase 3 requires ForwardDiff 1,
 so the integration environments retain that bound. IntervalArithmetic stays on
-1.0.12 or later 1.0 patches
-because the validated extension checks its internal rounding configuration;
+1.0.12 or later 1.0 patches because the validated extension checks its internal
+rounding configuration;
 review that check before allowing a new minor release. Benchmark setup uses
 `Pkg.develop(path=".")`, which also works on Julia 1.10.
 Separate CI jobs run the polygon and derivative tests with ForwardDiff 0.10.36

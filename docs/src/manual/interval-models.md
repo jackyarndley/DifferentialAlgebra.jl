@@ -1,7 +1,7 @@
 # Intervals and Taylor models
 
 Install and load the optional IntervalArithmetic dependency (compatible series
-`1.0.12` and later `1.x`). DifferentialAlgebra alone neither loads it nor
+`1.0.12` and later `1.0.x` patches). DifferentialAlgebra alone neither loads it nor
 initializes an algebra. TaylorSeries and TaylorModels are not dependencies.
 
 ```julia
@@ -58,7 +58,8 @@ coefficient tolerance never filters interval coefficients.
 
 Taylor models retain an absolute remainder and a validity domain:
 
-```julia
+```@example interval_models
+using DifferentialAlgebra, IntervalArithmetic
 box = [interval(Float64, -1//4, 1//4), interval(Float64, -1//8, 1//8)]
 x, y = taylor_models(box; order = 3, names = (:x, :y))
 m = exp(x + y) * cos(x * y)
@@ -213,7 +214,7 @@ form a valid model before it can be accepted. If splitting reaches a limit or
 roundoff while the domain failure remains, construction throws with the cause,
 including with `strict=false`; an invalid model has no inspectable error bound.
 
-```julia
+```@example interval_models
 f(v) = exp(v[1] + v[2]) * cos(v[1] * v[2])
 a = adaptive_map(f, box; estimator = IntervalBound(), order = 3, atol = 1e-5)
 a.converged
