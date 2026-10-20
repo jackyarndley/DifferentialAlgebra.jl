@@ -118,6 +118,9 @@ An output passes when
 where `s_j` is the largest absolute output at the center and checked points.
 `atol` can be a scalar or a vector with one entry per output. Use separate
 absolute tolerances for outputs with different units or scales.
+Signs, finiteness and one-based vector axes are checked before calling `f`.
+The output count and coefficient-type representability are checked once the
+callback establishes the output type and shape.
 
 `IntervalBound()` instead reevaluates the original expression with native
 Taylor models and accepts a patch only when a rigorous uniform absolute error

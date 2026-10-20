@@ -4,6 +4,50 @@ using IntervalArithmetic
 include("support/intervals.jl")
 using .IntervalTestSupport: DA, IA, IF, IB, subset, interval_contains, sameinterval
 
+@testset "Invalid tolerances reject before callback evaluation" begin
+    square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+    for geometry in (:box, :oriented, :polygon)
+        build(f; kwargs...) = geometry === :polygon ?
+            adaptive_map(f, square; kwargs...) :
+            adaptive_map(
+                f, [-1, -1], [1, 1];
+                splitter = geometry === :oriented ? :oriented : :tail, kwargs...
+            )
+        for estimator in (GuardedTail(), ExtrapolatedTail(), LastTerms(), IntervalBound())
+            for atol in (-1, 0, Inf, NaN, [-1], [0], [Inf], [NaN], Float64[])
+                calls = Ref(0)
+                f(v) = (calls[] += 1; v[1])
+                @test_throws ArgumentError build(f; estimator, atol)
+                @test iszero(calls[])
+            end
+        end
+        for atol in (
+                IA.interval(Float64, -1, 1), IA.interval(Float64, 0),
+                convert(IF, 0.125),
+            )
+            calls = Ref(0)
+            f(v) = (calls[] += 1; v[1])
+            @test_throws ArgumentError build(f; estimator = IntervalBound(), atol)
+            @test iszero(calls[])
+        end
+        for atol in (1 // 8, IA.interval(Float64, 1 // 8, 1 // 4), IA.exact(0.125))
+            fit = build(v -> v[1]; estimator = IntervalBound(), atol)
+            @test fit.converged
+        end
+        for estimator in (GuardedTail(), IntervalBound())
+            fit = build(v -> v[1]; estimator, atol = 1 // 8)
+            for atol in (-1, NaN, [0])
+                calls = Ref(0)
+                f(v) = (calls[] += 1; v[1])
+                @test_throws ArgumentError continuous_map(f, fit; atol)
+                @test iszero(calls[])
+            end
+        end
+    end
+    fit = adaptive_map(first, [-1.0], [1.0]; atol = 0, rtol = 0.001)
+    @test fit.converged && fit([0.25]) == 0.25
+end
+
 function contract_contains(parent::NamedTuple, child::NamedTuple)
     return all(parent.lower .<= child.lower) && all(child.upper .<= parent.upper)
 end

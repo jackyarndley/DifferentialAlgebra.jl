@@ -42,13 +42,21 @@ function validated_fit(f, inputs, reference, ctx, order)
     return (; payload = ValidatedFit(models), errors, scalar)
 end
 
+function DA.ads_check_tolerance(t::Interval, rtol, estimator)
+    estimator isa DA.IntervalBound ||
+        throw(ArgumentError("Interval tolerances require IntervalBound"))
+    checked_interval(t; guaranteed = true)
+    IA.inf(t) > 0 ||
+        throw(ArgumentError("Absolute tolerances must be finite and strictly positive"))
+    return nothing
+end
 function validated_tolerances(::Type{I}, atol, n) where {I <: Interval}
     values = atol isa Real ? fill(atol, n) : atol
     values isa AbstractVector && length(values) == n || throw(DimensionMismatch("Provide one absolute tolerance per output"))
     Base.require_one_based_indexing(values)
     return map(values) do t
         v = checked_interval(asinterval(I, t); guaranteed = true)
-        IA.inf(v) > 0 || throw(ArgumentError("Absolute tolerances must be finite and strictly positive"))
+        DA.ads_check_tolerance(v, 0, DA.IntervalBound())
         IA.inf(v) # Conservative comparison, including for nonbinary rationals.
     end
 end

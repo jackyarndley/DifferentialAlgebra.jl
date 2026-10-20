@@ -166,6 +166,7 @@ function continuous_map(
     validated = fit isa PiecewiseTaylorModel || fit isa PiecewisePolygonMap && fit._estimator isa IntervalBound
     validated == (estimator isa IntervalBound) || throw(ArgumentError("Use IntervalBound only with an interval source fit"))
     validated && check_points && throw(ArgumentError("IntervalBound does not use sampled acceptance"))
+    atol === nothing || ads_check_atol(atol, 0, estimator)
     layout = continuity_layout(fit)
     T = continuity_scalar_type(fit)
     options = (; order = Int(order), T, check_points)

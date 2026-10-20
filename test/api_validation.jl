@@ -9,6 +9,15 @@ Base.size(v::ShiftedVector) = size(v.data)
 Base.axes(v::ShiftedVector) = (0:(length(v) - 1),)
 Base.getindex(v::ShiftedVector, i::Int) = v.data[i + 1]
 
+@testset "Tolerance axes are checked before callbacks" begin
+    calls = Ref(0)
+    f(v) = (calls[] += 1; v[1])
+    @test_throws ArgumentError adaptive_map(
+        f, [0.0], [1.0]; atol = ShiftedVector([0.001])
+    )
+    @test iszero(calls[])
+end
+
 @testset "Checked dimensions and coefficient storage" begin
     x, y = variables(2; order = 4)
     for counts in ([1], [1, 0, 0])

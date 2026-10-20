@@ -33,6 +33,25 @@ function ads_check_order(order, guard_order, estimator)
     return nothing
 end
 
+function ads_check_tolerance(t::Real, rtol, estimator)
+    t isa TaylorPolynomial &&
+        throw(ArgumentError("Absolute tolerances must be numeric scalars, not polynomials"))
+    isfinite(t) && t >= 0 ||
+        throw(ArgumentError("atol must be finite and nonnegative"))
+    (t > 0 || (!(estimator isa IntervalBound) && rtol > 0)) ||
+        throw(ArgumentError("Each output needs a positive tolerance"))
+    return nothing
+end
+function ads_check_atol(atol, rtol, estimator)
+    atol isa Real && return ads_check_tolerance(atol, rtol, estimator)
+    atol isa AbstractVector{<:Real} ||
+        throw(ArgumentError("atol must be a real scalar or vector"))
+    Base.require_one_based_indexing(atol)
+    isempty(atol) && throw(ArgumentError("Provide an absolute tolerance for each output"))
+    foreach(t -> ads_check_tolerance(t, rtol, estimator), atol)
+    return nothing
+end
+
 function ads_options(;
         order, atol, rtol, estimator, splitter, guard_order, max_depth, max_patches,
         check_points, strict, splitters = (:tail, :width)
@@ -43,6 +62,7 @@ function ads_options(;
     isfinite(rtol) && rtol >= 0 || throw(ArgumentError("rtol must be finite and nonnegative"))
     estimator isa IntervalBound && (!iszero(rtol) || check_points) &&
         throw(ArgumentError("IntervalBound uses positive absolute bounds, no guard degrees and no sampled acceptance"))
+    ads_check_atol(atol, rtol, estimator)
     return (;
         order = Int(order), working_order = Int(order + guard_order), atol, rtol,
         estimator, splitter, max_depth = Int(max_depth), max_patches = Int(max_patches),

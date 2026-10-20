@@ -217,8 +217,7 @@ function ads_tolerances(::Type{C}, atol, rtol, n) where {C}
     atol isa Union{Real, AbstractVector{<:Real}} || throw(ArgumentError("atol must be a real scalar or vector"))
     a = atol isa Real ? fill(C(atol), n) : C.(collect(atol))
     length(a) == n || throw(DimensionMismatch("Provide one absolute tolerance per output"))
-    all(t -> isfinite(t) && t >= 0, a) || throw(ArgumentError("atol must be finite and nonnegative"))
-    all(t -> t > 0 || C(rtol) > 0, a) || throw(ArgumentError("Each output needs a positive tolerance"))
+    ads_check_atol(a, C(rtol), GuardedTail())
     isfinite(C(rtol)) || throw(ArgumentError("rtol is not representable in the coefficient type"))
     return a
 end
