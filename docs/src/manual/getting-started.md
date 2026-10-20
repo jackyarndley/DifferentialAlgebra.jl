@@ -80,8 +80,13 @@ constant_term(gradient(p))
 
 ## Compare polynomials
 
-Scalar comparisons use the constant part. `coefficient_norm(p)` and `iszero(p)`
-inspect all stored coefficients. Subtraction applies the current order and
+Arithmetic comparisons (`==`, `<`, `<=`, `>`, `>=` and `isless`) use the constant
+part, so scalar branch conditions can be reused in differentiated code.
+`isequal` and `hash` use the complete coefficient sequence and coordinate
+dimension; sets and dictionaries distinguish different polynomials. Structural
+identity remains available after reinitialization. Avoid mutating dictionary
+keys. `iszero`, `isone`, `isinteger` and `coefficient_norm` inspect the complete
+polynomial. Subtraction applies the current order and
 coefficient tolerance, so `coefficient_norm(p - q)` measures the resulting
 truncated, filtered difference. To compare every stored coefficient of two
 polynomials in the same algebra, inspect coefficients before subtracting scalars:

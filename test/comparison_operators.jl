@@ -79,3 +79,24 @@ end
     @test coefficient(C[1], [2, 0]) == 1
     @test coefficient(C[2], [1, 1]) == 1
 end
+
+@testset "Structural collection identity" begin
+    x, y = variables(2; order = 3)
+    @test x == y && x == 0
+    @test !isequal(x, y) && !isequal(x, 0)
+    @test length(Set([x, y, x^2])) == 3
+    @test length(unique([x, y])) == 2
+    values = Dict(x => :x, y => :y, x^2 => :square)
+    @test values[x] === :x && values[y] === :y
+    @test isequal(x, copy(x))
+    @test hash(x) == hash(copy(x))
+    @test isequal(TaylorPolynomial(1), 1)
+    @test hash(TaylorPolynomial(1)) == hash(1)
+    @test isequal(TaylorPolynomial(NaN), TaylorPolynomial(NaN))
+    before = hash(x)
+    variables(1; order = 2)
+    @test hash(x) == before
+    @test values[x] === :x
+    @test !isequal(x, variable(1)) # Different coordinate dimensions.
+    @test_throws ArgumentError x + 1
+end

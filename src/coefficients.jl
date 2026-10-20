@@ -4,25 +4,33 @@
 A coefficient and its vector of nonnegative integer exponents.
 `Monomial{T}` converts the coefficient to concrete type `T`. Integer exponents
 are checked before conversion to `UInt32`. Retrieve monomials from a polynomial
-with `DifferentialAlgebra.monomials(p)`.
+with `monomials(p)`. Monomials own their exponent storage and compare
+coefficients and exponent vectors structurally.
 """
 struct Monomial{T <: Real}
     coefficient::T
     exponents::Vector{UInt32}
-    function Monomial{T}(coefficient::T, exponents::Vector{UInt32}) where {T <: Real}
+    function Monomial{T}(
+            coefficient::T, exponents::AbstractVector{<:Integer}
+        ) where {T <: Real}
         isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
-        return new{T}(coefficient, exponents)
+        Base.require_one_based_indexing(exponents)
+        all(p -> 0 <= p <= typemax(UInt32), exponents) ||
+            throw(ArgumentError("Exponents must fit UInt32"))
+        return new{T}(coefficient, UInt32[p for p in exponents])
     end
 end
 function Monomial{T}(c::Real, powers::AbstractVector{<:Integer}) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
-    Base.require_one_based_indexing(powers)
-    all(p -> 0 <= p <= typemax(UInt32), powers) || throw(ArgumentError("Exponents must fit UInt32"))
-    return Monomial{T}(coefficient_convert(T, c), UInt32[p for p in powers])
+    return Monomial{T}(coefficient_convert(T, c), powers)
 end
 Monomial(c::T, powers::AbstractVector{<:Integer}) where {T <: Real} = Monomial{T}(c, powers)
 Monomial{T}() where {T <: Real} = Monomial{T}(zero(T), zeros(UInt32, nvariables()))
 Monomial() = Monomial{Float64}()
+Base.:(==)(a::Monomial, b::Monomial) =
+    coefficient_isequal(a.coefficient, b.coefficient) && a.exponents == b.exponents
+Base.isequal(a::Monomial, b::Monomial) = a == b
+Base.hash(m::Monomial, h::UInt) = hash(m.exponents, hash(m.coefficient, h))
 coefficient(m::Monomial) = m.coefficient
 """
     exponents(m::Monomial)
@@ -38,7 +46,9 @@ exponents(m::Monomial) = copy(m.exponents)
 Highest total degree present in a polynomial or compiled map; for a monomial,
 the sum of its exponents. The zero polynomial has degree zero.
 """
-degree(m::Monomial) = sum(m.exponents)
+degree(m::Monomial) = foldl(
+    (total, power) -> Base.Checked.checked_add(total, Int(power)), m.exponents; init = 0
+)
 degree(p::TaylorPolynomial) = valid(p).basis.degrees[p.len]
 function checked_counts(counts::AbstractVector{<:Integer}, basis::MonomialBasis; limit::Int = basis.order)
     Base.require_one_based_indexing(counts)

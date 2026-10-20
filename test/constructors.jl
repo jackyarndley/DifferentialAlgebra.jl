@@ -35,3 +35,19 @@ end
     @test_throws ArgumentError Monomial{Real}(2, [1])
     @test_throws InexactError Monomial{Int}(1.5, [1])
 end
+
+@testset "Monomial identity, degree and exponent ownership" begin
+    x, = variables(1; order = 3)
+    @test monomials(1 + x + x^2) == monomials(1 + x + x^2)
+    powers = UInt32[1, 2]
+    m = Monomial(3.0, powers)
+    powers[1] = 9
+    @test exponents(m) == UInt32[1, 2]
+    @test m == Monomial(3, [1, 2])
+    @test isequal(m, Monomial(3, [1, 2]))
+    @test hash(m) == hash(Monomial(3, [1, 2]))
+    @test length(Set([m, Monomial(3, [1, 2])])) == 1
+    @test degree(m) === 3
+    @test degree(Monomial(1.0, [0, 0])) - 1 === -1
+    @test degree(Monomial(1.0, UInt32[])) === 0
+end

@@ -199,6 +199,7 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 @inline coefficient_iszero(c::Real) = iszero(c)
 @inline coefficient_isone(c::Real) = isone(c)
 @inline coefficient_isinteger(c::Real) = isinteger(c)
+@inline coefficient_isequal(a::Real, b::Real) = isequal(a, b)
 @inline coefficient_convert(::Type{T}, c::Real) where {T <: Real} = convert(T, c)
 @inline coefficient_operand(::Type{T}, c::Real) where {T <: Real} = c
 @inline degree_factor(c::Real, n::Integer) = n

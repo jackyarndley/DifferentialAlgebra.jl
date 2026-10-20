@@ -67,15 +67,35 @@ Base.isinteger(a::TaylorPolynomial) =
 Base.isnan(a::TaylorPolynomial) = (valid(a); any(isnan, @view a.coeffs[1:a.len]))
 Base.isinf(a::TaylorPolynomial) = (valid(a); any(isinf, @view a.coeffs[1:a.len]))
 Base.isfinite(a::TaylorPolynomial) = !isnan(a) && !isinf(a)
-Base.hash(a::TaylorPolynomial, h::UInt) = hash(constant_term(a), h)
-for op in (:(==), :<, :<=, :>, :>=, :isless, :isequal)
+# Structural identity remains available after reinitialization, so dictionary
+# keys do not become unhashable when numerical use of their algebra expires.
+function Base.hash(a::TaylorPolynomial, h::UInt)
+    a.len == 1 && return hash(a.coeffs[1], h)
+    return hash((a.algebra.basis.variables, @view(a.coeffs[1:a.len])), h)
+end
+function Base.isequal(a::TaylorPolynomial, b::TaylorPolynomial)
+    a.len == b.len || return false
+    a.len > 1 && a.algebra.basis.variables != b.algebra.basis.variables && return false
+    return all(i -> coefficient_isequal(a.coeffs[i], b.coeffs[i]), 1:a.len)
+end
+Base.isequal(a::TaylorPolynomial, b::Real) =
+    a.len == 1 && coefficient_isequal(a.coeffs[1], b)
+Base.isequal(a::Real, b::TaylorPolynomial) = isequal(b, a)
+for S in (:AbstractFloat, :AbstractIrrational)
+    @eval begin
+        Base.isequal(a::TaylorPolynomial, b::$S) =
+            a.len == 1 && coefficient_isequal(a.coeffs[1], b)
+        Base.isequal(a::$S, b::TaylorPolynomial) = isequal(b, a)
+    end
+end
+for op in (:(==), :<, :<=, :>, :>=, :isless)
     @eval begin
         Base.$op(a::TaylorPolynomial, b::TaylorPolynomial) = Base.$op(constant_term(a), constant_term(b))
         Base.$op(a::TaylorPolynomial, b::Real) = Base.$op(constant_term(a), b)
         Base.$op(a::Real, b::TaylorPolynomial) = Base.$op(a, constant_term(b))
     end
 end
-for op in (:isless, :isequal, :(==))
+for op in (:isless, :(==))
     for S in (:AbstractFloat, :AbstractIrrational)
         @eval begin
             Base.$op(a::TaylorPolynomial, b::$S) = Base.$op(constant_term(a), b)

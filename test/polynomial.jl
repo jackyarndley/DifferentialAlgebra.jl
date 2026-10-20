@@ -92,7 +92,7 @@ end
         @test iszero(sqrt(TaylorPolynomial())) && iszero(cbrt(TaylorPolynomial()))
         @test iszero(hypot(TaylorPolynomial(), TaylorPolynomial()))
         @test isless(1.0, p) && !isless(p, 1.0)
-        @test isequal(2.0, p) && isequal(p, 2.0)
+        @test !isequal(2.0, p) && !isequal(p, 2.0)
         @test (p == π) == (π == p) == false
         @test !iszero(x) && x == 0 # Scalar comparisons use the constant part.
         @test !iszero(TaylorPolynomial(NaN)) && !iszero(TaylorPolynomial(Inf))

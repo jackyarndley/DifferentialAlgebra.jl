@@ -72,6 +72,11 @@ end
         @test !isinteger(TaylorPolynomial{I}(IA.interval(T, 1, 2)))
         nonguaranteed_one = TaylorPolynomial{I}(convert(I, 1.0))
         @test !isone(nonguaranteed_one)
+        @test isequal(nonguaranteed_one, copy(nonguaranteed_one))
+        @test !isequal(nonguaranteed_one, one(x))
+        @test !isequal(one(x), 1)
+        @test isequal(IA.interval(T, -1, 1) * x, IA.interval(T, -1, 1) * x)
+
         @test !IA.isguaranteed(coefficient(nonguaranteed_one * x, [1, 0]))
         z = IA.interval(T, -1, 1)
         p = z * x

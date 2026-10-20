@@ -22,6 +22,11 @@ DA.coefficient_iszero(c::Interval) = IA.isthinzero(c) && IA.isguaranteed(c) && I
 DA.coefficient_isone(c::Interval) = IA.isthin(c) && IA.inf(c) == 1 &&
     IA.isguaranteed(c) && IA.decoration(c) == IA.com
 DA.coefficient_isinteger(c::Interval) = IA.isthin(c) && isinteger(IA.inf(c))
+DA.coefficient_isequal(a::Interval, b::Interval) =
+    IA.isequal_interval(a, b) && IA.decoration(a) == IA.decoration(b) &&
+    IA.isguaranteed(a) == IA.isguaranteed(b)
+DA.coefficient_isequal(::Interval, ::Real) = false
+DA.coefficient_isequal(::Real, ::Interval) = false
 DA.coefficient_convert(::Type{Interval{T}}, c::Union{Integer, Rational}) where {T <: IA.NumTypes} = IA.interval(T, c)
 DA.coefficient_convert(::Type{Interval{T}}, c::IA.ExactReal) where {T <: IA.NumTypes} = asinterval(Interval{T}, c)
 DA.coefficient_operand(::Type{Interval{T}}, c::Real) where {T <: IA.NumTypes} = DA.coefficient_convert(Interval{T}, c)
