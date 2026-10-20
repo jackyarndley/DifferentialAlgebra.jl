@@ -21,7 +21,8 @@ the declared normalized box. The retained total degree is fixed at construction.
 The three-argument constructor asserts the supplied remainder for the stored
 polynomial in the reference coordinates. It cannot certify an unknown generating
 function's truncation error. There is deliberately no automatic polynomial-to-model
-conversion or implicit zero remainder. Constants denote their stored real values.
+conversion or implicit zero remainder. Integer and rational constants are exact;
+floating constants need an explicit interval or `ExactReal` declaration.
 
 Construction and `copy` own coefficient storage. Accessors return independent
 copies (including BigFloat endpoints); internal fields are read-only implementation

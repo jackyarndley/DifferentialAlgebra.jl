@@ -124,11 +124,11 @@ accuracy_fig
 # changing its ADS estimator. Instead compare all four estimators on related
 # explicit two-body diagnostics of the same initial-position box. These are
 # initial energy, periapsis, apoapsis and period/(2π), with μ=1. The 1.1 literal
-# denotes its stored binary value throughout, including validated calculations.
+# is explicitly declared exact as a stored binary value for validated calculations.
 using IntervalArithmetic
 function orbit_diagnostics(v)
     x, y = v
-    speed = zero(x) + 1.1
+    speed = zero(x) + IntervalArithmetic.exact(1.1)
     radius = sqrt(x^2 + y^2)
     energy = speed^2 / 2 - 1 / radius
     h = x * speed

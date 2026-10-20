@@ -83,16 +83,23 @@ than the decimal real `1/10`. Use `interval(1//10)` or `I"0.1"` to enclose that
 decimal real. Already-rounded ordinary coefficients cannot recover earlier
 rounding or truncation errors.
 
-The explicit operations `enclose` and `TaylorModel(value, reference)` use those
-declared stored-value semantics. Exact integers, rationals and internal degree
-factors use explicit interval construction. Ordinary mixed float arithmetic on
+`enclose(p, box)` applies those stored-value semantics to the coefficients of
+an existing polynomial. Model scalar construction and arithmetic follow the
+coefficient conversion hooks: exact integers, rationals and internal degree
+factors use explicit interval construction; an implicit floating operand is NG
+and is rejected. Declare a floating constant explicitly with `interval(0.1)`
+or `IntervalArithmetic.exact(0.1)`, or use `1//10` for the exact decimal value.
+For example, use `x * interval(0.1)` instead of `x * 0.1` inside a model or
+`IntervalBound` callback. Ordinary mixed float arithmetic on
 interval-coefficient polynomials follows IntervalArithmetic's implicit conversion
 semantics and may produce NG; for example `0.1 * variable(1, Interval{Float64})`.
 Use an explicitly constructed interval scalar to keep its guarantee.
 `TaylorPolynomial{Interval{Float64}}(0.1)` also preserves the NG conversion flag.
 Converting or reconstructing an existing interval never repairs NG or upgrades
 its decoration. Polynomial enclosure preserves flags; model construction and
-arithmetic reject NG or invalid/degraded data.
+arithmetic reject NG and invalid or loose-evaluation intervals. Valid `def` and
+`dac` decorations propagate through coordinates, including fixed axes, and range
+queries never upgrade the input domain's decoration.
 
 See IntervalArithmetic's [guarantee rules](https://juliaintervals.github.io/IntervalArithmetic.jl/stable/manual/guarantee/)
 and [interval construction](https://juliaintervals.github.io/IntervalArithmetic.jl/stable/manual/construction/).

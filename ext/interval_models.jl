@@ -112,7 +112,7 @@ end
 function TaylorModel(value::Real, reference::TaylorModel{I}) where {I <: Interval}
     model_context(reference)
     value isa TaylorPolynomial && throw(ArgumentError("Supply an explicit absolute remainder when constructing a model from a polynomial"))
-    c = checked_interval(asinterval(I, value); guaranteed = true)
+    c = checked_interval(DA.coefficient_convert(I, value); guaranteed = true)
     p = TaylorPolynomial{I}(deepcopy(c))
     return model_result(p, zero(I), reference._coordinates, reference._order)
 end
@@ -122,7 +122,7 @@ function TaylorModel(p::TaylorPolynomial, r::Real, reference::TaylorModel{I}) wh
     DA.degree(p) <= reference._order || throw(ArgumentError("Polynomial exceeds the retained model order; no implicit truncation is allowed"))
     coeffs = [deepcopy(checked_interval(asinterval(I, p.coeffs[k]); guaranteed = true)) for k in 1:p.len]
     owned = TaylorPolynomial{I}(coeffs, p.len, p.algebra)
-    return model_result(owned, deepcopy(checked_interval(asinterval(I, r); guaranteed = true)), reference._coordinates, reference._order)
+    return model_result(owned, deepcopy(checked_interval(DA.coefficient_convert(I, r); guaranteed = true)), reference._coordinates, reference._order)
 end
 
 function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box; point = false) where {I <: Interval}

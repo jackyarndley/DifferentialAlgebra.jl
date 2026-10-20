@@ -1,5 +1,11 @@
 # API migrations
 
+## 0.2.0 (unreleased)
+
+- Taylor-model scalar operands and explicit remainders reject implicit floating
+  values as NG. Use `interval(value)`, `IntervalArithmetic.exact(value)`, or exact
+  integers/rationals in model arithmetic and `IntervalBound` callbacks.
+
 From `24dc1a1`:
 
 - Compound analytic operations, integer powers (including negative literals),
@@ -20,7 +26,8 @@ From `720b46c`:
   Converting `Monomial{T}(coefficient, integer_exponents)` constructors are restored;
   negative exponents and values beyond `UInt32` are rejected.
 - `eigenpairs` requires symmetry for scalar and polynomial matrices, inspecting
-  all stored coefficients. Polynomial outputs use the scalar eigensolver's types.
+  coefficients through the working order. Polynomial outputs use the scalar
+  eigensolver's types.
 - Horner composition, normalization, quotient construction, and repeated
   derivatives preserve intermediate coefficients until filtering the completed result.
   Repeated derivatives and Hessians retain intermediate degrees needed

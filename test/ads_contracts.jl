@@ -58,7 +58,7 @@ contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
             # Every coordinate's rounded midpoint equals an endpoint. Exact
             # polygon area is positive, but no representable fitted cut remains.
             lo, hi = [1.0, 1.0], fill(nextfloat(1.0), 2)
-            narrow(v) = exp((v[1] - 1) / eps())
+            narrow(v) = exp((v[1] - 1) / IA.exact(eps()))
             roundoff = polygon ?
                 adaptive_map(narrow, DA.polygon_box(lo, hi); estimator, directions = :axes, order = 2, atol = 1.0e-12, check_points = false, strict = false) :
                 adaptive_map(narrow, lo, hi; estimator, order = 2, atol = 1.0e-12, check_points = false, strict = false)

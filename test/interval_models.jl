@@ -459,3 +459,38 @@ end
         @test IA.decoration(enclose(compile(TaylorModel(1, x)))) == IA.def
     end
 end
+
+@testset "Model scalar operands require an explicit guarantee" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, = taylor_models([IA.interval(T, -1, 1)]; order = 3, table_bytes = budget)
+        for value in (0.1f0, 0.1, BigFloat("0.1"), 0.0, 1.0)
+            @test_throws ArgumentError TaylorModel(value, x)
+            @test_throws ArgumentError TaylorModel(polynomial(x), value, x)
+            for op in (+, -, *, /)
+                @test_throws ArgumentError op(x, value)
+                @test_throws ArgumentError op(value, x)
+            end
+        end
+        for value in (1, 1 // 10, IA.interval(T, 0.1), IA.exact(0.1))
+            m = TaylorModel(value, x)
+            @test IA.isguaranteed(enclose(m))
+            @test IA.isguaranteed(enclose(x * value))
+            @test IA.isguaranteed(enclose(value + x))
+        end
+        @test IA.isguaranteed(evaluate(x, [0.25]))
+        @test_throws ArgumentError adaptive_map(
+            v -> 0.1v[1], [IA.interval(T, -1, 1)];
+            estimator = IntervalBound(), order = 3, atol = 1 // 100
+        )
+        @test_throws ArgumentError adaptive_map(
+            v -> 0.1, [IA.interval(T, -1, 1)];
+            estimator = IntervalBound(), order = 3, atol = 1 // 100
+        )
+        fit = adaptive_map(
+            v -> IA.exact(0.1) * v[1], [IA.interval(T, -1, 1)];
+            estimator = IntervalBound(), order = 3, atol = 1 // 100
+        )
+        @test fit.converged && length(fit.patches) == 1
+        @test interval_contains(fit([1]), Rational{BigInt}(0.1))
+    end
+end
