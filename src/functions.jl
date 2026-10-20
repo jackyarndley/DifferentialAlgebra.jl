@@ -520,7 +520,9 @@ function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where 
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
     x = constant_term(a)
     coefficient_iszero(x) &&
-        fn in (SpecialFunctions.bessely, SpecialFunctions.besselk, SpecialFunctions.besselkx) &&
+        fn in (
+        SpecialFunctions.bessely, SpecialFunctions.besselk, SpecialFunctions.besselkx,
+    ) &&
         throw(TaylorError("Bessel expansion is singular at zero"))
     c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
     a.len == 1 && return TaylorPolynomial(c0)

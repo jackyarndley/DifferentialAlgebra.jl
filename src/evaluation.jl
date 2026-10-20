@@ -244,6 +244,11 @@ function evaluate(a::TaylorPolynomial{T}, args::AbstractVector{<:Real}) where {T
     any(x -> x isa TaylorPolynomial, args) && return only(evaluate(compile(a), args))
     basis = valid(a).basis
     R = evaluation_type(T, args)
+    # Reuse the basis traversal when it costs less than rebuilding each nonzero
+    # monomial from its powers. Neither path constructs a compiled snapshot.
+    terms = count(!coefficient_iszero, @view(a.coeffs[1:a.len]))
+    terms * basis.variables >= length(basis.traversal) &&
+        return evaluate_dense(a, args, R)
     value = convert(R, coefficient_operand(R, a.coeffs[1]))
     @inbounds for k in 2:a.len
         c = a.coeffs[k]
@@ -259,6 +264,22 @@ function evaluate(a::TaylorPolynomial{T}, args::AbstractVector{<:Real}) where {T
             monomial *= coefficient_power(coefficient_operand(R, args[v]), power)
         end
         value += monomial * coefficient_operand(R, c)
+    end
+    return value
+end
+function evaluate_dense(a::TaylorPolynomial, args, ::Type{R}) where {R}
+    basis = a.algebra.basis
+    work = Vector{R}(undef, basis.degrees[a.len] + 1)
+    work[1] = one(R)
+    value = convert(R, coefficient_operand(R, a.coeffs[1]))
+    @inbounds for k in basis.traversal
+        (k == 1 || k > a.len) && continue
+        depth, variable = basis.degrees[k], basis.factors[k]
+        work[depth + 1] = variable <= length(args) ?
+            work[depth] * coefficient_operand(R, args[variable]) : zero(R)
+        c = a.coeffs[k]
+        coefficient_iszero(c) && continue
+        value += work[depth + 1] * coefficient_operand(R, c)
     end
     return value
 end

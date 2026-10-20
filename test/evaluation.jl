@@ -14,6 +14,18 @@ using .IntervalTestSupport: IA, interval_contains
     end
 end
 
+@testset "Dense evaluation uses the stored basis traversal" begin
+    for budget in (0, 32 * 1024^2)
+        x = variables(6; order = 10, table_bytes = budget)
+        p = (1 + sum(x) / 8)^10
+        point = fill(0.1, 6)
+        @test @inferred(p(point)) ≈ (1 + sum(point) / 8)^10 rtol = 80eps(Float64)
+        @test p(Float64[]) == 1
+        @test p([1.0]) ≈ (1 + 1 / 8)^10
+        @test p([point; 100]) == p(point)
+    end
+end
+
 @testset "Direct numeric evaluation" begin
     for T in (Float32, Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
         x, y, z = variables(T, 3; order = 4, table_bytes = budget)
