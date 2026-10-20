@@ -36,6 +36,49 @@ include("support/series.jl")
     end
 end
 
+@testset "Promoted analytic intermediates" begin
+    for budget in (0, 32 * 1024^2)
+        for T in (
+                UInt8, UInt64, UInt128, Rational{UInt8}, Rational{UInt64},
+                Rational{UInt128},
+            )
+            x, = variables(T, 1; order = 4, table_bytes = budget)
+            denominator = T(3) * one(x) + x
+            for result in (inv(denominator), one(T) / denominator)
+                for k in 0:4
+                    # The geometric series is independent of either DA kernel.
+                    expected = (-big(1))^k // big(3)^(k + 1)
+                    @test coefficient(result, [k]) ≈ expected
+                end
+            end
+            @test constant_term(-1 / TaylorPolynomial{T}(T(3))) ≈ -1 // 3
+            @test coefficient(denominator, [1]) == 1
+        end
+        setprecision(256) do
+            x, = variables(1; order = 6, table_bytes = budget)
+            denominator = 3 + x
+            exponent = BigFloat(3) / 7
+            for (result, power, scale) in (
+                    (BigFloat(2) / denominator, -one(BigFloat), BigFloat(2)),
+                    (denominator^exponent, exponent, one(BigFloat)),
+                )
+                @test coefficient_type(result) === BigFloat
+                expected = setprecision(512) do
+                    p = BigFloat(power)
+                    [
+                        BigFloat(scale) * big(3)^p *
+                            prod(p - j for j in 0:(k - 1); init = one(p)) /
+                            (big(3)^k * factorial(big(k))) for k in 0:6
+                    ]
+                end
+                for k in 0:6
+                    @test coefficient(result, [k]) ≈ expected[k + 1] rtol = 64eps(BigFloat)
+                end
+            end
+        end
+    end
+end
+
 @testset "Univariate analytic coefficients" begin
     order = 10
     # Exact scalar formulas supply the oracle, including Bernoulli numbers for

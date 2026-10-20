@@ -135,10 +135,10 @@ end
 Base.log(::Irrational{:ℯ}, a::TaylorPolynomial) = log(a)
 
 function power_series(a::TaylorPolynomial, p::Real, c0; filter::Bool = true)
-    x = constant_term(a)
+    T = promote_type(coefficient_type(a), typeof(c0), typeof(p))
+    x = coefficient_convert(T, constant_term(a))
     coefficient_iszero(x) && throw(TaylorError("Noninteger powers require a nonzero expansion point"))
     !isempty(a.algebra.basis.products) && return recurrence(a, c0, p, Val(:power); filter)
-    T = promote_type(typeof(c0), typeof(p))
     c = Vector{T}(undef, working_order(a.algebra) + 1); c[1] = c0
     @inbounds for k in 1:(length(c) - 1)
         c[k + 1] = c[k] * (p - degree_factor(p, k - 1)) / degree_factor(c[k], k)
@@ -185,23 +185,26 @@ function quotient(a::Real, b::TaylorPolynomial; filter::Bool = true)
     ctx = a isa TaylorPolynomial ? compatible(a, b) : valid(b)
     b0 = constant_term(b)
     !invertible_constant(b0) && throw(TaylorError("Division requires a denominator constant excluding zero"))
+    T = promote_type(
+        a isa TaylorPolynomial ? coefficient_type(a) : typeof(a), coefficient_type(b)
+    )
+    T = negative_coefficient_type(typeof(one(T) / one(T)))
     if b.len == 1
         if a isa TaylorPolynomial
-            R = promote_type(coefficient_type(a), typeof(b0))
-            return scaled(a, inv(coefficient_convert(R, b0)); filter)
+            return scaled(a, inv(coefficient_convert(T, b0)); filter)
         end
-        numerator = coefficient_operand(promote_type(typeof(a), typeof(b0)), a)
-        result = numerator / b0
+        numerator = coefficient_operand(T, a)
+        result = numerator / coefficient_convert(T, b0)
         return finish!(TaylorPolynomial{typeof(result)}([result], 1, ctx), 1; filter)
     end
     basis = ctx.basis
     if isempty(basis.products)
-        reciprocal = power_series(b, -one(b0), inv(b0); filter = false)
+        reciprocal = power_series(
+            b, -one(T), inv(coefficient_convert(T, b0)); filter = false
+        )
         return a isa TaylorPolynomial ? product(a, reciprocal; filter) :
             scaled(reciprocal, a; filter)
     end
-    T = promote_type(a isa TaylorPolynomial ? coefficient_type(a) : typeof(a), coefficient_type(b))
-    T = typeof(one(T) / one(T))
     n = basis.ends[working_order(ctx) + 1]
     result = allocate_undef(ctx, T, n)
     result.coeffs[1] = coefficient_operand(T, constant_term(a)) / b0
