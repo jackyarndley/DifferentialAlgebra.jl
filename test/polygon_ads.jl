@@ -2,6 +2,8 @@ using Test, DifferentialAlgebra
 using LinearAlgebra
 using ForwardDiff
 
+include("support/processes.jl")
+
 @testset "Promoted polygon queries and coefficient derivatives" begin
     polygon = ConvexPolygon([(-4, -4), (4, -4), (4, 4), (-4, 4)])
     for budget in (0, 32 * 1024^2)
@@ -116,8 +118,22 @@ end
     @test_throws ArgumentError adaptive_map(v -> (set_coefficient_tolerance!(1); v[1]), square; directions = :axes)
     @test_throws ArgumentError adaptive_map(v -> (set_truncation_order!(1); v[1]), square; directions = :axes)
     # Ordinary polygon geometry works without loading the optional extension.
-    script = "using DifferentialAlgebra; @assert !DifferentialAlgebra.isinitialized(); a=adaptive_map(v->v[1]+v[2],[-1,-1],[1,1];splitter=:oriented,order=1); @assert a([0.5,0.25])==0.75; @assert !DifferentialAlgebra.isinitialized(); @assert !any(m->nameof(m)==:IntervalArithmetic,values(Base.loaded_modules)); try adaptive_map(identity,[-1,-1],[1,1];estimator=IntervalBound()); error(\"missing failure\"); catch e; @assert e isa ArgumentError; end"
-    @test success(`$(Base.julia_cmd()) --startup-file=no --project=$(dirname(Base.active_project())) -e $script`)
+    script = raw"""
+    using DifferentialAlgebra
+    @assert !DifferentialAlgebra.isinitialized()
+    a = adaptive_map(v -> v[1] + v[2], [-1, -1], [1, 1];
+        splitter = :oriented, order = 1)
+    @assert a([0.5, 0.25]) == 0.75
+    @assert !DifferentialAlgebra.isinitialized()
+    @assert !any(m -> nameof(m) == :IntervalArithmetic, values(Base.loaded_modules))
+    try
+        adaptive_map(identity, [-1, -1], [1, 1]; estimator = IntervalBound())
+        error("missing extension failure")
+    catch err
+        @assert err isa ArgumentError
+    end
+    """
+    @test fresh_julia(script)
 end
 
 @testset "Thin polygon covers round outward" begin

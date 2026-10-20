@@ -1,17 +1,35 @@
 using Test, DifferentialAlgebra
 using IntervalArithmetic, LinearAlgebra
 
+include("support/processes.jl")
+
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinterval, guaranteed_coefficients
 
 @testset "Optional extension and loading" begin
     @test Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt) !== nothing
     for script in (
-            "using DifferentialAlgebra; @assert !DifferentialAlgebra.isinitialized(); @assert !any(m -> nameof(m) == :IntervalArithmetic, values(Base.loaded_modules)); using IntervalArithmetic; @assert !DifferentialAlgebra.isinitialized()",
-            "using IntervalArithmetic; using DifferentialAlgebra; @assert !DifferentialAlgebra.isinitialized()",
-            "using DifferentialAlgebra; x,=variables(1;order=2); using IntervalArithmetic; @assert degree(x*x)==2; @assert truncation_order()==2",
+            raw"""
+            using DifferentialAlgebra
+            @assert !DifferentialAlgebra.isinitialized()
+            @assert !any(m -> nameof(m) == :IntervalArithmetic,
+                values(Base.loaded_modules))
+            using IntervalArithmetic
+            @assert !DifferentialAlgebra.isinitialized()
+            """,
+            raw"""
+            using IntervalArithmetic, DifferentialAlgebra
+            @assert !DifferentialAlgebra.isinitialized()
+            """,
+            raw"""
+            using DifferentialAlgebra
+            x, = variables(1; order = 2)
+            using IntervalArithmetic
+            @assert degree(x * x) == 2
+            @assert truncation_order() == 2
+            """,
         )
-        @test success(`$(Base.julia_cmd()) --startup-file=no --project=$(dirname(Base.active_project())) -e $script`)
+        @test fresh_julia(script)
     end
 end
 

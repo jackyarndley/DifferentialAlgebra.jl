@@ -1,13 +1,14 @@
 using Test, DifferentialAlgebra
 using LinearAlgebra, GenericLinearAlgebra, ForwardDiff
 
+include("support/processes.jl")
+
 import ForwardDiff: Dual
 
 @testset "Diagonal eigenpairs without optional scalar solvers" begin
     script = "include(" *
         repr(joinpath(@__DIR__, "support", "diagonal_eigenpairs.jl")) * ")"
-    project = dirname(Base.active_project())
-    @test success(`$(Base.julia_cmd()) --startup-file=no --project=$project -e $script`)
+    @test fresh_julia(script)
 end
 
 @testset "Eigenpair validation and scalar result types" begin

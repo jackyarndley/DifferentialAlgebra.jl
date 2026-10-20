@@ -1,6 +1,8 @@
 using Test, DifferentialAlgebra
 using LinearAlgebra, Random, SpecialFunctions
 
+include("support/processes.jl")
+
 include("support/coefficients.jl")
 
 # A valid AbstractVector whose elements have no owner until materialized.
@@ -223,19 +225,22 @@ end
     end
 
     @testset "Concurrent callers" begin
-        DifferentialAlgebra.initialize!(4, 2)
-        x, y = variable.(1:DifferentialAlgebra.nvariables())
-        expected = DifferentialAlgebra.coefficient(sin(1 + x) * exp(y), [2, 1])
-        jobs = [
-            Threads.@spawn begin
-                for _ in 1:100
-                    value = DifferentialAlgebra.coefficient(sin(1 + x) * exp(y), [2, 1])
-                    value == expected || error("Cross-task algebra state corruption")
-                end
-                true
-            end for _ in 1:8
-        ]
-        @test all(fetch, jobs)
+        script = raw"""
+        using DifferentialAlgebra
+        @assert Threads.nthreads() == 4
+        x, y = variables(2; order = 4)
+        # d_x^2 d_y(sin(1+x)*exp(y))/2! at zero, from scalar calculus.
+        expected = -sin(1) / 2
+        jobs = [Threads.@spawn begin
+            for _ in 1:100
+                value = coefficient(sin(1 + x) * exp(y), [2, 1])
+                @assert isapprox(value, expected; rtol = 8eps(Float64), atol = 0)
+            end
+            true
+        end for _ in 1:8]
+        @assert all(fetch, jobs)
+        """
+        @test fresh_julia(script; threads = 4)
     end
 end
 

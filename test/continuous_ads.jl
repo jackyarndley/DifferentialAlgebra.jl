@@ -1,6 +1,8 @@
 using Test, DifferentialAlgebra
 using ForwardDiff, IntervalArithmetic, LinearAlgebra
 
+include("support/processes.jl")
+
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 
@@ -114,8 +116,19 @@ end
     @test_throws ArgumentError continuous_map(v -> (set_truncation_order!(1); v[1]), core)
     @test_throws DimensionMismatch continuous_map(v -> [v[1], v[1]], core)
     @test_throws ArgumentError continuous_map(v -> v[1]^2, core; atol = 1 // 1000)
-    script = "using DifferentialAlgebra; @assert !DifferentialAlgebra.isinitialized(); @assert !any(m->nameof(m) in (:IntervalArithmetic,:ForwardDiff),values(Base.loaded_modules)); using ForwardDiff; @assert !DifferentialAlgebra.isinitialized(); a=adaptive_map(v->v[1]^2,[-1.],[1.];order=2); s=continuous_map(v->v[1]^2,a); @assert ForwardDiff.derivative(x->s([x]),.25)≈.5; @assert !DifferentialAlgebra.isinitialized()"
-    @test success(`$(Base.julia_cmd()) --startup-file=no --project=$(dirname(Base.active_project())) -e $script`)
+    script = raw"""
+    using DifferentialAlgebra
+    @assert !DifferentialAlgebra.isinitialized()
+    @assert !any(m -> nameof(m) in (:IntervalArithmetic, :ForwardDiff),
+        values(Base.loaded_modules))
+    using ForwardDiff
+    @assert !DifferentialAlgebra.isinitialized()
+    a = adaptive_map(v -> v[1]^2, [-1.0], [1.0]; order = 2)
+    s = continuous_map(v -> v[1]^2, a)
+    @assert ForwardDiff.derivative(x -> s([x]), 0.25) ≈ 0.5
+    @assert !DifferentialAlgebra.isinitialized()
+    """
+    @test fresh_julia(script)
 end
 
 @testset "Certified function bounds for continuous surrogates" begin
