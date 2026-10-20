@@ -86,6 +86,7 @@ jobs:
         shell: julia --color=yes --startup-file=no --check-bounds=yes {0}
         env:
           JULIA_NUM_THREADS: '4'
+          JULIA_PKG_PRECOMPILE_AUTO: '0'
         run: |
           using Pkg
           checkout = pwd()
