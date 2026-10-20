@@ -261,3 +261,16 @@ end
         @test coefficient(p, [1, 0]) == 1
     end
 end
+
+@testset "Zero evaluation-tree coefficients at infinite coordinates" begin
+    x, y = variables(2; order = 3)
+    p = x * y
+    for sign in (-1, 1)
+        point = [sign * Inf, 1.0]
+        @test p(point) == sign * Inf
+        map = compile([p, one(x), y])
+        @test map(point) == [sign * Inf, 1, 1]
+        out, work = zeros(3), zeros(degree(map) + 1)
+        @test evaluate!(out, map, point, work) == [sign * Inf, 1, 1]
+    end
+end

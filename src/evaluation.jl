@@ -118,7 +118,9 @@ function evaluate_numeric!(out::AbstractVector{T}, map, args, work, ::Val{COMPLE
         depth, var = map.levels[i], map.indices[i]
         work[depth + 1] = COMPLETE || var <= length(args) ? work[depth] * coefficient_operand(T, args[var]) : zero(T)
         for j in 1:n
-            out[j] += work[depth + 1] * coefficient_operand(T, map.coefficients[j, i])
+            c = map.coefficients[j, i]
+            coefficient_iszero(c) && continue
+            out[j] += work[depth + 1] * coefficient_operand(T, c)
         end
     end
     return out
