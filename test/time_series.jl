@@ -1,4 +1,88 @@
 using Test, DifferentialAlgebra
+using ForwardDiff
+
+# Exact binomial coefficients give an independent oracle for (1 + t + x)^p.
+time_binomial(p, n) =
+    prod(big(p) - j for j in 0:(n - 1); init = big(1) // 1) / factorial(big(n))
+
+@testset "Floating time-series exponent weights" begin
+    for (T, precision) in ((Float32, 128), (Float64, 128), (BigFloat, 128), (BigFloat, 384))
+        setprecision(precision) do
+            order = 12
+            a = TimeSeries(T[1, 1, zeros(T, order - 1)...])
+            for p in (1 // 2, 1 // 3, -2 // 3, 1 // (typemax(Int) ÷ 2), big(1) // 3)
+                value = @inferred a^p
+                @test value isa TimeSeries{T}
+                for k in 0:order
+                    expected = T(time_binomial(p, k))
+                    @test coefficient(value, k) ≈ expected rtol = 32order * eps(T)
+                end
+            end
+            for (f, p) in ((sqrt, 1 // 2), (cbrt, 1 // 3))
+                value = @inferred f(a)
+                @test value isa TimeSeries{T}
+                for k in 0:order
+                    expected = T(time_binomial(p, k))
+                    @test coefficient(value, k) ≈ expected rtol = 32order * eps(T)
+                end
+                @test value.coefficients !== a.coefficients
+            end
+            @test a.coefficients == T[1, 1, zeros(T, order - 1)...]
+        end
+    end
+    # Integral exponents take the exact power path, including beyond Float64's
+    # exact integer range. No floating weight conversion belongs on that path.
+    a = TimeSeries(Rational{BigInt}[1, 1, 0, 0])
+    n = big(2)^60 + 3
+    @test (a^n).coefficients == [binomial(n, k) for k in 0:3]
+
+    # A BigInt rational uses BigFloat intermediates, even with Float32 storage.
+    # Narrowing its exponent first would underflow and lose this finite slope.
+    p = big(1) // big(2)^150
+    a = TimeSeries(Float32[1, big(2)^100, 0])
+    @test coefficient(a^p, 1) == Float32(big(1) // big(2)^50)
+end
+
+@testset "Polynomial and nested dual time-series weights" begin
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        DifferentialAlgebra.with_algebra(3, 1; table_bytes = budget) do _
+            x = variable(1, T)
+            a = TimeSeries([one(x) + x, one(x), [zero(x) for _ in 1:5]...])
+            # The active factory differs from the stored coefficient's owner.
+            DifferentialAlgebra.with_algebra(1, 2) do _
+                for (f, p) in ((sqrt, 1 // 2), (cbrt, 1 // 3))
+                    value = f(a)
+                    @test coefficient_type(value) === TaylorPolynomial{T}
+                    for k in 0:6, m in 0:3
+                        expected = T(time_binomial(p, k + m) * binomial(k + m, k))
+                        actual = coefficient(coefficient(value, k), [m])
+                        @test actual ≈ expected rtol = 256eps(T)
+                    end
+                    @test coefficient(value, 0).coeffs !== coefficient(a, 0).coeffs
+                end
+                @test nvariables() == 2
+            end
+            @test nvariables() == 1
+        end
+    end
+    c0 = ForwardDiff.Dual(
+        ForwardDiff.Dual(1.0, 1.0), ForwardDiff.Dual(1.0, 0.0)
+    )
+    a = TimeSeries([c0, one(c0), [zero(c0) for _ in 1:5]...])
+    for (f, p) in ((sqrt, 1 // 2), (cbrt, 1 // 3), (s -> s^(2 // 3), 2 // 3))
+        value = f(a)
+        @test coefficient_type(value) === typeof(c0)
+        for k in 0:6
+            c = coefficient(value, k)
+            first = Float64(time_binomial(p, k + 1) * (k + 1))
+            second = Float64(time_binomial(p, k + 2) * (k + 1) * (k + 2))
+            @test ForwardDiff.value(ForwardDiff.value(c)) ≈ Float64(time_binomial(p, k))
+            @test only(ForwardDiff.partials(ForwardDiff.value(c))) ≈ first
+            @test ForwardDiff.value(only(ForwardDiff.partials(c))) ≈ first
+            @test only(ForwardDiff.partials(only(ForwardDiff.partials(c)))) ≈ second
+        end
+    end
+end
 
 @testset "Time series arithmetic" begin
     # Compare independent univariate and multivariate coefficient recurrences.

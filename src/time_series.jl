@@ -117,8 +117,9 @@ function time_recurrence(a::TimeSeries, c0, p, ::Val{MODE}) where {MODE}
     MODE !== :exp && n > 0 && iszero(constant_term(a0)) &&
         throw(TaylorError("The expansion needs an invertible constant coefficient"))
     reciprocal = MODE === :exp || n == 0 ? one(c0) : inv(a0)
+    exponent = MODE === :power ? time_exponent(p, c0) : p
     @inbounds for k in 1:n
-        value = time_weighted_sum(a.coefficients, c, k, p, Val(MODE))
+        value = time_weighted_sum(a.coefficients, c, k, exponent, Val(MODE))
         MODE === :log && (value += k * a.coefficients[k + 1])
         c[k + 1] = MODE === :exp ? value / k : time_normalize(value, reciprocal, k)
     end

@@ -259,7 +259,9 @@ end
             @test @inferred(hypot(z, z)) isa TaylorPolynomial{R}
             @test iszero(hypot(z, z))
             for argument in (p, -p)
-                for axis_value in (@inferred(hypot(argument, z)), @inferred(hypot(z, argument)))
+                for axis_value in (
+                        @inferred(hypot(argument, z)), @inferred(hypot(z, argument)),
+                    )
                     @test axis_value isa TaylorPolynomial{R}
                     @test constant_term(axis_value) == R(3)
                     @test coefficient(axis_value, [1]) == one(R)

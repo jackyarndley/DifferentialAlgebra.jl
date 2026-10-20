@@ -168,6 +168,16 @@ end
 @inline time_weight(j, k, p, ::Val{:exp}) = j
 @inline time_weight(j, k, p, ::Val{:log}) = j - k
 @inline time_weight(j, k, p, ::Val{:power}) = p * j - (k - j)
+
+# Normalize scalar exponent weights once, keeping exact coefficient arithmetic
+# and the wider working type used by BigInt rationals. Polynomial and dual
+# coefficients only supply the scalar type; their values remain untouched.
+time_exponent(p, value) = p
+time_exponent(p::Rational, value::AbstractFloat) =
+    convert(promote_type(typeof(p), typeof(value)), p)
+time_exponent(p::Rational, value::TaylorPolynomial) =
+    time_exponent(p, constant_term(value))
+
 function time_weighted_sum(a, c, k, p, mode)
     value = zero(c[1])
     @inbounds for j in 1:k

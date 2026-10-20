@@ -8,6 +8,8 @@ import ForwardDiff
 DA.continuity_primal(x::ForwardDiff.Dual) = DA.continuity_primal(ForwardDiff.value(x))
 DA.taylor_solver_coefficient(::Type{<:ForwardDiff.Dual{Tag, V}}) where {Tag, V} =
     DA.taylor_solver_coefficient(V)
+DA.time_exponent(p::Rational, value::ForwardDiff.Dual) =
+    DA.time_exponent(p, ForwardDiff.value(value))
 
 # Resolve the intersections of ForwardDiff's Dual/Real and polynomial/Real
 # operations without unwrapping the dual or losing its coefficient derivatives.
