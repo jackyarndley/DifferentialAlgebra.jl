@@ -20,7 +20,7 @@ From `24dc1a1`:
 
 - Compound analytic operations, integer powers (including negative literals),
   and polynomial exponentiation filter coefficients only after completing the
-  result. Global tolerance and truncation order are unchanged.
+  result. The current task's tolerance and truncation order are unchanged.
 - Interval coefficient norms return outward-rounded enclosures, including for
   intervals containing zero, and preserve coefficient metadata. Ordinary-number
   norm types and stable accumulation are unchanged.
@@ -64,7 +64,7 @@ From `17f74cc`:
   vector of copied coefficients, including when given a view or range.
 - `central_moments(mgf, order)` requires constant coefficient one and rejects orders
   above the working cutoff. Use `with_order` explicitly when needed; inspection
-  never changes the global cutoff. Raw moments still inspect all stored orders.
+  never changes the task's cutoff. Raw moments still inspect all stored orders.
 
 The internal, test-only `filled` helper is removed. Documented coefficient
 inspection, construction, and norm helpers remain available in `DifferentialAlgebra`.

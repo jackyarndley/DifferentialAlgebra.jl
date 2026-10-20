@@ -124,10 +124,11 @@ resource limits or unsplittable boxes throw an error. With `strict = false`,
 unresolved patches are retained with their status and `converged = false`.
 `max_depth` counts splits along a path; `max_patches` bounds the number of patches.
 
-Construction temporarily uses a separate global algebra and restores the
-caller's configuration and polynomials, including on failure. Do not change
-the algebra or its settings inside `f`, or construct maps concurrently with
-other polynomial calculations. Evaluation of completed maps is independent.
+Construction uses a task-local temporary algebra and restores the caller's
+configuration, including on failure. Independent builders and read-only
+polynomial calculations may overlap. Do not change the algebra or its settings
+inside `f`, or reinitialize the global default while readers use it. Evaluation
+of completed maps is independent.
 
 `estimator=IntervalBound()` selects the optional validated static-map method.
 Its callback accepts Taylor models, and its returned `PiecewiseTaylorModel`
