@@ -328,6 +328,7 @@ absolute sum; higher integer types use the corresponding power norm.
 Unlike scalar polynomial comparisons, this includes nonconstant coefficients.
 The result uses the floating norm type of the coefficients, as in `LinearAlgebra.norm`.
 Interval coefficients produce an outward-rounded enclosure of the possible norms.
+They require `IntervalArithmetic.configure(rounding=:correct)`.
 """
 function coefficient_norm(a::TaylorPolynomial, p::Real = 0)
     valid(a)

@@ -19,7 +19,8 @@
 - Compound analytic operations, integer powers (including negative literals),
   and polynomial exponentiation filter coefficients only after completing the
   result. The current task's tolerance and truncation order are unchanged.
-- Interval coefficient norms return outward-rounded enclosures, including for
+- Interval coefficient norms require correct interval rounding and return
+  outward-rounded enclosures, including for
   intervals containing zero, and preserve coefficient metadata. Ordinary-number
   norm types and stable accumulation are unchanged.
 - Diagonal polynomial eigenpairs derive scalar working types without a dense

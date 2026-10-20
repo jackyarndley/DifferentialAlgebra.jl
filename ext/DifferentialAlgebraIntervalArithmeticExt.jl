@@ -41,11 +41,37 @@ DA.invertible_constant(c::Interval) = !IA.isnai(c) && !IA.isempty_interval(c) &&
 
 # Normalize by a guaranteed point bound, never by an uncertain interval. The
 # coefficients still participate in arithmetic, including thin degraded zeros.
-function interval_norms(a::TaylorPolynomial{Interval{T}}, v, p::Integer) where {T}
+@inline interval_norm_power(c, p) = p == 2 ? c * c : IA.pown(c, p)
+@inline interval_norm_root(c, p) = p == 2 ? sqrt(c) : IA.rootn(c, p)
+
+function interval_norm_values(values::AbstractVector{Interval{T}}, p::Integer) where {T}
+    result = zero(Interval{T})
+    if p == 0 || p == 1
+        for c in values
+            value = abs(c)
+            result = p == 0 ? max(result, value) : result + value
+        end
+        return result
+    end
+    scale = zero(T)
+    for c in values
+        scale = max(scale, IA.mag(c))
+    end
+    scale = isfinite(scale) && !iszero(scale) ? scale : one(T)
+    point = IA.interval(T, scale)
+    for c in values
+        # abs(c)/point is nonnegative, so its self-product is a tight square.
+        result += interval_norm_power(abs(c) / point, p)
+    end
+    return point * interval_norm_root(result, p)
+end
+
+function interval_degree_norms(
+        a::TaylorPolynomial{Interval{T}}, v::Integer, p::Integer
+    ) where {T}
     basis = DA.valid(a).basis
-    count = isnothing(v) ? 1 : basis.order + 1
-    group(i) = isnothing(v) ? 1 :
-        (v == 0 ? basis.degrees[i] : basis.exponents[v, i]) + 1
+    count = basis.order + 1
+    group(i) = (v == 0 ? basis.degrees[i] : basis.exponents[v, i]) + 1
     out = zeros(Interval{T}, count)
     if p == 0 || p == 1
         for i in 1:a.len
@@ -64,24 +90,27 @@ function interval_norms(a::TaylorPolynomial{Interval{T}}, v, p::Integer) where {
     map!(s -> isfinite(s) && !iszero(s) ? s : one(T), scales, scales)
     for i in 1:a.len
         k = group(i)
-        out[k] += IA.pown(abs(a.coeffs[i]) / IA.interval(T, scales[k]), p)
+        out[k] += interval_norm_power(abs(a.coeffs[i]) / IA.interval(T, scales[k]), p)
     end
     for k in eachindex(out)
-        out[k] = IA.interval(T, scales[k]) * IA.rootn(out[k], p)
+        out[k] = IA.interval(T, scales[k]) * interval_norm_root(out[k], p)
     end
     return out
 end
 function DA.coefficient_norm(a::TaylorPolynomial{<:Interval}, p::Real = 0)
+    validated_rounding()
+    DA.valid(a)
     isinteger(p) && p >= 0 ||
         throw(ArgumentError("Use a nonnegative integer coefficient norm"))
-    power = p isa Integer ? p : BigInt(p)
-    return only(interval_norms(a, nothing, power))
+    power = p isa Integer ? p : p <= typemax(Int) ? Int(p) : BigInt(p)
+    return interval_norm_values(@view(a.coeffs[1:a.len]), power)
 end
 function DA.degree_norms(a::TaylorPolynomial{<:Interval}, v::Integer = 0, p::Integer = 0)
+    validated_rounding()
     basis = DA.valid(a).basis
     0 <= v <= basis.variables && p >= 0 ||
         throw(ArgumentError("Invalid norm arguments"))
-    return interval_norms(a, v, p)
+    return interval_degree_norms(a, v, p)
 end
 
 # IA has symmetric Real promotion/arithmetic rules. Resolve their intersections

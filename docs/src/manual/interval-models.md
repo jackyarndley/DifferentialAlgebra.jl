@@ -8,7 +8,7 @@ initializes an algebra. TaylorSeries and TaylorModels are not dependencies.
 using DifferentialAlgebra, IntervalArithmetic
 ```
 
-Validated enclosure and model operations require the default
+Validated norms, enclosures and model operations require the default
 `IntervalArithmetic.configure(rounding=:correct)` policy. Other rounding modes
 are rejected, including non-rigorous `:none`; the initial implementation also
 leaves `:ulp` unsupported. The extension checks the setting without changing it.

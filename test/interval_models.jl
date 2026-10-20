@@ -81,6 +81,35 @@ end
     end
 end
 
+@testset "Stable interval norm scales and metadata" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        I = Interval{T}
+        x, y = variables(I, 2; order = 3, table_bytes = budget)
+        exponents = T === Float64 ? (1000, -1000) : (10000, -10000)
+        scales = [ldexp(one(T), exponent) for exponent in exponents]
+        T === Float64 && push!(scales, nextfloat(zero(T)))
+        for scale in scales
+            p = IA.interval(T, 3scale) * x + IA.interval(T, 4scale) * y
+            # The exact 3-4-5 identity avoids squaring extreme scalar values.
+            expected = IA.interval(T, 5scale)
+            @test sameinterval(coefficient_norm(p, 2), expected)
+            @test sameinterval(coefficient_norm(p, 2.0), expected)
+            @test sameinterval(DA.degree_norms(p, 0, 2)[2], expected)
+        end
+        for c in (IA.setdecoration(IA.interval(T, 3), IA.def), convert(I, 3.0))
+            p = c * x + 4y
+            result = coefficient_norm(p, 2)
+            @test IA.decoration(result) == IA.decoration(c)
+            @test IA.isguaranteed(result) == IA.isguaranteed(c)
+            @test sameinterval(result, DA.degree_norms(p, 0, 2)[2])
+        end
+        stored = 3x^2 + 4y^2
+        with_order(1) do
+            @test sameinterval(coefficient_norm(stored, 2), IA.interval(T, 5))
+        end
+    end
+end
+
 @testset "Interval coefficients and stored-polynomial enclosure" begin
     for I in (IF, IB), budget in (0, 32 * 1024^2)
         T = IA.numtype(I)
@@ -436,6 +465,10 @@ end
         IA.configure(; rounding = mode)
         try
             @test_throws ArgumentError enclose(p, [IA.interval(-1, 1)])
+            for power in (0, 1, 2, 3)
+                @test_throws ArgumentError coefficient_norm(p, power)
+                @test_throws ArgumentError DA.degree_norms(p, 0, power)
+            end
             @test_throws ArgumentError enclose(x)
             @test_throws ArgumentError enclose(x, [IA.interval(0)])
             @test_throws ArgumentError evaluate(x, [0])

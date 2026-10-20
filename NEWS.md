@@ -22,7 +22,7 @@ See the [migration guide](docs/src/migration.md) for replacement calls and defau
   bounds with metadata preserved. Diagonal eigenpairs avoid an unnecessary dense
   solve, including BigFloat and Rational{BigInt} without GenericLinearAlgebra.
 - Taylor models preserve decorations and guarantees. Implicit floating scalar
-  operands are rejected; use explicit interval construction or `IA.exact`.
+  operands are rejected; use interval construction or `IntervalArithmetic.exact`.
   Validated operations require correct interval rounding.
 - ADS excludes affine variation from tail estimates, retries analytic domain
   failures on children, preserves refinement options, and reports roundoff limits.
