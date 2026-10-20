@@ -1,5 +1,6 @@
 using Test, DifferentialAlgebra
 using SpecialFunctions
+using QuadGK: quadgk
 
 special_error(p, c) = coefficient_norm(p - c, 0)
 
@@ -133,6 +134,98 @@ end
             for f in (bessely, besselk, besselkx)
                 @test_throws DifferentialAlgebra.TaylorError f(n, p)
             end
+        end
+    end
+end
+
+# Independent scalar K0/K1 integrals, positive order recurrence, and the exact
+# neighboring-order derivative identity. Neither the polynomial ODE nor its
+# vector derivative quadrature enters this 1024-bit coefficient oracle.
+# https://dlmf.nist.gov/10.32.E9 and https://dlmf.nist.gov/10.29
+function scaled_k_reference(center, max_order)
+    values = zeros(BigFloat, max_order + 1)
+    for n in 0:1
+        integrand(t) = begin
+            d = center * 2sinh(t / 2)^2
+            isfinite(d) ? exp(-d) * cosh(n * t) : zero(center)
+        end
+        value, error = quadgk(
+            integrand, zero(center), BigFloat(Inf);
+            rtol = BigFloat(2)^(-750), order = 64
+        )
+        @test error <= BigFloat(2)^(-700) * abs(value)
+        values[n + 1] = value
+    end
+    for n in 1:(max_order - 1)
+        values[n + 2] = values[n] + 2n * values[n + 1] / center
+    end
+    return values
+end
+function scaled_k_coefficient(values, n, k)
+    value = zero(first(values))
+    for j in 0:k
+        derivative = sum(
+            binomial(big(j), m) * values[abs(n - j + 2m) + 1]
+                for m in 0:j
+        )
+        value += binomial(big(k), j) * (-1 // big(2))^j * derivative
+    end
+    return value / factorial(big(k))
+end
+
+@testset "Scaled Bessel K at large centers" begin
+    references = setprecision(1024) do
+        references = Dict{Tuple{Int, Int}, Vector{BigFloat}}()
+        for center in (100, 600)
+            values = scaled_k_reference(BigFloat(center), 113)
+            for n in (0, 2, 100)
+                references[(center, n)] = [
+                    scaled_k_coefficient(values, n, k) for k in 0:13
+                ]
+            end
+        end
+        references
+    end
+    endpoint = setprecision(1024) do
+        values = scaled_k_reference(BigFloat(630), 2)
+        values[3]
+    end
+    for bits in (128, 256)
+        setprecision(bits) do
+            types = bits == 128 ? (Float32, Float64, BigFloat) : (BigFloat,)
+            for T in types, budget in (0, 32 * 1024^2)
+                x, = variables(T, 1; order = 12, table_bytes = budget)
+                tolerance = 500eps(T)
+                for center in (100, 600), n in (0, 2, 100)
+                    result = besselkx(n, T(center) + x)
+                    @test coefficient_type(result) === T
+                    for k in 0:12
+                        @test isapprox(
+                            coefficient(result, [k]), references[(center, n)][k + 1];
+                            rtol = tolerance
+                        )
+                    end
+                end
+                result = besselkx(2, T(600) + x)
+                tail = abs(references[(600, 2)][14]) * big(30)^13
+                @test abs(result(T(30)) - endpoint) <= tail + tolerance * abs(endpoint)
+                @test truncation_order() == 12 && iszero(coefficient_tolerance())
+                argument = T(600) + T(1 // 100) * x
+                set_coefficient_tolerance!(0.01)
+                result = besselkx(100, argument)
+                expected = references[(600, 100)][2] / 100
+                @test coefficient(result, [1]) ≈ expected rtol = tolerance
+                @test coefficient_tolerance() == 0.01
+            end
+        end
+    end
+end
+
+@testset "Bessel poles reject constant and varying inputs" begin
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, = variables(T, 1; order = 3, table_bytes = budget)
+        for f in (bessely, besselk, besselkx), p in (zero(x), x)
+            @test_throws DifferentialAlgebra.TaylorError f(0, p)
         end
     end
 end

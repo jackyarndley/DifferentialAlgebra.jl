@@ -465,15 +465,70 @@ function regular_bessel_series(fn::F, n, a, c0, s) where {F}
     return series(a, c)
 end
 
+# DLMF 10.32.9 gives e^x*K_n(x) as a positive integral. Its k-th derivative
+# inserts (1-cosh(t))^k, avoiding cancellation against the exponential factor.
+# Normalize the polynomial argument by x and leave the scalar seed outside the
+# composition so tiny intermediate derivatives can still multiply large slopes.
+function large_besselk_series(n, a, c0::T) where {T <: AbstractFloat}
+    x = coefficient_convert(T, constant_term(a))
+    count = a.algebra.cutoff + 1
+    nu = T(n)
+    root = sqrt(x)
+    peak = asinh(abs(nu) / x)
+    width = sqrt(max(hypot(x, nu), one(T)))
+    logtwo = log(T(2))
+    logcosh(t) = abs(t) + log1p(exp(-2abs(t))) - logtwo
+    decay(t) = 2(root * sinh(t / 2))^2
+    shift = -decay(peak) + logcosh(nu * peak)
+    function integrand!(values, u)
+        t = peak + u / width
+        z = decay(t)
+        if !isfinite(z)
+            fill!(values, zero(T))
+            return nothing
+        end
+        values[1] = exp(-z + logcosh(nu * t) - shift) / width
+        for k in 1:(count - 1)
+            values[k + 1] = -z * values[k] / k
+        end
+        return nothing
+    end
+    quadrature_order = max(15, cld(precision(T), 8))
+    limits = (-peak * width, zero(T), T(Inf))
+    approximate, _ = QuadGK.quadgk!(
+        integrand!, zeros(T, count), limits...;
+        order = quadrature_order, rtol = sqrt(eps(T))
+    )
+    # Relative component weights also resolve orders whose derivatives are much
+    # smaller than the value or neighboring derivatives.
+    scales = map(c -> iszero(c) ? one(T) : abs(c), approximate)
+    relative_norm(v) = maximum(i -> abs(v[i]) / scales[i], eachindex(v))
+    coefficients, error = QuadGK.quadgk!(
+        integrand!, zeros(T, count), limits...;
+        order = quadrature_order, rtol = 8eps(T), norm = relative_norm
+    )
+    error <= 64eps(T) * relative_norm(coefficients) ||
+        throw(TaylorError("Scaled Bessel K derivative quadrature did not converge"))
+    coefficients ./= first(coefficients)
+    result = series(normalized_argument(a, x), coefficients; filter = false)
+    return scaled(result, c0)
+end
+
 # Bessel's second-order differential equation supplies the singular Y/K solutions.
 # With y=exp(s*x)*z, scaled I/K remain scaled throughout (no overflow-prone unscaling).
 function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where {F}
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
-    x = constant_term(a); c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
+    x = constant_term(a)
+    coefficient_iszero(x) &&
+        fn in (SpecialFunctions.bessely, SpecialFunctions.besselk, SpecialFunctions.besselkx) &&
+        throw(TaylorError("Bessel expansion is singular at zero"))
+    c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
     a.len == 1 && return TaylorPolynomial(c0)
     if fn in (SpecialFunctions.besselj, SpecialFunctions.besseli, SpecialFunctions.besselix)
         return regular_bessel_series(fn, n, a, c0, s)
     end
+    fn === SpecialFunctions.besselkx && x isa AbstractFloat && isfinite(x) && x > 64 &&
+        return large_besselk_series(n, a, c0)
     cutoff = a.algebra.cutoff
     coefficient_iszero(x) && throw(TaylorError("Bessel expansion is singular at zero"))
     c = zeros(typeof(c0), cutoff + 1); c[1] = c0
