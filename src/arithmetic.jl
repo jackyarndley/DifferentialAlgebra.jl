@@ -49,7 +49,14 @@ function Base.:+(a::TaylorPolynomial)
     ctx = valid(a)
     return a.len <= ctx.basis.ends[ctx.cutoff + 1] ? a : trim(a, 0, ctx.cutoff)
 end
-Base.:-(a::TaylorPolynomial) = -one(coefficient_type(a)) * a
+negative_coefficient_type(::Type{T}) where {T} = T
+negative_coefficient_type(::Type{Bool}) = Int
+negative_coefficient_type(::Type{T}) where {T <: Unsigned} =
+    widen(typeof(signed(zero(T))))
+negative_coefficient_type(::Type{Rational{T}}) where {T <: Unsigned} =
+    Rational{negative_coefficient_type(T)}
+Base.:-(a::TaylorPolynomial) =
+    scaled(a, -one(negative_coefficient_type(coefficient_type(a))))
 Base.signbit(a::TaylorPolynomial) = signbit(constant_term(a))
 Base.sign(a::TaylorPolynomial) = sign(constant_term(a))
 Base.abs(a::TaylorPolynomial) = a * (signbit(a) ? -one(coefficient_type(a)) : one(coefficient_type(a)))
@@ -112,8 +119,11 @@ end
 for (op, sign) in ((:+, 1), (:-, -1))
     @eval function Base.$op(a::TaylorPolynomial{T}, b::TaylorPolynomial{S}) where {T <: Real, S <: Real}
         ctx = compatible(a, b)
-        out = allocate_undef(ctx, promote_type(T, S), min(max(a.len, b.len), ctx.basis.ends[ctx.cutoff + 1]))
-        return weighted_sum!(out, a, one(T), b, degree_factor(one(S), $sign) * one(S))
+        R = promote_type(T, S)
+        $sign < 0 && (R = negative_coefficient_type(R))
+        n = min(max(a.len, b.len), ctx.basis.ends[ctx.cutoff + 1])
+        out = allocate_undef(ctx, R, n)
+        return weighted_sum!(out, a, one(R), b, degree_factor(one(R), $sign) * one(R))
     end
 end
 function scale!(out::TaylorPolynomial, a::TaylorPolynomial, factor::Real; order::Int = a.algebra.cutoff, filter::Bool = true)
@@ -134,20 +144,26 @@ function scaled(a::TaylorPolynomial{T}, b::Real; filter::Bool = true) where {T <
 end
 Base.:*(a::TaylorPolynomial, b::Real) = scaled(a, b)
 Base.:*(a::Real, b::TaylorPolynomial) = b * a
-function Base.:+(a::TaylorPolynomial{T}, b::Real) where {T <: Real}
+function scalar_sum(
+        a::TaylorPolynomial{T}, b::Real, ::Val{OP}
+    ) where {T <: Real, OP}
     ctx = valid(a)
     R = promote_type(T, typeof(b))
+    OP !== :add && (R = negative_coefficient_type(R))
     n = min(a.len, ctx.basis.ends[ctx.cutoff + 1])
     out = allocate_undef(ctx, R, n)
     @inbounds for i in 1:n
-        out.coeffs[i] = coefficient_convert(R, a.coeffs[i])
+        c = coefficient_convert(R, a.coeffs[i])
+        out.coeffs[i] = OP === :subtract_from ? -c : c
     end
-    out.coeffs[1] += coefficient_convert(R, b)
+    c = coefficient_convert(R, b)
+    out.coeffs[1] = OP === :subtract ? out.coeffs[1] - c : out.coeffs[1] + c
     return finish!(out, n)
 end
+Base.:+(a::TaylorPolynomial, b::Real) = scalar_sum(a, b, Val(:add))
 Base.:+(a::Real, b::TaylorPolynomial) = b + a
-Base.:-(a::TaylorPolynomial, b::Real) = a + (-b)
-Base.:-(a::Real, b::TaylorPolynomial) = (-b) + a
+Base.:-(a::TaylorPolynomial, b::Real) = scalar_sum(a, b, Val(:subtract))
+Base.:-(a::Real, b::TaylorPolynomial) = scalar_sum(b, a, Val(:subtract_from))
 function Base.:/(a::TaylorPolynomial, b::Real)
     coefficient_iszero(b) && throw(TaylorError("Division by zero"))
     # Invert in the coefficient precision. inv(3) would promote Float32 to

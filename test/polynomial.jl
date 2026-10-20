@@ -228,3 +228,21 @@ end
     @test coefficient(p, [0, 1]) == 0
     @test coefficient(p, [1, 0]) == 1.0e-12
 end
+
+@testset "Unsigned operands are promoted before subtraction" begin
+    x, = variables(1; order = 3)
+    @test constant_term(x - UInt8(1)) == -1
+    @test constant_term(TaylorPolynomial(5.0) - UInt(1)) == 4
+    for T in (UInt8, UInt64, UInt128)
+        x, = variables(T, 1; order = 3)
+        p = typemax(T) + x
+        expected = -big(typemax(T))
+        for q in (-p, zero(T) - p)
+            @test constant_term(q) == expected
+            @test coefficient(q, [1]) == -1
+        end
+        @test constant_term(zero(p) - one(T)) == -1
+        @test iszero(p - p)
+        @test coefficient(x - 2x, [1]) == -1
+    end
+end
