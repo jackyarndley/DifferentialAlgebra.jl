@@ -17,6 +17,37 @@ function series(a::TaylorPolynomial, coefficients::AbstractVector{T}; filter::Bo
     return finish!(result, result.len; filter)
 end
 
+# A pair shares the nonconstant argument and rotates three Horner buffers.
+function series_pair(
+        a::TaylorPolynomial, first_coeffs::AbstractVector{T},
+        second_coeffs::AbstractVector{T}
+    ) where {T}
+    ctx = valid(a)
+    R = promote_type(coefficient_type(a), T)
+    if a.len == 1
+        return TaylorPolynomial{R}(ctx, first_coeffs[1]),
+            TaylorPolynomial{R}(ctx, second_coeffs[1])
+    end
+    n = min(working_order(ctx), length(first_coeffs) - 1, length(second_coeffs) - 1)
+    h = TaylorPolynomial{R}(a)
+    h.coeffs[1] = zero(R)
+    ncoeffs = ctx.basis.ends[n + 1]
+    s, c, scratch = allocate(ctx, R, ncoeffs), allocate(ctx, R, ncoeffs),
+        allocate(ctx, R, ncoeffs)
+    s.coeffs[1], c.coeffs[1] = first_coeffs[n + 1], second_coeffs[n + 1]
+    for k in (n - 1):-1:0
+        multiply!(scratch, h, s, n - k; filter = false)
+        scratch.coeffs[1] += first_coeffs[k + 1]
+        finish!(scratch, scratch.len; filter = false)
+        s, scratch = scratch, s
+        multiply!(scratch, h, c, n - k; filter = false)
+        scratch.coeffs[1] += second_coeffs[k + 1]
+        finish!(scratch, scratch.len; filter = false)
+        c, scratch = scratch, c
+    end
+    return finish!(s, s.len), finish!(c, c.len)
+end
+
 # Normalization is an intermediate analytic step: a small coefficient can grow
 # in the subsequent composition. Only the completed public result is filtered.
 function normalized_argument(a::TaylorPolynomial, x::Real)
@@ -76,15 +107,26 @@ function recurrence(a::TaylorPolynomial, c0, p, ::Val{MODE}; filter::Bool = true
     return finish!(out, n; filter)
 end
 
-function trig_recurrence(a::TaylorPolynomial, hyperbolic::Bool)
+function trig_recurrence(
+        a::TaylorPolynomial, hyperbolic::Bool, ::Val{OUTPUT} = Val(:both)
+    ) where {OUTPUT}
     x = constant_term(a); ctx = a.algebra; basis = ctx.basis
     s0, c0 = hyperbolic ? (sinh(x), cosh(x)) : sincos(x)
     T = typeof(s0)
-    a.len == 1 && return TaylorPolynomial{T}(ctx, s0), TaylorPolynomial{T}(ctx, c0)
-    n = basis.ends[working_order(ctx) + 1]
-    s, c = allocate_undef(ctx, T, n), allocate_undef(ctx, T, n)
+    if a.len == 1
+        OUTPUT === :both && return (
+            TaylorPolynomial{T}(ctx, s0), TaylorPolynomial{T}(ctx, c0),
+        )
+        return TaylorPolynomial{T}(ctx, OUTPUT === :sin ? s0 : c0)
+    end
+    order = working_order(ctx)
+    n = basis.ends[order + 1]
+    # A single result needs its partner only through the preceding degree.
+    shared = OUTPUT === :both ? n : basis.ends[order]
+    ns, nc = OUTPUT === :cos ? shared : n, OUTPUT === :sin ? shared : n
+    s, c = allocate_undef(ctx, T, ns), allocate_undef(ctx, T, nc)
     s.coeffs[1], c.coeffs[1] = s0, c0
-    @inbounds for k in 2:n
+    @inbounds for k in 2:shared
         sv, cv = zero(T), zero(T)
         for t in (basis.splits[k] + 1):basis.splits[k + 1]
             i, j = Int(basis.left[t]), Int(basis.right[t])
@@ -98,7 +140,21 @@ function trig_recurrence(a::TaylorPolynomial, hyperbolic::Bool)
         s.coeffs[k] = sv / degree_factor(sv, basis.degrees[k])
         c.coeffs[k] = (hyperbolic ? cv : -cv) / degree_factor(cv, basis.degrees[k])
     end
-    return finish!(s, n), finish!(c, n)
+    OUTPUT === :both && return finish!(s, n), finish!(c, n)
+    result, partner = OUTPUT === :sin ? (s, c) : (c, s)
+    @inbounds for k in (shared + 1):n
+        value = zero(T)
+        for t in (basis.splits[k] + 1):basis.splits[k + 1]
+            i, j = Int(basis.left[t]), Int(basis.right[t])
+            i > a.len && break
+            ai = a.coeffs[i]
+            coefficient_iszero(ai) && continue
+            value += degree_factor(ai, basis.degrees[i]) * ai * partner.coeffs[j]
+        end
+        OUTPUT === :cos && !hyperbolic && (value = -value)
+        result.coeffs[k] = value / degree_factor(value, basis.degrees[k])
+    end
+    return finish!(result, n)
 end
 
 function exponential(a::TaylorPolynomial; filter::Bool = true)
@@ -273,9 +329,16 @@ end
 
 for fn in (:sin, :cos, :sinh, :cosh)
     @eval function Base.$fn(a::TaylorPolynomial)
-        if !isempty(valid(a).basis.products)
-            pair = trig_recurrence(a, $(fn in (:sinh, :cosh)))
-            return pair[$(fn in (:sin, :sinh) ? 1 : 2)]
+        ctx = valid(a)
+        if a.len == 1
+            c0 = $fn(a.coeffs[1])
+            return TaylorPolynomial{typeof(c0)}(ctx, c0)
+        end
+        if !isempty(ctx.basis.products)
+            return trig_recurrence(
+                a, $(fn in (:sinh, :cosh)),
+                $(fn in (:sin, :sinh) ? :(Val(:sin)) : :(Val(:cos)))
+            )
         end
         x = constant_term(a)
         s, c = $(fn in (:sin, :cos) ? :(sincos(x)) : :((sinh(x), cosh(x))))
@@ -289,7 +352,24 @@ for fn in (:sin, :cos, :sinh, :cosh)
         return series(a, coeffs)
     end
 end
-Base.sincos(a::TaylorPolynomial) = isempty(valid(a).basis.products) ? (sin(a), cos(a)) : trig_recurrence(a, false)
+function trig_series_pair(a::TaylorPolynomial)
+    s0, c0 = sincos(constant_term(a))
+    T = typeof(s0)
+    if a.len == 1
+        return TaylorPolynomial{T}(a.algebra, s0), TaylorPolynomial{T}(a.algebra, c0)
+    end
+    n = working_order(a.algebra)
+    s, c = Vector{T}(undef, n + 1), Vector{T}(undef, n + 1)
+    sine, cosine = (s0, c0, -s0, -c0), (c0, -s0, -c0, s0)
+    factor = one(s0)
+    @inbounds for k in 0:n
+        s[k + 1], c[k + 1] = sine[mod(k, 4) + 1] * factor, cosine[mod(k, 4) + 1] * factor
+        factor /= degree_factor(factor, k + 1)
+    end
+    return series_pair(a, s, c)
+end
+Base.sincos(a::TaylorPolynomial) = isempty(valid(a).basis.products) ?
+    trig_series_pair(a) : trig_recurrence(a, false)
 for (fn, sign) in ((:tan, 1), (:tanh, -1))
     @eval function Base.$fn(a::TaylorPolynomial)
         x = constant_term(a); c0 = $fn(x)

@@ -33,6 +33,58 @@ using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinter
     end
 end
 
+@testset "Trigonometric interval coefficients" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        I = Interval{T}
+        x, = variables(I, 1; order = 4, table_bytes = budget)
+        for (center, samples) in (
+                (IA.interval(T, 1 // 2), (1 // 2,)),
+                (
+                    IA.setdecoration(IA.interval(T, 1 // 4, 3 // 4), IA.def),
+                    (1 // 4, 1 // 2, 3 // 4),
+                ),
+                (
+                    IA.setdecoration(IA.interval(T, -1 // 4, 1 // 4), IA.def),
+                    (-1 // 4, 0 // 1, 1 // 4),
+                ),
+                (convert(I, T(1 // 2)), (1 // 2,)),
+            )
+            argument = TaylorPolynomial{I}(center) + x / 4
+            s, c = sincos(argument)
+            for (f, value) in (
+                    (sin, s), (cos, c), (sin, sin(argument)), (cos, cos(argument)),
+                    (sinh, sinh(argument)), (cosh, cosh(argument)),
+                )
+                @test coefficient_type(value) === I
+                @test all(value.coeffs[1:value.len]) do coefficient
+                    IA.isguaranteed(coefficient) == IA.isguaranteed(center) &&
+                        IA.decoration(coefficient) == IA.decoration(center)
+                end
+                for sample in samples
+                    reference = setprecision(512) do
+                        s0, c0 = sincos(BigFloat(sample))
+                        sh, ch = sinh(BigFloat(sample)), cosh(BigFloat(sample))
+                        cycle = f === sin ? (s0, c0, -s0, -c0) :
+                            f === cos ? (c0, -s0, -c0, s0) :
+                            f === sinh ? (sh, ch, sh, ch) : (ch, sh, ch, sh)
+                        [cycle[mod(k, 4) + 1] / (big(4)^k * factorial(big(k))) for k in 0:4]
+                    end
+                    for k in 0:4
+                        @test interval_contains(coefficient(value, [k]), reference[k + 1])
+                    end
+                end
+            end
+            constant = TaylorPolynomial{I}(center)
+            for f in (sin, cos, sinh, cosh)
+                @test sameinterval(constant_term(f(constant)), f(center))
+            end
+            cs, cc = sincos(constant)
+            @test sameinterval(constant_term(cs), sin(center))
+            @test sameinterval(constant_term(cc), cos(center))
+        end
+    end
+end
+
 @testset "Interval coefficient norms" begin
     for I in (IF, IB)
         T = IA.numtype(I)

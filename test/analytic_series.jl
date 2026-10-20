@@ -281,6 +281,84 @@ end
     end
 end
 
+@testset "Trigonometric kernels at the working order" begin
+    references = setprecision(512) do
+        s, c = sincos(big(1) / 2)
+        sh, ch = sinh(big(1) / 2), cosh(big(1) / 2)
+        map(
+            (
+                (sin, (s, c, -s, -c)), (cos, (c, -s, -c, s)),
+                (sinh, (sh, ch, sh, ch)), (cosh, (ch, sh, ch, sh)),
+            )
+        ) do (f, cycle)
+            # Compose the scalar Taylor series with 2x + 3x^5 explicitly.
+            values = [
+                cycle[mod(k, 4) + 1] * big(2)^k / factorial(big(k)) +
+                    (k == 5 ? 3cycle[2] : 0) for k in 0:5
+            ]
+            (f, values)
+        end
+    end
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, = variables(T, 1; order = 5, table_bytes = budget)
+        argument = T(1 // 2) + 2x + 3x^5
+        constant = T(1 // 2) * one(x)
+        for order in (1, 2, 5)
+            with_order(order) do
+                for (f, reference) in references
+                    value = @inferred f(argument)
+                    @test value isa TaylorPolynomial{T}
+                    @test degree(value) <= order
+                    @test value.coeffs !== argument.coeffs
+                    for k in 0:order
+                        @test coefficient(value, [k]) ≈ T(reference[k + 1]) rtol = 64eps(T)
+                    end
+                    scalar = @inferred f(constant)
+                    @test constant_term(scalar) == f(T(1 // 2))
+                    @test scalar.coeffs !== constant.coeffs
+                end
+                pair = @inferred sincos(argument)
+                for (value, (_, reference)) in zip(pair, references[1:2])
+                    for k in 0:order
+                        @test coefficient(value, [k]) ≈ T(reference[k + 1]) rtol = 64eps(T)
+                    end
+                end
+                @test pair[1].coeffs !== pair[2].coeffs
+                cosine = copy(pair[2].coeffs)
+                set_coefficient!(pair[1], [1], T(9))
+                @test pair[2].coeffs == cosine
+                @test coefficient(argument, [1]) == T(2)
+                @test coefficient(argument, [5]) == T(3)
+            end
+        end
+    end
+end
+
+@testset "Filter completed trigonometric results" begin
+    for budget in (0, 32 * 1024^2)
+        x, y = variables(2; order = 3, table_bytes = budget)
+        argument = 0.001x + 100y
+        tiny_constant = TaylorPolynomial(0.005)
+        set_coefficient_tolerance!(0.01)
+        s, c = sincos(argument)
+        # The mixed coefficients grow from an input slope below tolerance.
+        for value in (s, sin(argument))
+            @test coefficient(value, [1, 0]) == 0
+            @test coefficient(value, [1, 2]) ≈ -5
+        end
+        for value in (c, cos(argument))
+            @test coefficient(value, [1, 1]) ≈ -0.1
+        end
+        @test coefficient(argument, [1, 0]) == 0.001
+        @test iszero(sin(tiny_constant))
+        @test iszero(first(sincos(tiny_constant)))
+        @test constant_term(tiny_constant) == 0.005
+        @test coefficient_tolerance() == 0.01
+        @test truncation_order() == 3
+        set_coefficient_tolerance!(0)
+    end
+end
+
 @testset "Inverse functions at boundary and large centers" begin
     for budget in (0, 32 * 1024^2)
         x, = variables(1; order = 4, table_bytes = budget)
