@@ -91,12 +91,15 @@ Select an estimator with `estimator = ...`:
 contribution on the normalized box, but not the uncomputed remainder.
 No extrapolation is added when the discarded tail is zero.
 
-`ExtrapolatedTail` fits the logarithms of nonzero degree norms and predicts
-the next degree. If fewer than two nonzero degrees are available, it falls
-back to the maximum in the last two degrees.
+`ExtrapolatedTail` fits logarithms of nonzero retained degree norms above the
+affine part and predicts degree `order + 1`. With fewer than two nonzero
+nonlinear degrees, it uses the largest nonlinear coefficient in the last two
+degrees.
 `LastTerms(degrees = 3, safety = 2)` changes the number of retained degrees
-and multiplies the indicator by a safety factor. These two methods require
-`guard_order = 0`, which is selected automatically.
+and multiplies the indicator by a safety factor, also omitting the affine part.
+These two methods require `guard_order = 0`, which is selected automatically.
+At order one their coefficient indicators are zero; the default point checks
+provide the acceptance check.
 
 The first three methods are **heuristic**, not rigorous remainder bounds. Retained-tail
 methods may split an exactly represented polynomial unnecessarily. Any

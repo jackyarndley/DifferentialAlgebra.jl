@@ -33,8 +33,8 @@ Fit `log(maximum absolute coefficient)` against total degree, omitting degrees
 below two and zero coefficients, and extrapolate to `order + 1`. With fewer than
 two nonzero nonlinear degrees, use the largest nonlinear coefficient in the last
 two degrees. This ADS indicator requires no guard degrees, but may over-refine
-exact polynomials or miss
-terms absent from the computed expansion. At order one the estimate is zero;
+exact polynomials or miss terms absent from the computed expansion.
+At order one the estimate is zero;
 point checks, enabled by default, provide the acceptance check.
 """
 struct ExtrapolatedTail <: ADSEstimator end
