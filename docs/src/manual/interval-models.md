@@ -172,28 +172,57 @@ R_{AB}=\operatorname{bound}(\text{discarded products})
 ```
 
 Every ordered coefficient product above that degree is bounded on the normalized
-box, including mixed-variable terms. This enumerates the tail using the original
-basis metadata and powers up to twice the order, without constructing another
-algebra. Retained multiplication uses the existing table-backed or table-free
-kernel. This reference tail algorithm is quadratic in the active term counts.
+box, including mixed-variable terms. On unit boxes, all-even exponents give
+`[0,1]`, an odd exponent gives `[-1,1]`, and a fixed-axis factor gives zero.
+These exact ranges avoid repeated interval products along the coordinate axes.
+General boxes use cached integer powers. Both paths preserve every coordinate's
+metadata, including unused axes, and use the original basis without constructing
+another algebra. Retained multiplication uses the existing table-backed or
+table-free kernel. Tail enumeration is quadratic in the active term counts.
 
-Elementary functions first bound the **whole** input model by `X`, choose a thin
-binary expansion point `s` inside `X`, then evaluate the finite scalar Taylor
-polynomial in `A-s` using remainder-aware Horner arithmetic. Taylor's theorem
-adds the absolute interval
+Elementary functions first bound the **whole** input model by `X` and choose a
+thin binary expansion point `s` inside `X`. Exponential, sine and cosine evaluate
+the scalar Taylor polynomial in `A-s` using remainder-aware Horner arithmetic.
+Taylor's theorem adds the absolute interval
 
 ```math
 \frac{f^{(n+1)}(X)}{(n+1)!}(X-s)^{n+1}.
 ```
 
-The entire segment from `s` to each possible input lies in `X`. Normalized
-derivatives use interval formulas: exponential divided by factorial, the sine/
-cosine derivative cycle divided by factorial, `(-1)^k/X^{k+1}` for reciprocal,
-`(-1)^{k-1}/(kX^k)` for logarithm, and
-`binomial(1/2,k)*sqrt(X)/X^k` for square root. Integer and factorial factors are
-constructed or accumulated as exact enclosed constants. This also propagates
-incoming remainders and coefficient rounding. No fitted decay, sample discrepancy
-or epsilon padding is part of the proof.
+The entire segment from `s` to each possible input lies in `X`. Derivatives use
+interval exponential or sine/cosine cycles divided by enclosed factorials.
+
+Reciprocal, logarithm and square root instead compose in `(A-s)/s`, dividing
+the owned displacement's coefficients directly. This avoids large powers of
+`s` and an overflowing intermediate reciprocal at subnormal centers. With
+`U=(X-s)/s`, the additional geometric and integral tails satisfy
+
+```math
+T_{\mathrm{inv}} = \frac{(-U)^{n+1}}{X}, \qquad
+T_{\log} \subseteq
+\frac{(-1)^n U^{n+1}}{(n+1)(X/s)}.
+```
+
+Here `X/s` contains one and bounds the logarithm's integral denominator along
+the entire segment. If that estimate overflows or its rounded denominator
+includes zero, an independent interval residual `log(X)-log(s)-P_n(U)` supplies
+a finite bound; `P_n` contains the nonconstant scalar Taylor terms.
+
+For square root, the center also satisfies `s ≥ sup(X)/2`. Thus `|U| ≤ r ≤ 1`.
+The absolute binomial tail is bounded by
+
+```math
+\sqrt{s}\,B_n r^{n+1}, \qquad
+B_n = \sum_{k>n}\left|\binom{1/2}{k}\right|
+= \frac{\binom{2n}{n}}{4^n}.
+```
+
+This remains finite at `r=1`. When `r<1`, the first omitted coefficient divided
+by `1-r` supplies another upper bound; the smaller bound is used. The tail is
+nonpositive for odd `n`. Integer, binomial and factorial factors are accumulated
+as enclosed constants. Native Horner arithmetic also accounts for incoming
+remainders and coefficient rounding. No fitted decay, sample discrepancy or
+epsilon padding is part of the proof.
 
 Reciprocal must exclude zero in `X`; log and the implemented square-root expansion
 require `inf(X)>0`. The identically zero enclosure has an exact square root.

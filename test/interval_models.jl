@@ -6,6 +6,7 @@ include("support/processes.jl")
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinterval, guaranteed_coefficients
 include("support/interval_products.jl")
+include("support/model_series.jl")
 
 @testset "Optional extension and loading" begin
     @test Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt) !== nothing
@@ -471,6 +472,131 @@ end
         end
         @test_throws DomainError sqrt(wide * wide)
         @test_throws DomainError inv(TaylorModel(polynomial(wide) + 3, IA.interval(T, -2, 0), wide))
+    end
+end
+
+@testset "Normalized reciprocal, logarithm and square-root remainders" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        previous_sqrt_width = zero(T)
+        for order in (2, 5)
+            x, y = taylor_models(
+                [IA.interval(T, 1, 2), IA.interval(T, 0, 7 // 8)];
+                order, table_bytes = budget
+            )
+            a = x - y
+            before = polynomial(a)
+            center = 17 // 16
+            for f in (inv, log, sqrt)
+                m = f(a)
+                retained = polynomial(m)
+                series = scalar_model_series(f, center, order)
+                for i in 0:order, j in 0:(order - i)
+                    expected = setprecision(768) do
+                        series[i + j + 1] * binomial(i + j, i) *
+                            (big(1) // 2)^i * (-big(7) // 16)^j
+                    end
+                    @test interval_contains(coefficient(retained, [i, j]), expected)
+                end
+                for u in (-1, 0, 1), v in (-1, 0, 1)
+                    displacement = u // 2 - 7v // 16
+                    value, residual = scalar_model_residual(
+                        f, series, center, displacement
+                    )
+                    @test interval_contains(remainder(m), residual)
+                    @test interval_contains(
+                        evaluate(m, [3 // 2 + u // 2, 7 // 16 + 7v // 16]),
+                        value
+                    )
+                end
+                @test guaranteed_coefficients(retained)
+                @test IA.isguaranteed(remainder(m))
+                @test IA.sup(abs(remainder(m))) < (f === inv ? 6 : f === log ? 2 : 1 // 2)
+                if f === sqrt
+                    width = IA.diam(remainder(m))
+                    if order == 5
+                        @test width < previous_sqrt_width
+                    end
+                    previous_sqrt_width = width
+                end
+            end
+            @test isequal(polynomial(a), before)
+            @test truncation_order() == order
+            @test coefficient_tolerance() == 0
+        end
+    end
+
+    for (T, bits) in ((Float64, 128), (BigFloat, 128), (BigFloat, 384))
+        setprecision(bits) do
+            exponents = T === Float64 ? (-600, 600) : (-10000, 10000)
+            for exponent in exponents, budget in (0, 32 * 1024^2)
+                scale = ldexp(one(T), exponent)
+                x, = taylor_models(
+                    [IA.interval(T, scale, 2scale)];
+                    order = 3, table_bytes = budget
+                )
+                for (f, sign) in ((inv, 1), (inv, -1), (log, 1), (sqrt, 1))
+                    a = sign * x
+                    m = f(a)
+                    retained = polynomial(m)
+                    center, radius = sign * T(3 // 2) * scale, sign * scale / 2
+                    series = scalar_model_series(f, center, 3)
+                    for k in 0:3
+                        expected = setprecision(768) do
+                            series[k + 1] * BigFloat(radius)^k
+                        end
+                        @test interval_contains(coefficient(retained, [k]), expected)
+                    end
+                    for u in (-1, -1 // 2, 0, 1 // 2, 1)
+                        displacement = radius * T(u)
+                        value, residual = scalar_model_residual(
+                            f, series, center, displacement
+                        )
+                        @test interval_contains(remainder(m), residual)
+                        @test interval_contains(
+                            evaluate(m, [T(3 // 2) * scale + scale * T(u) / 2]),
+                            value
+                        )
+                    end
+                    @test IA.isbounded(remainder(m)) && IA.isbounded(enclose(m))
+                end
+            end
+        end
+    end
+end
+
+@testset "Subnormal and wide positive model arguments" begin
+    for budget in (0, 32 * 1024^2), decoration in (IA.com, IA.def)
+        tiny = nextfloat(0.0)
+        x, = taylor_models(
+            [IA.setdecoration(IA.interval(tiny, 3tiny), decoration)];
+            order = 5, table_bytes = budget
+        )
+        for f in (log, sqrt)
+            m = f(x)
+            series = scalar_model_series(f, 2tiny, 5)
+            for u in (-1, 0, 1)
+                value, residual = scalar_model_residual(f, series, 2tiny, u * tiny)
+                @test interval_contains(remainder(m), residual)
+                @test interval_contains(evaluate(m, [(2 + u) * tiny]), value)
+            end
+            @test IA.decoration(enclose(m)) == decoration
+        end
+        wide = IA.setdecoration(IA.interval(tiny, floatmax(Float64)), decoration)
+        a = TaylorModel(wide, x)
+        for f in (log, sqrt)
+            m = f(a)
+            @test IA.isbounded(enclose(m)) && IA.isbounded(remainder(m))
+            @test IA.isguaranteed(enclose(m))
+            @test IA.decoration(enclose(m)) == decoration
+            for value in (tiny, 1.0, floatmax(Float64))
+                expected = setprecision(768) do
+                    f(BigFloat(value))
+                end
+                @test interval_contains(enclose(m), expected)
+            end
+        end
+        # The true reciprocal range cannot have finite Float64 bounds.
+        @test_throws ArgumentError inv(a)
     end
 end
 

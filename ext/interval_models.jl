@@ -330,14 +330,102 @@ function normalized_derivative(fn, x::I, k::Int) where {I <: Interval}
     values = fn === sin ? (sin(x), cos(x), -sin(x), -cos(x)) : (cos(x), -sin(x), -cos(x), sin(x))
     return values[mod(k, 4) + 1] * factor
 end
+
+# For |u| <= r <= 1 the absolute binomial tail is bounded by
+# sqrt(c)*binomial(2n,n)/4^n * r^(n+1). The central factor is also
+# (2n-1)*abs(sqrt(c)*binomial(1/2,n)), available from the last coefficient.
+function sqrt_remainder(x::I, center::I, coefficients) where {I <: Interval}
+    T = IA.numtype(I)
+    n = length(coefficients) - 1
+    # The chosen center is inside x and at least sup(x)/2, proving |u| <= 1.
+    u = IA.intersect_interval((x - center) / center, IA.interval(T, -1, 1); dec = :auto)
+    radius = IA.interval(T, IA.mag(u))
+    power = IA.pown(radius, n + 1)
+    central = IA.interval(T, 2n - 1) * abs(coefficients[end])
+    upper = IA.sup(central * power)
+    if IA.sup(radius) < 1
+        omitted = coefficients[end] * IA.interval(T, 1 // 2 - n) / IA.interval(T, n + 1)
+        upper = min(upper, IA.sup(abs(omitted) * power / (one(I) - radius)))
+    end
+    # Even-order derivatives of sqrt are negative throughout the positive axis.
+    return IA.interval(T, -upper, isodd(n) ? zero(T) : upper)
+end
+
+# Compose in u=(a-c)/c, avoiding large or tiny powers of c in coefficients.
+function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Interval}
+    T = IA.numtype(I)
+    n = a._order
+    coefficients = Vector{I}(undef, n + 1)
+    coefficients[1] = fn(center)
+    for k in 1:n
+        coefficients[k + 1] = if fn === inv
+            -coefficients[k]
+        elseif fn === log
+            (isodd(k) ? one(I) : -one(I)) / IA.interval(T, k)
+        else
+            coefficients[k] * IA.interval(T, 1 // 2 - (k - 1)) / IA.interval(T, k)
+        end
+    end
+    # The displacement owns its polynomial. Divide its coefficients directly:
+    # an intermediate reciprocal can overflow at a subnormal center even when
+    # every normalized coefficient (and the final sqrt/log result) is finite.
+    h = a - center
+    p = h._polynomial
+    for k in 1:p.len
+        p.coeffs[k] /= center
+    end
+    h = model_result(
+        DA.finish!(p, p.len; filter = false), h._remainder / center, a._coordinates, n
+    )
+    result = TaylorModel(coefficients[end], a)
+    for k in n:-1:1
+        result = result * h + coefficients[k]
+    end
+    tail = if fn === inv
+        IA.pown(-((x - center) / center), n + 1) / x
+    elseif fn === log
+        # Integral remainder: (-1)^n*u^(n+1)*int_0^1 s^n/(1+s*u) ds.
+        # Since x/c contains 1, it bounds every denominator along the segment.
+        factor = isodd(n) ? -one(I) : one(I)
+        u = (x - center) / center
+        bound = factor * IA.pown(u, n + 1) /
+            (IA.interval(T, n + 1) * (x / center))
+        if IA.isbounded(bound) && IA.decoration(bound) >= IA.def
+            bound
+        else
+            # A rounded x/c may include zero for an extremely wide positive x.
+            # Evaluate a separate finite residual instead of using that bound.
+            approximation = coefficients[end]
+            for k in n:-1:2
+                approximation = approximation * u + coefficients[k]
+            end
+            residual = log(x) - coefficients[1] - approximation * u
+            isodd(n) ? IA.intersect_interval(
+                    residual, IA.interval(T, IA.inf(residual), 0); dec = :auto
+                ) : residual
+        end
+    else
+        sqrt_remainder(x, center, coefficients)
+    end
+    return model_result(result._polynomial, result._remainder + tail, a._coordinates, n)
+end
+
 function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
     model_context(a)
     x = checked_interval(DA.enclose(a); guaranteed = true)
     fn === sqrt && IA.isthinzero(x) && return zero(a)
     fn === inv && IA.in_interval(0, x) && throw(DomainError(x, "Reciprocal requires exclusion of zero on the whole model enclosure"))
     fn in (log, sqrt) && IA.inf(x) <= 0 && throw(DomainError(x, "This expansion requires strict positivity on the whole model enclosure"))
-    center = IA.interval(IA.numtype(I), IA.mid(x))
+    T = IA.numtype(I)
+    midpoint = IA.mid(x)
+    if fn === sqrt
+        # Outward half-upper also handles rounding when the midpoint is near
+        # sup(x)/2. It stays inside x and makes the binomial tail valid at r=1.
+        midpoint = max(midpoint, IA.sup(IA.interval(T, IA.sup(x)) / 2))
+    end
+    center = IA.interval(T, midpoint)
     IA.issubset_interval(center, x) || throw(ArgumentError("Could not construct an expansion point inside the input enclosure"))
+    fn in (inv, log, sqrt) && return relative_model(fn, a, x, center)
     h = a - center
     n = a._order
     result = TaylorModel(normalized_derivative(fn, center, n), a)
