@@ -198,3 +198,57 @@ end
     @test coefficient_norm(only(initial) - exp(0.3) * (1 + x)) < 1.0e-13
     @test coefficient_norm(polynomial - (1 + x)) == 0
 end
+
+@testset "Rejected steps reuse the expansion" begin
+    for inplace in (false, true)
+        calls = Ref(0)
+        growth(u, p, t) = (calls[] += 1; u)
+        growth!(du, u, p, t) = (calls[] += 1; du[1] = u[1]; nothing)
+        problem = ODEProblem(inplace ? growth! : growth, [1.0], (0.0, 1.0))
+        solution = solve(
+            problem, TaylorMethod(8); dt = 1.0,
+            abstol = 1.0e-14, reltol = 1.0e-14
+        )
+        @test solution.stats.nreject > 0
+        # Numeric promotion and the initial graph take two calls. Each accepted
+        # step then needs one graph; rejected dt retries do not call the RHS.
+        @test calls[] == solution.stats.naccept + 2
+        @test solution.stats.nf == calls[]
+        @test only(last(solution.u)) ≈ exp(1.0) rtol = 1.0e-12
+    end
+end
+
+@testset "Expansion invalidation and historical parameter snapshots" begin
+    for inplace in (false, true)
+        growth(u, p, t) = p[1] .* u
+        growth!(du, u, p, t) = (du[1] = p[1] * u[1]; nothing)
+        rhs = inplace ? growth! : growth
+        callback = ContinuousCallback(
+            (u, t, integrator) -> t - 0.5,
+            integrator -> (integrator.p[1] = 2.0)
+        )
+        solution = solve(
+            ODEProblem(rhs, [1.0], (0.0, 1.0), [1.0]), TaylorMethod(18);
+            adaptive = false, dt = 0.4, callback
+        )
+        @test only(solution(0.45)) ≈ exp(0.45) rtol = 1.0e-13
+        @test only(solution(0.75)) ≈ exp(1.0) rtol = 1.0e-13
+        @test only(solution(0.45, Val{1})) ≈ exp(0.45) rtol = 1.0e-13
+        @test only(solution(0.75, Val{1})) ≈ 2exp(1.0) rtol = 1.0e-13
+        for reinit_cache in (false, true)
+            integrator = init(
+                ODEProblem(rhs, [1.0], (0.0, 0.2), [1.0]),
+                TaylorMethod(14); adaptive = false, dt = 0.1
+            )
+            step!(integrator)
+            integrator.u[1] = 3
+            integrator.p[1] = 2
+            u_modified!(integrator, true)
+            step!(integrator)
+            @test only(integrator.u) ≈ 3exp(0.2) rtol = 1.0e-13
+            reinit!(integrator, [3.0]; reinit_cache)
+            solution = solve!(integrator)
+            @test only(last(solution.u)) ≈ 3exp(0.4) rtol = 1.0e-13
+        end
+    end
+end

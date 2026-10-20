@@ -16,17 +16,21 @@ ODECore.alg_order(alg::TaylorAlgorithm) = alg.order
 ODECore.alg_adaptive_order(alg::TaylorAlgorithm) = alg.order - 2
 ODECore.isfsal(::TaylorAlgorithm) = false
 
-struct TaylorCache{F, W, U} <: ODECore.OrdinaryDiffEqConstantCache
+mutable struct TaylorCache{F, W, U, T} <: ODECore.OrdinaryDiffEqConstantCache
     order::Int
     rhs::F
     workspace::W
     tmp::U
+    expansion_step::Int
+    expansion_time::T
 end
-struct TaylorMutableCache{F, W, U} <: ODECore.OrdinaryDiffEqMutableCache
+mutable struct TaylorMutableCache{F, W, U, T} <: ODECore.OrdinaryDiffEqMutableCache
     order::Int
     rhs::F
     workspace::W
     tmp::U
+    expansion_step::Int
+    expansion_time::T
 end
 const TaylorCaches = Union{TaylorCache, TaylorMutableCache}
 ODECore.full_cache(cache::TaylorMutableCache) = (cache.tmp,)
@@ -54,8 +58,8 @@ function ODECore.alg_cache(
     if coefficient_type(first(workspace.series)) <: TaylorPolynomial && !(eltype(u) <: TaylorPolynomial)
         throw(ArgumentError("Use polynomial initial states when the ODE has uncertain polynomial parameters"))
     end
-    return IIP ? TaylorMutableCache(alg.order, rhs, workspace, zero.(u)) :
-        TaylorCache(alg.order, rhs, workspace, zero.(u))
+    return IIP ? TaylorMutableCache(alg.order, rhs, workspace, zero.(u), -1, t) :
+        TaylorCache(alg.order, rhs, workspace, zero.(u), -1, t)
 end
 
 function store_coefficients!(k, series)
@@ -66,6 +70,7 @@ function store_coefficients!(k, series)
     return nothing
 end
 function ODECore.initialize!(integrator, cache::TaylorCaches)
+    cache.expansion_step = -1
     integrator.kshortsize = cache.order + 1
     store_coefficients!(integrator.k, cache.workspace.series)
     integrator.stats.nf += 2
@@ -77,11 +82,18 @@ coefficient_size(x::TaylorPolynomial) = coefficient_norm(x, 1)
 tolerance_at(x::Number, i) = x
 tolerance_at(x::AbstractArray, i) = x[i]
 
-function ODECore.perform_step!(integrator, cache::TaylorCaches, repeat_step = false)
+function ODECore.perform_step!(integrator, cache::TaylorCaches, _repeat_step = false)
     (; uprev, t, dt, p, opts) = integrator
-    if !repeat_step
+    # The expansion is independent of dt. OrdinaryDiffEq retries without passing
+    # repeat_step, so key the cache to the accepted-step counter and start time.
+    # Public state/parameter modifications invalidate it through the solver flags.
+    if integrator.iter == 1 || cache.expansion_step != integrator.success_iter ||
+            cache.expansion_time != t || integrator.reeval_fsal ||
+            integrator.derivative_discontinuity
         DifferentialAlgebra.update_time_expansion!(cache.workspace, cache.rhs, uprev, t, p)
         integrator.stats.nf += 1
+        cache.expansion_step = integrator.success_iter
+        cache.expansion_time = t
     end
     u = [s(dt) for s in cache.workspace.series]
     if opts.adaptive
