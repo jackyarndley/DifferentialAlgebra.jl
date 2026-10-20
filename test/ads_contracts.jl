@@ -60,8 +60,8 @@ contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
             lo, hi = [1.0, 1.0], fill(nextfloat(1.0), 2)
             narrow(v) = exp((v[1] - 1) / eps())
             roundoff = polygon ?
-                adaptive_map(narrow, DA.polygon_box(lo, hi); estimator, directions = :axes, order = 1, atol = 1.0e-12, check_points = false, strict = false) :
-                adaptive_map(narrow, lo, hi; estimator, order = 1, atol = 1.0e-12, check_points = false, strict = false)
+                adaptive_map(narrow, DA.polygon_box(lo, hi); estimator, directions = :axes, order = 2, atol = 1.0e-12, check_points = false, strict = false) :
+                adaptive_map(narrow, lo, hi; estimator, order = 2, atol = 1.0e-12, check_points = false, strict = false)
             @test !roundoff.converged && only(roundoff.patches).status == :roundoff
             if !polygon
                 fixed = adaptive_map(affine, [2.0, -1.0], [2.0, 1.0]; estimator, order = 4, atol = 1.0e-5, check_points = false)

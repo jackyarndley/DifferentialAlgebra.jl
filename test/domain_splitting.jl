@@ -269,3 +269,30 @@ end
     @test_throws ArgumentError adaptive_flow((u, span, check) -> (; state = u, time = 0.5), first, [0.0], [0.5], (0, 1))
     @test_throws ArgumentError adaptive_flow((u, span, check) -> (check(u, 2); (; state = u, time = 2)), first, [0.0], [0.5], (0, 1))
 end
+
+@testset "Tail estimators exclude affine variation" begin
+    for estimator in (LastTerms(), ExtrapolatedTail()), order in (1, 2),
+            budget in (0, 32 * 1024^2)
+        f(v) = 3v[1] + 1
+        box = adaptive_map(
+            f, [-1.0], [1.0]; order, estimator, table_bytes = budget,
+            atol = 1.0e-6
+        )
+        @test box.converged && length(box.patches) == 1
+        @test iszero(only(only(box.patches).error_estimate))
+        @test box([0.25]) == 1.75
+        polygon = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+        fit = adaptive_map(
+            f, polygon; order, estimator, table_bytes = budget,
+            directions = :axes, atol = 1.0e-6
+        )
+        @test fit.converged && length(fit.patches) == 1
+        @test iszero(only(only(fit.patches).error_estimate))
+        @test fit([0.25, 0]) == 1.75
+    end
+    fit = adaptive_map(
+        v -> v[1] + v[1]^2, [-1.0], [1.0]; order = 5,
+        estimator = ExtrapolatedTail(), atol = 1.0e-6
+    )
+    @test fit.converged && length(fit.patches) == 1
+end
