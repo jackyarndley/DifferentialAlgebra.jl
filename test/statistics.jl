@@ -132,3 +132,19 @@ end
     @test_throws ArgumentError DifferentialAlgebra.central_moments(2mgf, 2)
     @test_throws ArgumentError DifferentialAlgebra.central_moments(mgf, -1)
 end
+
+include("support/processes.jl")
+@testset "Moment inspection can run in child tasks" begin
+    script = """
+    using DifferentialAlgebra, Test
+    DifferentialAlgebra.with_algebra(4, 1) do _
+        x = variable(1)
+        mgf = exp(2x + x^2 / 2)
+        _, raw = fetch(Threads.@spawn DifferentialAlgebra.raw_moments(mgf, 2))
+        _, central = fetch(Threads.@spawn DifferentialAlgebra.central_moments(mgf, 2))
+        @test raw ≈ [1, 2, 5]
+        @test central ≈ [1, 0, 1]
+    end
+    """
+    @test fresh_julia(script; threads = 4)
+end
