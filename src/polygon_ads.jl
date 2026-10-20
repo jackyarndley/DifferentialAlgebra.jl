@@ -158,15 +158,27 @@ end
 function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimator; probe::Bool = false)
     T = eltype(options.scales)
     lo, hi = polygon_projection_bounds(polygon, B)
-    geometry = ads_geometry(T.(collect(lo)), T.(collect(hi)))
-    all(r -> isfinite(r) && r > 0, geometry.radius) || throw(ArgumentError("Polygon cover is not representable; use a wider scalar type"))
+    lower = [T(v, RoundDown) for v in lo]
+    upper = [T(v, RoundUp) for v in hi]
+    geometry = ads_geometry(lower, upper)
+    all(r -> isfinite(r) && r >= 0, geometry.radius) || throw(
+        ArgumentError(
+            "Polygon cover is not representable; use a wider scalar type"
+        )
+    )
     x = [variable(i, T) for i in 1:2]
     z = geometry.center .+ geometry.radius .* x
     p = ads_analyze(f(T.(A) * z), geometry, options, ctx)
     if options.check_points
         points = collect(polygon._vertices)
         push!(points, ntuple(i -> sum(v -> v[i], polygon._vertices) / length(polygon._vertices), 2))
-        probes = [(T.(collect(v)), (T.(collect(polygon_project(B, v))) - geometry.center) ./ geometry.radius, 0) for v in points]
+        probes = map(points) do v
+            projected = T.(collect(polygon_project(B, v)))
+            normalized = map(projected, geometry.center, geometry.radius) do x, c, r
+                iszero(r) ? zero(T) : (x - c) / r
+            end
+            (T.(collect(v)), normalized, 0)
+        end
         ads_check_points!(p, probes, (f(point) for (point, _, _) in probes))
     end
     ads_check_context(ctx, options.working_order)
@@ -266,7 +278,10 @@ function evaluate(a::PiecewisePolygonMap, point)
     patch = ads_point_patch(a.nodes, x)
     p = a.patches[patch]._patch
     T = eltype(p.center)
-    z = (T.(collect(polygon_project(a._directions, x))) - p.center) ./ p.radius
+    projected = T.(collect(polygon_project(a._directions, x)))
+    z = map(projected, p.center, p.radius) do value, center, radius
+        iszero(radius) ? zero(T) : (value - center) / radius
+    end
     result = evaluate(p.map, z)
     return a._scalar ? only(result) : result
 end

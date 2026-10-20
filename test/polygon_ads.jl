@@ -88,3 +88,25 @@ using LinearAlgebra
     script = "using DifferentialAlgebra; @assert !DifferentialAlgebra.isinitialized(); a=adaptive_map(v->v[1]+v[2],[-1,-1],[1,1];splitter=:oriented,order=1); @assert a([0.5,0.25])==0.75; @assert !DifferentialAlgebra.isinitialized(); @assert !any(m->nameof(m)==:IntervalArithmetic,values(Base.loaded_modules)); try adaptive_map(identity,[-1,-1],[1,1];estimator=IntervalBound()); error(\"missing failure\"); catch e; @assert e isa ArgumentError; end"
     @test success(`$(Base.julia_cmd()) --startup-file=no --project=$(dirname(Base.active_project())) -e $script`)
 end
+
+@testset "Thin polygon covers round outward" begin
+    tri = ConvexPolygon([(1.0, 1.0), (2.0, 1.0), (2.0, 1.0 + 1.0e-10)])
+    fit = adaptive_map(
+        v -> inv(v[1] - 0.999999), tri;
+        order = 3, atol = 1.0e-12, directions = :axes, strict = false, max_depth = 20
+    )
+    @test !fit.converged
+    @test all(p -> p.status in (:converged, :roundoff, :max_depth, :max_patches), fit.patches)
+    @test sum(p -> domain_area(domain(p)), fit.patches) == domain_area(tri)
+    B = split_directions(fit)
+    @test all(fit.patches) do patch
+        box = patch._patch
+        all(polygon_vertices(domain(patch))) do vertex
+            all(1:2) do i
+                projected = sum(B[i, j] * vertex[j] for j in 1:2)
+                Rational{BigInt}(box.lower[i]) <= projected <= Rational{BigInt}(box.upper[i])
+            end
+        end
+    end
+    @test all(v -> isfinite(fit(v)), polygon_vertices(tri))
+end
