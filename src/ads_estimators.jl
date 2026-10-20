@@ -9,6 +9,8 @@ The original function is reevaluated on every child. Supports static maps,
 positive absolute tolerances and no guard degrees or sampled acceptance checks.
 The returned map retains its interval coefficients, remainder and domain.
 Domain shape and split direction are independent of the error method.
+Analytic domain failures trigger subdivision. A failure remaining at a splitting
+limit throws even with `strict=false`, since no valid model exists for that cell.
 """
 struct IntervalBound <: ADSEstimator end
 

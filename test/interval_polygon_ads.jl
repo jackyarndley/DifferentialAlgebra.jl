@@ -72,9 +72,15 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         @test interval_contains(affine([0, 0])[2], 2 // 3)
         @test_throws DomainError affine([3 // 4, 3 // 4])
         @test_throws DomainError enclose(affine, [IA.interval(T, 0, 1), IA.interval(T, 0, 1)])
-        # The function is positive on the physical triangle, but its axis
-        # cover includes x+y=2. A valid center or polygon is not a cover proof.
-        @test_throws DomainError adaptive_map(v -> log(3 // 2 - v[1] - v[2]), triangle; estimator = IntervalBound(), directions = :axes)
+        # Child covers establish positivity even though the root cover contains
+        # x+y=2, outside the physical triangle where the function is positive.
+        covered = adaptive_map(
+            v -> log(3 // 2 - v[1] - v[2]), triangle;
+            estimator = IntervalBound(), directions = :axes, order = 3,
+            atol = 1 // 1000, table_bytes = budget
+        )
+        @test covered.converged
+        @test interval_contains(covered([0, 0]), log(BigFloat(3) / 2))
         zero_fit = adaptive_map(v -> v[1] - v[1], square; estimator = IntervalBound(), order = 1)
         @test length(zero_fit.patches) == 1 && IA.isthinzero(enclose(zero_fit))
         constant = adaptive_map(v -> 2 // 3, square; estimator = IntervalBound(), order = 1)
@@ -90,7 +96,10 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         )
         @test !incoming.converged && sameinterval(only(only(incoming.patches).error_bounds), IA.interval(T, -1 // 8, 1 // 8))
         for fn in (inv, log, sqrt)
-            @test_throws DomainError adaptive_map(v -> fn(1 + v[1]), square; estimator = IntervalBound(), directions = :axes)
+            @test_throws ErrorException adaptive_map(
+                v -> fn(1 + v[1]), square;
+                estimator = IntervalBound(), directions = :axes, max_depth = 2
+            )
         end
         @test_throws ArgumentError adaptive_map(v -> polynomial(v[1]), square; estimator = IntervalBound(), directions = :axes)
         @test_throws ArgumentError adaptive_map(v -> convert(Interval{T}, one(T)), square; estimator = IntervalBound(), directions = :axes)
@@ -124,5 +133,30 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         @test_throws ArgumentError adaptive_map(identity, [IA.interval(-1, 1), IA.interval(-1, 1)]; estimator = IntervalBound(), splitter = :oriented)
     finally
         IA.configure(; rounding = :correct)
+    end
+end
+
+@testset "Certified polygon ADS recovers from failed probes and fits" begin
+    f(v) = log(2 + sin(3v[1]))
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        polygon = ConvexPolygon(
+            [
+                (T(-1), T(-1)), (T(1), T(-1)),
+                (T(1), T(1)), (T(-1), T(1)),
+            ]
+        )
+        fit = adaptive_map(
+            f, polygon; estimator = IntervalBound(), order = 4,
+            table_bytes = budget, atol = 1 // 1000
+        )
+        @test fit.converged && length(fit.patches) > 1
+        @test sum(p -> domain_area(domain(p)), fit.patches) == domain_area(polygon)
+        for point in (-1, -1 // 2, 0, 1 // 2, 1)
+            @test interval_contains(fit([point, 0]), log(2 + sin(3BigFloat(point))))
+        end
+        @test_throws ErrorException adaptive_map(
+            f, polygon;
+            estimator = IntervalBound(), order = 4, max_depth = 0, strict = false
+        )
     end
 end

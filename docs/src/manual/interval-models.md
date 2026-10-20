@@ -207,6 +207,11 @@ Finite stored coefficients and remainders are required; overflow fails clearly.
 Select `estimator=IntervalBound()` in `adaptive_map` for the validated ADS
 method through the same construction driver as ordinary ADS. It reevaluates the original function with Taylor-model inputs on every
 child and uses rigorous interval bounds to decide whether a fit needs splitting.
+Analytic domain failures also trigger subdivision: a wide enclosure can fail to
+establish positivity even when the original function is valid. Each child must
+form a valid model before it can be accepted. If splitting reaches a limit or
+roundoff while the domain failure remains, construction throws with the cause,
+including with `strict=false`; an invalid model has no inspectable error bound.
 
 ```julia
 f(v) = exp(v[1] + v[2]) * cos(v[1] * v[2])

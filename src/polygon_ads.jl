@@ -254,7 +254,9 @@ function polygon_construct(
             candidate = with_order(2) do
                 polygon_candidate(f, probe, Matrix{PolygonReal}(I, 2, 2), Matrix{PolygonReal}(I, 2, 2), probe_options, ctx, estimator; probe = true)
             end
-            polygon_frame(candidate.geometry.directions)
+            frame = candidate isa ADSDomainFailure ? Matrix{T}(I, 2, 2) :
+                candidate.geometry.directions
+            polygon_frame(frame)
         else
             polygon_frame(directions === :axes ? Matrix{T}(I, 2, 2) : directions)
         end

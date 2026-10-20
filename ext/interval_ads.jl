@@ -76,9 +76,15 @@ end
 fit_error_size(error::Interval) = IA.sup(abs(error))
 
 function validated_candidate(f, inputs, reference, geometry, ctx, options)
-    fit = validated_fit(f, inputs, reference, ctx, options.working_order)
-    models = fit.payload.models
     I = DA.coefficient_type(reference)
+    fit = try
+        validated_fit(f, inputs, reference, ctx, options.working_order)
+    catch err
+        err isa Union{DomainError, DA.TaylorError} || rethrow()
+        DA.ads_check_context(ctx, options.working_order)
+        return DA.ADSDomainFailure(geometry, err, zero(IA.numtype(I)))
+    end
+    models = fit.payload.models
     tolerance = validated_tolerances(I, options.atol, length(models))
     contributions = zeros(IA.numtype(I), length(models), length(reference._coordinates.box))
     for j in eachindex(models)

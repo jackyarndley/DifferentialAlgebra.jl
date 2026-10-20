@@ -14,8 +14,12 @@ function DA.polygon_candidate(
     z = coordinate_models(box, options.order)
     x = [sum(IA.interval(T, A[i, j]) * z[j] for j in 1:2) for i in 1:2]
     candidate = validated_candidate(f, x, first(z), box, ctx, options)
-    values = candidate.payload.models
     geometry = DA.ads_geometry(IA.inf.(box), IA.sup.(box))
+    if candidate isa DA.ADSDomainFailure
+        cover = (; geometry..., projection = (lo, hi), directions = nothing)
+        return DA.ADSDomainFailure(cover, candidate.cause, candidate.zero_score)
+    end
+    values = candidate.payload.models
     directions = if probe
         polynomials = [m._polynomial for m in values]
         radii = [IA.inf(r) for r in first(z)._coordinates.radius]

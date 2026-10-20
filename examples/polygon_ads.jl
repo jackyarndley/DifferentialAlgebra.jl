@@ -142,11 +142,15 @@ catch err
     println("Rejected outside-polygon query: ", err.msg)
 end
 
-# Having a valid center does not validate log on its full model domain.
+# A valid center does not validate log across a singular boundary. Refinement
+# retries the original expression, but this boundary remains invalid.
 try
-    adaptive_map(v -> log(1 + v[1]), box; estimator = IntervalBound(), splitter = :oriented, directions = :axes)
+    adaptive_map(
+        v -> log(1 + v[1]), box; estimator = IntervalBound(),
+        splitter = :oriented, directions = :axes, max_depth = 3
+    )
 catch err
-    err isa DomainError || rethrow()
+    err isa ErrorException || rethrow()
     println("Rejected invalid whole-domain logarithm: ", err.msg)
 end
 

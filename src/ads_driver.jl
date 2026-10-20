@@ -10,6 +10,17 @@ struct ADSCandidate{G, P, E, C, T}
     accepted::Bool
 end
 
+# A failed analytic fit has neither a payload nor an output shape. Subdivide it
+# geometrically until a valid model establishes the concrete patch storage type.
+struct ADSDomainFailure{G, E, T}
+    geometry::G
+    cause::E
+    zero_score::T
+end
+ads_score_zero(p::ADSCandidate) = zero(eltype(p.contributions))
+ads_score_zero(p::ADSDomainFailure) = p.zero_score
+ads_direction_score(p::ADSDomainFailure, axis) = p.zero_score
+
 struct BoxADS{D, X}
     root::D
     variables::X
@@ -85,7 +96,7 @@ end
 
 function ads_split_axis(p, geometry, options)
     axis = 0
-    best = -one(eltype(p.contributions))
+    best = -one(ads_score_zero(p))
     widest = zero(best)
     for i in 1:ads_dimensions(p.geometry)
         ads_splittable(p.geometry, i) || continue
@@ -129,12 +140,59 @@ function ads_result(g::BoxADS, patches::Vector{TaylorPatch{T, C}}, nodes, scalar
     )
 end
 
+function ads_candidate_status(p, geometry, depth, patch_count, options)
+    accepted = p isa ADSCandidate && p.accepted
+    axis = accepted ? 0 : ads_split_axis(p, geometry, options)
+    status = accepted ? :converged : depth >= options.max_depth ? :max_depth :
+        patch_count >= options.max_patches ? :max_patches : axis == 0 ? :roundoff : :split
+    return axis, status
+end
+
+function ads_enqueue_split!(geometry, box, p, depth, node, axis, nodes, pending)
+    left, right = length(nodes) + 1, length(nodes) + 2
+    left_box, right_box, branch = ads_split(geometry, box, p, axis, left, right)
+    nodes[node] = branch
+    push!(nodes, ads_leaf(branch, 0), ads_leaf(branch, 0))
+    push!(pending, (right_box, depth + 1, right), (left_box, depth + 1, left))
+    return nothing
+end
+
+function ads_retry_domain!(
+        geometry, box, p, depth, node, nodes, pending,
+        patch_count, options
+    )
+    axis, status = ads_candidate_status(p, geometry, depth, patch_count, options)
+    if status != :split
+        cause = sprint(showerror, p.cause)
+        throw(
+            ErrorException(
+                "Cannot construct a valid interval model: $status at depth $depth. " *
+                    "Check the function domain or refine the input box. Cause: $cause"
+            )
+        )
+    end
+    return ads_enqueue_split!(geometry, box, p, depth, node, axis, nodes, pending)
+end
+
 function ads_build(problem, geometry, ctx, options, partition = nothing)
     ads_check_partition(partition, options)
     nodes, pending = ads_queue(geometry, partition)
-    box, depth, _ = last(pending)
-    first_candidate = ads_fit(problem, geometry, box, ctx, options, ads_can_split(box, depth, length(pending), options))
-    return ads_build!(problem, geometry, ctx, options, first_candidate, nodes, pending)
+    while true
+        box, depth, node = last(pending)
+        first_candidate = ads_fit(
+            problem, geometry, box, ctx, options,
+            ads_can_split(box, depth, length(pending), options)
+        )
+        if !(first_candidate isa ADSDomainFailure)
+            return ads_build!(problem, geometry, ctx, options, first_candidate, nodes, pending)
+        end
+        pop!(pending)
+        ads_retry_domain!(
+            geometry, box, first_candidate, depth, node, nodes, pending,
+            length(pending) + 1, options
+        )
+    end
+    return
 end
 
 # The first candidate is the function barrier: no runtime patch counts in types,
@@ -147,21 +205,31 @@ function ads_build!(problem, geometry, ctx, options, first_candidate, nodes, pen
         box, depth, node = pop!(pending)
         p = node == first_node ? first_candidate :
             ads_fit(problem, geometry, box, ctx, options, ads_can_split(box, depth, patch_count, options))
+        if p isa ADSDomainFailure
+            ads_retry_domain!(
+                geometry, box, p, depth, node, nodes, pending,
+                patch_count, options
+            )
+            patch_count += 1
+            continue
+        end
         p.scalar == first_candidate.scalar && length(p.errors) == length(first_candidate.errors) ||
             throw(DimensionMismatch("The map changed output shape"))
         eltype(p.errors) === eltype(first_candidate.errors) || throw(ArgumentError("The map changed coefficient type between patches"))
-        axis = p.accepted ? 0 : ads_split_axis(p, geometry, options)
-        status = p.accepted ? :converged : depth >= options.max_depth ? :max_depth :
-            patch_count >= options.max_patches ? :max_patches : axis == 0 ? :roundoff : :split
+        axis, status = ads_candidate_status(p, geometry, depth, patch_count, options)
         if status == :split
-            left, right = length(nodes) + 1, length(nodes) + 2
-            left_box, right_box, branch = ads_split(geometry, box, p, axis, left, right)
-            nodes[node] = branch
-            push!(nodes, ads_leaf(branch, 0), ads_leaf(branch, 0))
-            push!(pending, (right_box, depth + 1, right), (left_box, depth + 1, left))
+            ads_enqueue_split!(geometry, box, p, depth, node, axis, nodes, pending)
             patch_count += 1
         else
-            options.strict && !p.accepted && throw(ErrorException("Automatic domain splitting reached $status at depth $depth; increase the limit or use strict=false to inspect unresolved patches"))
+            if options.strict && !p.accepted
+                hint = status == :roundoff ? "Use wider precision or relax the tolerance" :
+                    "Increase the limit or use strict=false to inspect unresolved patches"
+                throw(
+                    ErrorException(
+                        "Automatic domain splitting reached $status at depth $depth. " * hint
+                    )
+                )
+            end
             push!(patches, ads_finalize(geometry, box, p, depth, status, options.order))
             nodes[node] = ads_leaf(nodes[node], length(patches))
         end

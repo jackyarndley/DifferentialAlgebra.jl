@@ -2,6 +2,9 @@
 
 ## 0.2.0 (unreleased)
 
+- Certified ADS retries analytic domain failures on child cells. A failure that
+  remains at a splitting limit raises an `ErrorException` with its cause, including
+  with `strict=false`; only valid models can form unresolved patches.
 - Taylor-model scalar operands and explicit remainders reject implicit floating
   values as NG. Use `interval(value)`, `IntervalArithmetic.exact(value)`, or exact
   integers/rationals in model arithmetic and `IntervalBound` callbacks.

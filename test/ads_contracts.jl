@@ -92,7 +92,11 @@ contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
             calls[] = 0
             changing(v) = (calls[] += 1; calls[] == 1 ? exp(v[2]) : [exp(v[2])])
             @test_throws DimensionMismatch build(changing; order = 2, atol = 1.0e-12)
-            @test_throws DomainError build(v -> throw(DomainError(v, "callback failure")))
+            failure = estimator isa IntervalBound ? ErrorException : DomainError
+            @test_throws failure build(
+                v -> throw(DomainError(v, "callback failure"));
+                max_depth = 0
+            )
             @test nvariables() == 3 && max_order() == 1
             @test_throws ArgumentError build(v -> (initialize!(2, 2); v[1]))
             @test nvariables() == 3 && max_order() == 1

@@ -85,7 +85,11 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         unsplittable = adaptive_map(v -> IA.interval(T, -1, 1), [adjacent]; atol = 1 // 2, strict = false, estimator = IntervalBound(), order = 3, splitter = :width)
         @test only(unsplittable.patches).status == :roundoff
         for fn in (inv, log, sqrt)
-            @test_throws DomainError adaptive_map(v -> fn(1 + v[1]), [IA.interval(T, -2, 2)]; estimator = IntervalBound(), order = 3, atol = 1.0e-6, splitter = :width)
+            @test_throws ErrorException adaptive_map(
+                v -> fn(1 + v[1]),
+                [IA.interval(T, -2, 2)]; estimator = IntervalBound(), order = 3,
+                atol = 1.0e-6, splitter = :width, max_depth = 2
+            )
         end
         caller, = variables(1; order = 3)
         ctx = DA.CURRENT_ALGEBRA[]
@@ -134,5 +138,41 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         @test_throws ArgumentError adaptive_map(v -> v[1], [IA.interval(-1, 1)]; estimator = IntervalBound(), order = 3, atol = 1.0e-6, splitter = :width)
     finally
         IA.configure(; rounding = :correct)
+    end
+end
+
+@testset "Certified ADS subdivides failed analytic fits" begin
+    f(v) = log(2 + sin(3v[1]))
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        box = [IA.interval(T, -1, 1)]
+        inputs = taylor_models(box; order = 4, table_bytes = budget)
+        @test_throws DomainError f(inputs)
+        for callback in (f, v -> [f(v), v[1]])
+            fit = adaptive_map(
+                callback, box; estimator = IntervalBound(), order = 4,
+                table_bytes = budget, atol = 1 // 1000
+            )
+            @test fit.converged && length(fit.patches) > 1
+            @test all(
+                p -> all(b -> IA.sup(abs(b)) <= T(1) / 1000, p.error_bounds),
+                fit.patches
+            )
+            for point in (-1, -1 // 2, 0, 1 // 2, 1)
+                expected = log(2 + sin(3BigFloat(point)))
+                result = fit([point])
+                value = result isa AbstractVector ? first(result) : result
+                @test interval_contains(value, expected)
+            end
+        end
+        for strict in (false, true), limits in ((; max_depth = 0), (; max_patches = 1))
+            @test_throws ErrorException adaptive_map(
+                f, box;
+                estimator = IntervalBound(), order = 4, strict, limits...
+            )
+        end
+        @test_throws ErrorException adaptive_map(
+            v -> log(v[1]), box;
+            estimator = IntervalBound(), order = 4, max_depth = 2, strict = false
+        )
     end
 end
