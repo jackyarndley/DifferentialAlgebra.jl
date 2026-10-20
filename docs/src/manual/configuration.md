@@ -44,9 +44,8 @@ lookup tables. Larger bases calculate indices as needed. This budget excludes
 polynomial coefficients and basis metadata.
 
 Reuse compiled maps when evaluating many points. The in-place operations
-`evaluate!`, `LinearAlgebra.mul!`, `DifferentialAlgebra.add!` and
-`DifferentialAlgebra.scale!` can reuse storage. Scalar types with allocating
-arithmetic may still allocate inside these operations.
+`evaluate!` and `LinearAlgebra.mul!` can reuse storage. Scalar types with
+allocating arithmetic may still allocate inside these operations.
 
 ## Package compilation
 

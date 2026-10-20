@@ -133,6 +133,14 @@ end
 Base.muladd(a::TaylorPolynomial, alpha::Real, b::TaylorPolynomial) = muladd(alpha, a, b)
 Base.muladd(a::TaylorPolynomial, b::TaylorPolynomial, c::TaylorPolynomial) =
     product(a, b; filter = false) + c
+"""
+    DifferentialAlgebra.add!(out, p, q)
+
+Internal addition buffer kernel. Store `p + q` in `out`, applying its
+coefficient type and the working order
+and tolerance. All three polynomials must share an algebra. Either input may
+alias `out`; operand precision is retained until assignment to its coefficients.
+"""
 function add!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial)
     return weighted_sum!(out, a, one(coefficient_type(a)), b, one(coefficient_type(b)))
 end

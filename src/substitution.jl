@@ -49,7 +49,21 @@ as in ordinary Julia arithmetic. Use `BigInt` or `Rational{BigInt}` coefficients
 when unbounded exact affine arithmetic is required.
 """
 translate_variable(p::TaylorPolynomial, v::Integer, a::Real = 1, c::Real = 0) = affine_variable(p, v, v, a, c)
+"""
+    DifferentialAlgebra.replace_variable(p, from, to, scale = 1)
+
+Internal affine-substitution helper. Replace `x[from]` by `scale*x[to]`,
+retaining the other coordinates. This uses
+the affine-substitution coefficient rules of `translate_variable`.
+"""
 replace_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Real = 1) = affine_variable(p, from, to, a, 0)
+"""
+    DifferentialAlgebra.scale_variable(p, i, scale = 1)
+
+Internal affine-substitution helper. Replace `x[i]` by `scale*x[i]`, retaining
+the other coordinates. This uses the
+affine-substitution coefficient rules of `translate_variable`.
+"""
 scale_variable(p::TaylorPolynomial, v::Integer, a::Real = 1) = affine_variable(p, v, v, a, 0)
 substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) = affine_variable(p, v, v, 0, value; cutoff = valid(p).cutoff)
 

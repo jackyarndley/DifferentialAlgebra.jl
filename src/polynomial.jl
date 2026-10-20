@@ -99,6 +99,7 @@ For ADS maps and their patches, return the requested retained order, separately
 from the actual stored `degree`. Taylor models report their fixed retained order.
 """
 max_order() = ready().basis.order
+# Internal initialization query for loading regressions.
 isinitialized() = CURRENT_ALGEBRA[] !== nothing && CURRENT_ALGEBRA[].active
 
 # Temporary maps own their compiled coefficients. Restore the caller's algebra,
@@ -130,6 +131,7 @@ Number of independent variables in the current algebra or polynomial `p`.
 For a compiled map, return the highest variable index used by its terms.
 """
 nvariables() = ready().basis.variables
+# Internal basis-capacity query for storage tests.
 nmonomials() = last(ready().basis.ends)
 """
     truncation_order()

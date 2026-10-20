@@ -20,7 +20,7 @@ by the factorials of their exponents to recover the moments.
 function raw_moments(mgf::TaylorPolynomial, no::Integer)
     basis = valid(mgf).basis
     0 <= no <= basis.order || throw(ArgumentError("Moment order exceeds initialized order"))
-    indices = multiindices(no, basis.variables)
+    indices = [UInt32.(view(basis.exponents, :, i)) for i in 1:basis.ends[no + 1]]
     T = coefficient_type(mgf)
     moments = [
         coefficient(mgf, jj) * prod(j -> convert(T, factorial(big(j))), jj)

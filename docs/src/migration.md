@@ -76,3 +76,7 @@ Public `patches` and `models` accessors return independent containers; their
 snapshot entries remain read-only. Use `copy(snapshot)` for independent snapshot
 storage. Interval polygon `error_estimate` now returns a vector consistently
 with ordinary polygon estimates.
+
+The API catalog distinguishes supported qualified operations from internal
+coefficient and buffer helpers. Internal methods remain available for package
+implementation and tests; their signatures are documented in source.

@@ -62,6 +62,16 @@ The source is organized by responsibility:
 Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`
 interfaces when appropriate, and test views as well as dense arrays.
 
+## Internal numerical helpers
+
+The supported qualified API is listed in the [API reference](api.md). Other
+coefficient utilities remain internal: `coefficient_product`, `coefficient_dot`,
+`filter_terms`, `nterms`, `divide_variable`, `convergence_radius`,
+`replace_variable` and `scale_variable`. Their source docstrings describe their
+numerical behavior for implementation work and regression tests.
+`add!` and `scale!` are internal buffer kernels; `isinitialized` and `nmonomials`
+support loading and storage tests. Tests call these helpers with qualified names.
+
 ## Build the documentation
 
 From the repository root:

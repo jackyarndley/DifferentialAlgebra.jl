@@ -131,6 +131,13 @@ function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a))
     end
     return finish!(out, n)
 end
+"""
+    DifferentialAlgebra.coefficient_product(p, q)
+
+Internal coefficient-wise product retaining the original monomials.
+For example, `(1 + 2x)` and `(3 + 4x)` give `3 + 8x`. The result uses the
+working order and coefficient tolerance. Both inputs must share an algebra.
+"""
 function coefficient_product(a::TaylorPolynomial, b::TaylorPolynomial)
     ctx = compatible(a, b)
     n = min(a.len, b.len, ctx.basis.ends[ctx.cutoff + 1])
@@ -203,6 +210,13 @@ discarded. The coefficient type follows the scalar division operation.
 An array and an integer index integrate each entry, preserving the array's shape.
 """
 integrate(a::TaylorPolynomial, i::Integer) = calculus(a, i, :integrate)
+"""
+    DifferentialAlgebra.divide_variable(p, i, power = 1)
+
+Internal variable-power division. Divide every monomial by `x[i]^power`.
+Throw `TaylorError` if a retained term
+is not divisible. The result uses the working order and coefficient tolerance.
+"""
 divide_variable(a::TaylorPolynomial, i::Integer, p::Integer = 1) = calculus(a, i, :divide, p)
 for fn in (:differentiate, :integrate)
     @eval function $fn(a::TaylorPolynomial, counts::AbstractVector{<:Integer})
@@ -309,7 +323,13 @@ trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer = max_ord
 differentiate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = differentiate.(a, i)
 integrate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = integrate.(a, i)
 
-"Dot product of corresponding polynomial coefficients, without multiplying monomials."
+"""
+    DifferentialAlgebra.coefficient_dot(p, q)
+
+Internal coefficient dot product returning a scalar.
+This inspection includes degrees above the working order. Both inputs must
+share an algebra; coefficient tolerance is not applied to the scalar sum.
+"""
 function coefficient_dot(a::TaylorPolynomial, b::TaylorPolynomial)
     compatible(a, b)
     T = promote_type(coefficient_type(a), coefficient_type(b))
@@ -320,7 +340,14 @@ function coefficient_dot(a::TaylorPolynomial, b::TaylorPolynomial)
     return result
 end
 
-"Retain coefficients of p whose monomials occur in mask."
+"""
+    DifferentialAlgebra.filter_terms(p, mask)
+
+Internal monomial-mask operation. Select stored coefficients of `p` whose
+monomials occur in `mask`. The mask's
+coefficient values do not scale the selected terms. The result owns its storage
+and applies the coefficient tolerance while preserving stored degrees.
+"""
 function filter_terms(p::TaylorPolynomial, mask::TaylorPolynomial)
     ctx = compatible(p, mask)
     n = min(p.len, mask.len)
@@ -333,10 +360,23 @@ end
 function monomial(powers::AbstractVector{<:Integer}, value::Real = 1.0)
     return set_coefficient!(TaylorPolynomial(zero(value)), powers, value)
 end
-"Number of nonzero coefficients (Julia's size(p) retains scalar semantics)."
+"""
+    DifferentialAlgebra.nterms(p)
+
+Internal storage inspection. Count terms using the coefficient type's
+exact-zero test, independently
+of the working order. `size(p)` keeps Julia's scalar semantics.
+"""
 nterms(p::TaylorPolynomial) = (valid(p); count(!coefficient_iszero, @view p.coeffs[1:p.len]))
 
-"Estimated radius where the first omitted order has norm tolerance; this is not a rigorous bound."
+"""
+    DifferentialAlgebra.convergence_radius(p, tolerance, power = 1)
+
+Internal convergence heuristic. Estimate the radius at which the first omitted
+degree's extrapolated coefficient
+norm reaches a positive finite `tolerance`. `power` selects the degree norm used
+by `estimate_norms`. This coefficient-decay heuristic is not a rigorous bound.
+"""
 function convergence_radius(p::TaylorPolynomial, tolerance::Real, type::Integer = 1)
     isfinite(tolerance) && tolerance > 0 || throw(ArgumentError("Tolerance must be positive and finite"))
     degree = valid(p).cutoff + 1
