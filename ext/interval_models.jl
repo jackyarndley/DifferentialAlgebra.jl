@@ -179,9 +179,83 @@ for op in (:+, :-)
     end
 end
 
+# On a normalized unit box, a nonconstant monomial ranges over [0,1] if all
+# exponents are even, and [-1,1] otherwise. A fixed-axis factor makes it zero.
+# Even zeroth powers carry coordinate metadata, so every axis contributes its
+# decoration. Other boxes, NG coordinates and wider dimensions use powers.
+function unit_product_bounds(powers, variables, ::Type{I}) where {I <: Interval}
+    variables <= Sys.WORD_SIZE || return nothing
+    fixed = zero(UInt)
+    decoration = IA.com
+    for v in 1:variables
+        x = powers[v, 2]
+        IA.isguaranteed(x) || return nothing
+        if IA.isthinzero(x)
+            fixed |= one(UInt) << (v - 1)
+        elseif IA.inf(x) != -1 || IA.sup(x) != 1
+            return nothing
+        end
+        decoration = min(decoration, IA.decoration(x))
+    end
+    T = IA.numtype(I)
+    return (
+        fixed, IA.setdecoration(zero(I), decoration),
+        IA.setdecoration(IA.interval(T, 0, 1), decoration),
+        IA.setdecoration(IA.interval(T, -1, 1), decoration),
+    )
+end
+
+# Parent indices remove one variable at a time. Walking them uses only integer
+# operations and avoids a separate per-product exponent or mask workspace.
+@inline function monomial_masks(basis, k)
+    parity, support = zero(UInt), zero(UInt)
+    @inbounds while k > 1
+        bit = one(UInt) << (basis.factors[k] - 1)
+        parity ⊻= bit
+        support |= bit
+        k = basis.parents[k]
+    end
+    return parity, support
+end
+
+function discarded_unit_bound(p, q, order, bounds, ::Type{I}) where {I <: Interval}
+    basis = p.algebra.basis
+    fixed, zero_bound, even_bound, odd_bound = bounds
+    result = zero(I)
+    @inbounds for i in 1:p.len
+        ac = p.coeffs[i]
+        DA.coefficient_iszero(ac) && continue
+        degree = order - basis.degrees[i]
+        first_j = degree < 0 ? 1 : degree >= basis.degrees[q.len] ?
+            q.len + 1 : basis.ends[degree + 1] + 1
+        parity, support = monomial_masks(basis, i)
+        for j in first_j:q.len
+            bc = q.coeffs[j]
+            DA.coefficient_iszero(bc) && continue
+            qparity, qsupport = monomial_masks(basis, j)
+            factor = if !iszero((support | qsupport) & fixed)
+                zero_bound
+            elseif iszero(parity ⊻ qparity)
+                even_bound
+            else
+                odd_bound
+            end
+            result += (ac * bc) * factor
+        end
+    end
+    return result
+end
+
 # Bound every ordered discarded product directly in the original basis. No
-# order-2n algebra, exponent-vector allocation, or nearest-rounded sum is used.
+# order-2n algebra or nearest-rounded coefficient sum is used.
 function discarded_bound(p, q, order, powers, ::Type{I}) where {I <: Interval}
+    basis = p.algebra.basis
+    basis.degrees[p.len] + basis.degrees[q.len] <= order && return zero(I)
+    bounds = unit_product_bounds(powers, basis.variables, I)
+    return bounds === nothing ? discarded_power_bound(p, q, order, powers, I) :
+        discarded_unit_bound(p, q, order, bounds, I)
+end
+function discarded_power_bound(p, q, order, powers, ::Type{I}) where {I <: Interval}
     basis = p.algebra.basis
     result = zero(I)
     @inbounds for i in 1:p.len

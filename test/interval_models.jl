@@ -5,6 +5,7 @@ include("support/processes.jl")
 
 include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinterval, guaranteed_coefficients
+include("support/interval_products.jl")
 
 @testset "Optional extension and loading" begin
     @test Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt) !== nothing
@@ -512,6 +513,88 @@ end
         # it does not first collect and cancel its discarded coefficients.
         @test interval_contains(remainder(product), lower)
         @test interval_contains(remainder(product), upper)
+    end
+end
+
+@testset "Discarded products on unit and general boxes" begin
+    extension = Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt)
+    terms_a = (
+        ((0, 0, 0), (1 // 1, 1 // 1)),
+        ((1, 0, 0), (1 // 2, 3 // 4)),
+        ((0, 1, 0), (-3 // 4, -1 // 2)),
+        ((0, 0, 1), (4 // 1, 4 // 1)),
+        ((1, 1, 0), (1 // 4, 1 // 4)),
+        ((2, 0, 0), (-1 // 2, 1 // 2)),
+    )
+    terms_b = (
+        ((0, 0, 0), (-1 // 1, -1 // 1)),
+        ((1, 0, 0), (1 // 4, 1 // 2)),
+        ((0, 2, 0), (1 // 2, 3 // 4)),
+        ((0, 0, 1), (-2 // 1, -2 // 1)),
+    )
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        I = Interval{T}
+        unit = IA.interval(T, -1, 1)
+        for fixed in (false, true), decoration in (IA.com, IA.def)
+            third = IA.setdecoration(fixed ? IA.interval(T, 2) : unit, decoration)
+            reference = first(
+                taylor_models(
+                    [unit, unit, third]; order = 2,
+                    table_bytes = budget
+                )
+            )
+            # A degraded but unused axis must still affect every monomial.
+            aterms = decoration == IA.def ? filter(t -> iszero(t[1][3]), terms_a) : terms_a
+            bterms = decoration == IA.def ? filter(t -> iszero(t[1][3]), terms_b) : terms_b
+            p, q = zero(polynomial(reference)), zero(polynomial(reference))
+            for (poly, terms) in ((p, aterms), (q, bterms)), (exponents, endpoints) in terms
+                set_coefficient!(poly, collect(exponents), IA.interval(T, endpoints...))
+            end
+            box = reference._coordinates.normalized
+            exact_box = ((-1, 1), (-1, 1), fixed ? (0, 0) : (-1, 1))
+            powers = extension.power_cache(box, 4, I)
+            for order in 0:4
+                lo, hi = rational_discarded_product(aterms, bterms, exact_box, order)
+                actual = @inferred extension.discarded_bound(p, q, order, powers, I)
+                @test sameinterval(actual, IA.interval(T, lo, hi))
+                @test IA.isguaranteed(actual)
+                @test IA.decoration(actual) == (order == 4 ? IA.com : decoration)
+            end
+            a, b = TaylorModel(p, zero(I), reference), TaylorModel(q, zero(I), reference)
+            lo, hi = rational_discarded_product(aterms, bterms, exact_box, 2)
+            @test sameinterval(remainder(a * b), IA.interval(T, lo, hi))
+            @test IA.decoration(remainder(a * b)) == decoration
+
+            # The generic path retains arbitrary coordinate powers and NG flags.
+            for ng in (false, true)
+                general = [
+                    IA.interval(T, -2, -1 // 2), IA.interval(T, 1 // 4, 3 // 4),
+                    IA.interval(T, 0),
+                ]
+                ng && (general[1] *= T(1))
+                powers = extension.power_cache(general, 4, I)
+                lo, hi = rational_discarded_product(
+                    aterms, bterms,
+                    ((-2, -1 // 2), (1 // 4, 3 // 4), (0, 0)), 2
+                )
+                actual = extension.discarded_bound(p, q, 2, powers, I)
+                @test sameinterval(actual, IA.interval(T, lo, hi))
+                @test IA.isguaranteed(actual) == !ng
+            end
+            # Degraded zero coefficients participate even on an ordinary box.
+            set_coefficient!(q, [1, 0, 1], IA.setdecoration(zero(I), IA.def))
+            powers = extension.power_cache(fill(unit, 3), 4, I)
+            actual = extension.discarded_bound(p, q, 2, powers, I)
+            @test IA.decoration(actual) == IA.def
+        end
+        # Shifts beyond a machine word must use the dimension-independent path.
+        n = Sys.WORD_SIZE + 1
+        x = variables(I, n; order = 1, table_bytes = 0)
+        powers = extension.power_cache(fill(unit, n), 2, I)
+        @test sameinterval(
+            extension.discarded_bound(last(x), last(x), 1, powers, I),
+            IA.interval(T, 0, 1)
+        )
     end
 end
 
