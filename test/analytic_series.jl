@@ -246,3 +246,27 @@ end
         end
     end
 end
+
+@testset "Hypotenuse at small and large centers" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 4, table_bytes = budget)
+        for scale in (1.0e-170, 1.0e170), sign in (-1, 1)
+            p = sign * scale + x
+            for result in (hypot(p, 0), hypot(0, p))
+                @test constant_term(result) == scale
+                @test coefficient(result, [1]) == sign
+                @test all(k -> iszero(coefficient(result, [k])), 2:4)
+                @test isfinite(result)
+            end
+            # A uniformly scaled 3-4-5 line supplies an exact independent oracle.
+            p, q = 3scale * (1 + x), 4scale * (1 + x)
+            result = hypot(p, q)
+            @test constant_term(result) ≈ 5scale
+            @test coefficient(result, [1]) ≈ 5scale
+            @test all(k -> abs(coefficient(result, [k])) <= 100eps(scale), 2:4)
+        end
+        @test iszero(hypot(zero(x), zero(x)))
+        @test_throws DifferentialAlgebra.TaylorError hypot(x, zero(x))
+        @test_throws DifferentialAlgebra.TaylorError hypot(x, x)
+    end
+end

@@ -348,20 +348,21 @@ end
 Base.atan(a::TaylorPolynomial, b::Real) = atan(a, scalar_argument(a, b))
 Base.atan(a::Real, b::TaylorPolynomial) = atan(scalar_argument(b, a), b)
 function Base.hypot(a::TaylorPolynomial, b::TaylorPolynomial)
-    ctx = compatible(a, b)
-    scale = max(abs(constant_term(a)), abs(constant_term(b)))
-    # Normalize before squaring to avoid overflow/underflow at finite centers.
-    if !coefficient_iszero(scale)
-        a, b = normalized_argument(a, scale), normalized_argument(b, scale)
+    compatible(a, b)
+    a0, b0 = constant_term(a), constant_term(b)
+    abs(b0) > abs(a0) && ((a, b) = (b, a); a0 = b0)
+    if coefficient_iszero(a0)
+        iszero(a) && iszero(b) && return scalar_argument(a, hypot(a0, b0))
+        throw(TaylorError("hypot is not analytic at the origin"))
     end
-    aa, bb = product(a, a; filter = false), product(b, b; filter = false)
-    R = promote_type(coefficient_type(aa), coefficient_type(bb))
-    squares = weighted_sum!(
-        aa isa TaylorPolynomial{R} ? aa : allocate(ctx, R),
-        aa, one(R), bb, one(R); filter = false
-    )
-    result = root_series(squares, 2; filter = false)
-    return scaled(result, coefficient_iszero(scale) ? one(scale) : scale)
+    iszero(b) && return abs(a)
+    # The dominant coordinate stays outside the root: dividing both inputs by
+    # a tiny center can overflow their squared slopes before rescaling them.
+    ratio = quotient(b, a; filter = false)
+    squares = product(ratio, ratio; filter = false)
+    squares.coeffs[1] += one(coefficient_type(squares))
+    factor = root_series(squares, 2; filter = false)
+    return scaled(product(a, factor; filter = false), sign(a0))
 end
 Base.hypot(a::TaylorPolynomial, b::Real) = hypot(a, scalar_argument(a, b))
 Base.hypot(a::Real, b::TaylorPolynomial) = hypot(scalar_argument(b, a), b)
