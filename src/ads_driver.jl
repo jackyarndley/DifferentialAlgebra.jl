@@ -112,7 +112,10 @@ ads_fit(problem, g::BoxADS, box, ctx, options, allow_split) =
 ads_payload_patch_type(::CompiledMap{C}, box) where {C} = TaylorPatch{eltype(box.lo), C}
 ads_patch_type(::BoxADS, p) = ads_payload_patch_type(p.payload, p.geometry)
 function ads_local_patch(payload::CompiledMap, box, errors, depth, status, order)
-    return TaylorPatch(box.lo, box.hi, box.center, box.radius, payload, errors, depth, status, order)
+    return TaylorPatch(
+        deepcopy(box.lo), deepcopy(box.hi), deepcopy(box.center), deepcopy(box.radius),
+        payload, copy(errors), depth, status, order
+    )
 end
 ads_finalize(::BoxADS, box, p, depth, status, order) =
     ads_local_patch(p.payload, p.geometry, p.errors, depth, status, order)
@@ -120,7 +123,8 @@ ads_finalize(::BoxADS, box, p, depth, status, order) =
 function ads_result(g::BoxADS, patches::Vector{TaylorPatch{T, C}}, nodes, scalar, options) where {T, C}
     max_degree = maximum(p -> degree(p.map), patches)
     return PiecewiseTaylorMap(
-        g.root.lo, g.root.hi, patches, nodes, max_degree, options.order, scalar,
+        deepcopy(g.root.lo), deepcopy(g.root.hi), patches, nodes, max_degree, options.order,
+        scalar,
         options.estimator, all(p -> p.status == :converged, patches)
     )
 end

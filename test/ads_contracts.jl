@@ -242,3 +242,31 @@ end
         @test all(sameinterval.(saved, enclose(fit))) && all(sameinterval.(saved, enclose(owned)))
     end
 end
+
+@testset "Patch bounds do not alias the map or neighboring patches" begin
+    for T in (Float64, BigFloat)
+        lower, upper = T[-1, -1], T[1, 1]
+        fit = adaptive_map(
+            v -> exp(v[1]), lower, upper;
+            order = 3, atol = 1.0e-3, check_points = false
+        )
+        @test length(fit.patches) > 1
+        @test all(p -> p.lower !== fit.lower && p.upper !== fit.upper, fit.patches)
+        @test all(
+            i == j || fit.patches[i].lower !== fit.patches[j].lower
+                for i in eachindex(fit.patches), j in eachindex(fit.patches)
+        )
+        bounds = [deepcopy((p.lower, p.upper)) for p in fit.patches]
+        saved = domain(fit)
+        fit.patches[1].lower[1] = 42
+        @test domain(fit) == saved
+        @test all(
+            i -> (fit.patches[i].lower, fit.patches[i].upper) == bounds[i],
+            2:length(fit.patches)
+        )
+        @test lower == T[-1, -1] && upper == T[1, 1]
+        if T === BigFloat
+            @test all(p -> all(i -> p.upper[i] !== fit.upper[i], 1:2), fit.patches)
+        end
+    end
+end
