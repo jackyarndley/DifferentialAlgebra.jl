@@ -22,6 +22,28 @@ using Test, DifferentialAlgebra
     end
 end
 
+@testset "Compiled snapshots weakly reference their composition algebra" begin
+    for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
+        x, y = variables(T, 2; order = 3, table_bytes = budget)
+        original = CompiledMap([1 + x * y, x + y])
+        for map in (original, copy(original), deepcopy(original), CompiledMap(original))
+            @test map.algebra isa WeakRef
+            @test map.algebra.value === x.algebra
+            composed = evaluate(map, [x + 1, y])
+            @test iszero(coefficient_norm(composed[1] - (1 + y + x * y)))
+            @test iszero(coefficient_norm(composed[2] - (1 + x + y)))
+            @test map(T[2, 3]) == T[7, 5]
+        end
+        owned = deepcopy(original)
+        original.coefficients[1, 1] = T(100)
+        @test owned(T[2, 3]) == T[7, 5]
+        variables(T, 2; order = 3, table_bytes = budget)
+        GC.gc(true)
+        @test owned(T[2, 3]) == T[7, 5]
+        @test_throws r"previous initialization" evaluate(owned, [variable(1, T)])
+    end
+end
+
 @testset "Converting monomials" begin
     for T in (Int, Float32, Float64, BigFloat, Rational{Int})
         m = Monomial{T}(2, [1, 3])

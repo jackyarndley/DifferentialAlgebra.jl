@@ -5,7 +5,8 @@
 Construct a shared evaluation tree for repeated evaluation or composition.
 Call `map(point)` or [`evaluate`](@ref) to evaluate it. Numeric evaluation remains
 valid after algebra reinitialization because the map owns its coefficients.
-Polynomial composition requires its original algebra.
+It does not keep an obsolete monomial basis or multiplication tables alive.
+Polynomial composition requires its original algebra to remain active.
 
 `noutputs`, `degree`, `nvariables` and `nnodes` inspect its output dimension,
 maximum degree, highest variable index and number of evaluation-tree nodes.
@@ -16,7 +17,7 @@ struct CompiledMap{T <: Real}
     indices::Vector{Int}
     depth::Int
     nvars::Int
-    algebra::Algebra
+    algebra::WeakRef
 end
 CompiledMap(a::Union{TaylorPolynomial, AbstractVector{<:TaylorPolynomial}}) = compile(a)
 CompiledMap(map::CompiledMap) = copy(map)
@@ -24,6 +25,8 @@ Base.copy(map::CompiledMap) = CompiledMap(
     copy(map.coefficients), copy(map.levels),
     copy(map.indices), map.depth, map.nvars, map.algebra
 )
+Base.deepcopy_internal(map::CompiledMap, copies::IdDict) =
+    get!(() -> copy(map), copies, map)
 """
     noutputs(map::CompiledMap)
 
@@ -76,7 +79,9 @@ function compile_map(::Type{T}, owners, ctx, basis) where {T}
         k <= a.len && (coefficients[row, column] = coefficient_convert(T, a.coeffs[k]))
     end
     levels, indices = basis.degrees[nodes], basis.factors[nodes]
-    return CompiledMap(coefficients, levels, indices, maximum(levels), maximum(indices), ctx)
+    return CompiledMap(
+        coefficients, levels, indices, maximum(levels), maximum(indices), WeakRef(ctx)
+    )
 end
 compile(a::TaylorPolynomial) = compile([a])
 
@@ -153,10 +158,15 @@ function evaluate(map::CompiledMap{T}, args::AbstractVector{<:Real}) where {T}
     return evaluate!(zeros(R, noutputs(map)), map, args, zeros(R, map.depth + 1))
 end
 
+function composition_algebra(map::CompiledMap)
+    ctx = map.algebra.value
+    ctx isa Algebra && ctx.active ||
+        throw(ArgumentError("Compiled map belongs to a previous initialization"))
+    return ctx
+end
 function compose(map::CompiledMap{T}, args::AbstractVector{<:TaylorPolynomial}, cutoff::Int) where {T}
     Base.require_one_based_indexing(args)
-    ctx = map.algebra
-    ctx.active || throw(ArgumentError("Compiled map belongs to a previous initialization"))
+    ctx = composition_algebra(map)
     all(a -> valid(a) === ctx, args) || throw(ArgumentError("Different polynomial contexts"))
     R = foldl((S, a) -> promote_type(S, coefficient_type(a)), args; init = T)
     return if isempty(ctx.basis.products)
@@ -227,7 +237,8 @@ function sparse_multiply!(out::TaylorPolynomial{T}, oi, a, ai, b, bi, marks, sta
     out.len = last
     return out
 end
-evaluate(map::CompiledMap, args::AbstractVector{<:TaylorPolynomial}) = compose(map, args, map.algebra.cutoff)
+evaluate(map::CompiledMap, args::AbstractVector{<:TaylorPolynomial}) =
+    compose(map, args, composition_algebra(map).cutoff)
 evaluate(a::TaylorPolynomial, args::AbstractVector{<:Real}) = only(evaluate(compile(a), args))
 evaluate(a::AbstractVector{<:TaylorPolynomial}, args::AbstractVector{<:Real}) = evaluate(compile(a), args)
 evaluate(a::TaylorPolynomial, value::Real) = evaluate(a, [value])
