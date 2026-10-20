@@ -135,10 +135,11 @@ end
 Base.log(::Irrational{:ℯ}, a::TaylorPolynomial) = log(a)
 
 function power_series(a::TaylorPolynomial, p::Real, c0; filter::Bool = true)
-    T = promote_type(coefficient_type(a), typeof(c0), typeof(p))
-    x = coefficient_convert(T, constant_term(a))
+    x = constant_term(a)
     coefficient_iszero(x) && throw(TaylorError("Noninteger powers require a nonzero expansion point"))
     !isempty(a.algebra.basis.products) && return recurrence(a, c0, p, Val(:power); filter)
+    T = promote_type(coefficient_type(a), typeof(c0), typeof(p))
+    x = coefficient_convert(T, x)
     c = Vector{T}(undef, working_order(a.algebra) + 1); c[1] = c0
     @inbounds for k in 1:(length(c) - 1)
         c[k + 1] = c[k] * (p - degree_factor(p, k - 1)) / degree_factor(c[k], k)
