@@ -31,3 +31,30 @@ function measure_dense(solution)
     return measure(() -> solution(out, 0.05))
 end
 println((; path = :dense_interpolation, measurement = measure_dense(solution)))
+
+function inplace_growth!(du, u, p, t)
+    du[1], du[2] = u[1], -u[2]
+    return nothing
+end
+function inplace_solve()
+    initial = [1.0, 2.0]
+    problem = DiffEqBase.ODEProblem(inplace_growth!, initial, (0.0, 0.3))
+    return DiffEqBase.solve(problem, TaylorMethod(14); adaptive = false, dt = 0.1)
+end
+retry_growth(u, p, t) = u
+function rejected_solve()
+    problem = DiffEqBase.ODEProblem(retry_growth, [1.0], (0.0, 1.0))
+    return DiffEqBase.solve(
+        problem, TaylorMethod(8); dt = 1.0,
+        abstol = 1.0e-14, reltol = 1.0e-14
+    )
+end
+println((; path = :inplace_solve, measurement = measure(inplace_solve)))
+measurement = measure(rejected_solve)
+solution = rejected_solve()
+println(
+    (;
+        path = :rejected_solve, accepted = solution.stats.naccept,
+        rejected = solution.stats.nreject, rhs_calls = solution.stats.nf, measurement,
+    )
+)
