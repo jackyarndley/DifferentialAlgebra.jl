@@ -32,6 +32,7 @@ DA.coefficient_convert(::Type{Interval{T}}, c::IA.ExactReal) where {T <: IA.NumT
 DA.coefficient_operand(::Type{Interval{T}}, c::Real) where {T <: IA.NumTypes} = DA.coefficient_convert(Interval{T}, c)
 DA.degree_factor(c::Interval{T}, n::Integer) where {T <: IA.NumTypes} = IA.interval(T, n)
 DA.coefficient_muladd(a::Real, b::Real, c::Interval) = DA.coefficient_convert(typeof(c), a) * DA.coefficient_convert(typeof(c), b) + c
+DA.coefficient_power(c::Interval, n::Integer) = IA.pown(c, n)
 DA.taylor_solver_coefficient(::Type{<:Interval}) = false
 DA.invertible_constant(c::Interval) = !IA.isnai(c) && !IA.isempty_interval(c) && !IA.in_interval(0, c)
 

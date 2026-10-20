@@ -61,6 +61,9 @@ end
 @safetestset "arrays" begin
     include("arrays.jl")
 end
+@safetestset "evaluation" begin
+    include("evaluation.jl")
+end
 @safetestset "display" begin
     include("display.jl")
 end

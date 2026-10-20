@@ -1,0 +1,61 @@
+using Test, DifferentialAlgebra
+using ForwardDiff, IntervalArithmetic
+
+include("support/intervals.jl")
+using .IntervalTestSupport: IA, interval_contains
+
+@testset "Direct numeric evaluation" begin
+    for T in (Float32, Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
+        x, y, z = variables(T, 3; order = 4, table_bytes = budget)
+        p = (1 + x / 2 + y / 4 + z / 8)^4
+        for point in (T[], T[1 // 4], T[1 // 4, -1 // 2, 1], T[1, 2, 3, 100])
+            padded = vcat(point, zeros(T, 3))
+            expected = (1 + padded[1] / 2 + padded[2] / 4 + padded[3] / 8)^4
+            @test @inferred(p(point)) ≈ expected
+        end
+        @test p(1 // 4) ≈ (1 + T(1 // 8))^4
+        @test coefficient_type(p) === T
+        with_order(1) do
+            @test p(T[1, 2, 3]) ≈ (1 + T(1) / 2 + T(2) / 4 + T(3) / 8)^4
+        end
+        set_coefficient_tolerance!(0.1)
+        @test p(T[1, 2, 3]) ≈ (1 + T(1) / 2 + T(2) / 4 + T(3) / 8)^4
+        setprecision(256) do
+            point = [BigFloat(1) / 3, BigFloat(1) / 7, BigFloat(1) / 9]
+            expected = (1 + point[1] / 2 + point[2] / 4 + point[3] / 8)^4
+            @test p(point) isa BigFloat
+            @test p(point) ≈ expected rtol = 32eps(BigFloat)
+        end
+    end
+    x, y = variables(2; order = 3)
+    p = 2 + x^2 + x * y / 4 - y
+    @test ForwardDiff.gradient(p, [0.25, -0.5]) == [3 / 8, -15 / 16]
+    @test ForwardDiff.hessian(p, [0.25, -0.5]) == [2 1 / 4; 1 / 4 0]
+    @test p(Real[0.25, -0.5]) == p([0.25, -0.5])
+    @test TaylorPolynomial(7)(BigFloat[]) isa BigFloat
+    @test (1 + x)([2.0, Inf]) == 3
+    @test (1 + x * y)([Inf]) == 1
+end
+
+@testset "Direct evaluation preserves interval bounds and metadata" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        I = Interval{T}
+        x, y = variables(I, 2; order = 3, table_bytes = budget)
+        p = (1 + x / 2 + y / 4)^3
+        box = [IA.interval(T, 1 // 4, 1 // 2), IA.interval(T, -1 // 2, -1 // 4)]
+        result = p(box)
+        # Monotonicity of the positive affine base gives this independent range.
+        @test interval_contains(result, 1)
+        @test interval_contains(result, (1 + 1 // 4 - 1 // 16)^3)
+        @test IA.isguaranteed(result) && IA.decoration(result) == IA.com
+        degraded = IA.setdecoration(box[1], IA.def)
+        result = p([degraded, box[2]])
+        @test IA.decoration(result) == IA.def && IA.isguaranteed(result)
+        zero_coefficient = IA.setdecoration(IA.interval(T, 0), IA.def)
+        owned = TaylorPolynomial{I}([zero_coefficient, IA.interval(T, 1)], 2, x.algebra)
+        @test IA.decoration(owned([IA.interval(T, 1)])) == IA.def
+        nonguaranteed = convert(I, T(0))
+        owned = TaylorPolynomial{I}([nonguaranteed, IA.interval(T, 1)], 2, x.algebra)
+        @test !IA.isguaranteed(owned([IA.interval(T, 1)]))
+    end
+end

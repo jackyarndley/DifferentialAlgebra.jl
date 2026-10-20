@@ -24,6 +24,9 @@ evaluate(f, [x + y, y])
 
 Missing coordinates are treated as zero; extra coordinates are ignored. Supply
 one coordinate per independent variable when evaluating a complete state.
+Single-polynomial numeric evaluation visits its stored nonzero terms directly.
+It preserves their degrees even under a lower working order and does not
+recompile or filter the polynomial.
 
 ## Compile repeated evaluations
 

@@ -239,7 +239,29 @@ function sparse_multiply!(out::TaylorPolynomial{T}, oi, a, ai, b, bi, marks, sta
 end
 evaluate(map::CompiledMap, args::AbstractVector{<:TaylorPolynomial}) =
     compose(map, args, composition_algebra(map).cutoff)
-evaluate(a::TaylorPolynomial, args::AbstractVector{<:Real}) = only(evaluate(compile(a), args))
+function evaluate(a::TaylorPolynomial{T}, args::AbstractVector{<:Real}) where {T}
+    Base.require_one_based_indexing(args)
+    any(x -> x isa TaylorPolynomial, args) && return only(evaluate(compile(a), args))
+    basis = valid(a).basis
+    R = evaluation_type(T, args)
+    value = convert(R, coefficient_operand(R, a.coeffs[1]))
+    @inbounds for k in 2:a.len
+        c = a.coeffs[k]
+        coefficient_iszero(c) && continue
+        monomial = one(R)
+        for v in 1:basis.variables
+            power = basis.exponents[v, k]
+            iszero(power) && continue
+            if v > length(args)
+                monomial = zero(R)
+                break
+            end
+            monomial *= coefficient_power(coefficient_operand(R, args[v]), power)
+        end
+        value += monomial * coefficient_operand(R, c)
+    end
+    return value
+end
 evaluate(a::AbstractVector{<:TaylorPolynomial}, args::AbstractVector{<:Real}) = evaluate(compile(a), args)
 evaluate(a::TaylorPolynomial, value::Real) = evaluate(a, [value])
 evaluate(a::Union{CompiledMap, AbstractVector{<:TaylorPolynomial}}, value::Real) = evaluate(a, [value])

@@ -204,6 +204,7 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 @inline coefficient_operand(::Type{T}, c::Real) where {T <: Real} = c
 @inline degree_factor(c::Real, n::Integer) = n
 @inline coefficient_muladd(a::Real, b::Real, c::Real) = muladd(a, b, c)
+@inline coefficient_power(c::Real, n::Integer) = c^n
 @inline invertible_constant(c::Real) = !coefficient_iszero(c)
 
 @inline keep(c::Real, epsilon::Float64) = !coefficient_iszero(c)
