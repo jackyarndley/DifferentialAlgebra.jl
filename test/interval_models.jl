@@ -475,8 +475,58 @@ end
     end
 end
 
+@testset "Paired model trigonometric coefficients and remainders" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2), order in (1, 4, 9),
+            decoration in (IA.com, IA.dac, IA.def)
+        box = [
+            IA.setdecoration(IA.interval(T, -1 // 4, 1 // 4), decoration),
+            IA.setdecoration(IA.interval(T, 1 // 8, 3 // 8), decoration),
+        ]
+        x, y = taylor_models(box; order, table_bytes = budget)
+        argument = 1 // 2 + x + 2y # Center 1, both normalized radii 1/4.
+        original = polynomial(argument)
+        s, c = @inferred sincos(argument)
+        @test s._polynomial !== c._polynomial
+        @test s._polynomial.coeffs !== c._polynomial.coeffs
+        @test isequal(polynomial(argument), original)
+        for (fn, result) in ((sin, s), (cos, c))
+            single = fn(argument)
+            p = polynomial(result)
+            @test isequal(p, polynomial(single))
+            @test sameinterval(remainder(result), remainder(single))
+            @test sameinterval(enclose(result), enclose(single))
+            @test IA.isguaranteed(enclose(result))
+            @test IA.decoration(enclose(result)) == decoration
+            # Independent mixed derivatives of f(1+(xi+eta)/4).
+            expected = setprecision(768) do
+                sine, cosine = sincos(BigFloat(1))
+                cycle = fn === sin ? (sine, cosine, -sine, -cosine) :
+                    (cosine, -sine, -cosine, sine)
+                [
+                    (
+                        i, j, cycle[mod(i + j, 4) + 1] /
+                            (big(4)^(i + j) * factorial(big(i)) * factorial(big(j))),
+                    )
+                        for i in 0:order for j in 0:(order - i)
+                ]
+            end
+            for (i, j, coefficient_value) in expected
+                @test interval_contains(coefficient(p, [i, j]), coefficient_value)
+            end
+            for point in ((-1 // 4, 1 // 8), (0, 1 // 4), (1 // 4, 3 // 8))
+                value = setprecision(768) do
+                    fn(BigFloat(1 // 2 + point[1] + 2point[2]))
+                end
+                @test interval_contains(evaluate(result, collect(point)), value)
+                @test interval_contains(evaluate(compile(result), collect(point)), value)
+            end
+        end
+    end
+end
+
 @testset "Independent function ranges preserve the absolute remainder" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2), decoration in (IA.com, IA.def)
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2),
+            decoration in (IA.com, IA.dac, IA.def)
         box = [
             IA.setdecoration(IA.interval(T, -10, 10), decoration),
             IA.setdecoration(IA.interval(T, 7), decoration),

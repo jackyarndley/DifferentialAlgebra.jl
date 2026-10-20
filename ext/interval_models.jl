@@ -338,29 +338,30 @@ function Base.:^(a::TaylorModel, n::Integer)
     return result
 end
 
-# f^(k)(X)/k!, with interval constants and no floating factorial approximation.
-# These are valid on the whole hull from the expansion point to the input range.
-function normalized_derivative(fn, x::I, k::Int) where {I <: Interval}
+function inverse_factorial(::Type{I}, k) where {I <: Interval}
     T = IA.numtype(I)
-    if fn === inv
-        return (isodd(k) ? -one(I) : one(I)) / IA.pown(x, k + 1)
-    elseif fn === log
-        k == 0 && return log(x)
-        return (iseven(k) ? -one(I) : one(I)) / (IA.interval(T, k) * IA.pown(x, k))
-    elseif fn === sqrt
-        factor = one(I)
-        for j in 1:k
-            factor *= (IA.interval(T, 1 // 2) - IA.interval(T, j - 1)) / IA.interval(T, j)
-        end
-        return factor * sqrt(x) / IA.pown(x, k)
-    end
     factor = one(I)
     for j in 1:k
         factor /= IA.interval(T, j)
     end
+    return factor
+end
+
+# f^(k)(X)/k!, valid on the hull from the expansion point to the input range.
+function model_derivative(fn, x::I, k::Int) where {I <: Interval}
+    factor = inverse_factorial(I, k)
     fn === exp && return exp(x) * factor
-    values = fn === sin ? (sin(x), cos(x), -sin(x), -cos(x)) : (cos(x), -sin(x), -cos(x), sin(x))
+    s, c = sincos(x)
+    values = fn === sin ? (s, c, -s, -c) : (c, -s, -c, s)
     return values[mod(k, 4) + 1] * factor
+end
+
+function model_horner(a, h, coefficients)
+    result = TaylorModel(coefficients[end], a)
+    for k in (length(coefficients) - 1):-1:1
+        result = result * h + coefficients[k]
+    end
+    return result
 end
 
 # For |u| <= r <= 1 the absolute binomial tail is bounded by
@@ -410,10 +411,7 @@ function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Inte
         DA.finish!(p, p.len; filter = false), h._remainder / center, a._coordinates, n,
         h._enclosure === nothing ? nothing : h._enclosure / center
     )
-    result = TaylorModel(coefficients[end], a)
-    for k in n:-1:1
-        result = result * h + coefficients[k]
-    end
+    result = model_horner(a, h, coefficients)
     tail = if fn === inv
         IA.pown(-((x - center) / center), n + 1) / x
     elseif fn === log
@@ -445,12 +443,7 @@ function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Inte
     )
 end
 
-function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
-    model_context(a)
-    x = checked_interval(DA.enclose(a); guaranteed = true)
-    fn === sqrt && IA.isthinzero(x) && return zero(a)
-    fn === inv && IA.in_interval(0, x) && throw(DomainError(x, "Reciprocal requires exclusion of zero on the whole model enclosure"))
-    fn in (log, sqrt) && IA.inf(x) <= 0 && throw(DomainError(x, "This expansion requires strict positivity on the whole model enclosure"))
+function model_center(fn, x::I) where {I <: Interval}
     T = IA.numtype(I)
     midpoint = IA.mid(x)
     if fn === sqrt
@@ -460,16 +453,38 @@ function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
     end
     center = IA.interval(T, midpoint)
     IA.issubset_interval(center, x) || throw(ArgumentError("Could not construct an expansion point inside the input enclosure"))
+    return center
+end
+
+function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
+    model_context(a)
+    x = checked_interval(DA.enclose(a); guaranteed = true)
+    fn === sqrt && IA.isthinzero(x) && return zero(a)
+    if fn === inv && IA.in_interval(0, x)
+        throw(DomainError(x, "The reciprocal input enclosure must exclude zero"))
+    elseif fn in (log, sqrt) && IA.inf(x) <= 0
+        throw(DomainError(x, "This expansion requires a strictly positive whole enclosure"))
+    end
+    center = model_center(fn, x)
     fn in (inv, log, sqrt) && return relative_model(fn, a, x, center)
     h = a - center
     n = a._order
-    result = TaylorModel(normalized_derivative(fn, center, n), a)
-    for k in (n - 1):-1:0
-        result = result * h + normalized_derivative(fn, center, k)
+    coefficients = if fn === exp
+        values = Vector{I}(undef, n + 1)
+        values[1] = exp(center)
+        for k in 1:n
+            values[k + 1] = values[k] / DA.degree_factor(values[k], k)
+        end
+        values
+    else
+        s, c = sincos(center)
+        values = fn === sin ? (s, c, -s, -c) : (c, -s, -c, s)
+        DA.cycle_coefficients(values, n)
     end
+    result = model_horner(a, h, coefficients)
     # Taylor's theorem: the (n+1)th normalized derivative is bounded on x;
     # h^(n+1) here is an interval power of the whole input displacement.
-    tail = normalized_derivative(fn, x, n + 1) * IA.pown(x - center, n + 1)
+    tail = model_derivative(fn, x, n + 1) * IA.pown(x - center, n + 1)
     return model_result(
         result._polynomial, result._remainder + tail, a._coordinates, n, fn(x)
     )
@@ -479,7 +494,31 @@ for fn in (:inv, :exp, :log, :sin, :cos, :sqrt)
 end
 
 
-Base.sincos(a::TaylorModel) = (sin(a), cos(a))
+function Base.sincos(a::TaylorModel{I}) where {I <: Interval}
+    model_context(a)
+    x = checked_interval(DA.enclose(a); guaranteed = true)
+    center = model_center(sin, x)
+    h = a - center
+    n = a._order
+    s0, c0 = sincos(center)
+    s, c = DA.trig_coefficients(s0, c0, n)
+    sine, cosine = model_horner(a, h, s), model_horner(a, h, c)
+    sx, cx = sincos(x)
+    sine_cycle, cosine_cycle = (sx, cx, -sx, -cx), (cx, -sx, -cx, sx)
+    index = mod(n + 1, 4) + 1
+    power = IA.pown(x - center, n + 1)
+    factor = inverse_factorial(I, n + 1)
+    return (
+        model_result(
+            sine._polynomial, sine._remainder + sine_cycle[index] * factor * power,
+            a._coordinates, n, sx
+        ),
+        model_result(
+            cosine._polynomial, cosine._remainder + cosine_cycle[index] * factor * power,
+            a._coordinates, n, cx
+        ),
+    )
+end
 
 function compile_models(models::AbstractVector{TaylorModel{I}}) where {I <: Interval}
     validated_rounding()

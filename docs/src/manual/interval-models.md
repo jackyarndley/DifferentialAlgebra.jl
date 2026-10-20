@@ -200,6 +200,8 @@ Taylor's theorem adds the absolute interval
 
 The entire segment from `s` to each possible input lies in `X`. Derivatives use
 interval exponential or sine/cosine cycles divided by enclosed factorials.
+`sincos(model)` shares the input bound, expansion point, displacement and scalar
+coefficient generation; its two outputs own independent polynomial storage.
 
 Reciprocal, logarithm and square root instead compose in `(A-s)/s`, dividing
 the owned displacement's coefficients directly. This avoids large powers of

@@ -343,14 +343,29 @@ for fn in (:sin, :cos, :sinh, :cosh)
         x = constant_term(a)
         s, c = $(fn in (:sin, :cos) ? :(sincos(x)) : :((sinh(x), cosh(x))))
         values = $(fn == :sin ? :((s, c, -s, -c)) : fn == :cos ? :((c, -s, -c, s)) : fn == :sinh ? :((s, c, s, c)) : :((c, s, c, s)))
-        coeffs = Vector{typeof(s)}(undef, working_order(a.algebra) + 1)
-        factor = one(s)
-        @inbounds for k in 0:(length(coeffs) - 1)
-            coeffs[k + 1] = values[mod(k, 4) + 1] * factor
-            factor /= degree_factor(factor, k + 1)
-        end
-        return series(a, coeffs)
+        return series(a, cycle_coefficients(values, working_order(a.algebra)))
     end
+end
+function cycle_coefficients(values, n)
+    coefficients = Vector{typeof(values[1])}(undef, n + 1)
+    factor = one(values[1])
+    @inbounds for k in 0:n
+        coefficients[k + 1] = values[mod(k, 4) + 1] * factor
+        factor /= degree_factor(factor, k + 1)
+    end
+    return coefficients
+end
+function trig_coefficients(s0, c0, n)
+    T = typeof(s0)
+    s, c = Vector{T}(undef, n + 1), Vector{T}(undef, n + 1)
+    sine, cosine = (s0, c0, -s0, -c0), (c0, -s0, -c0, s0)
+    factor = one(s0)
+    @inbounds for k in 0:n
+        index = mod(k, 4) + 1
+        s[k + 1], c[k + 1] = sine[index] * factor, cosine[index] * factor
+        factor /= degree_factor(factor, k + 1)
+    end
+    return s, c
 end
 function trig_series_pair(a::TaylorPolynomial)
     s0, c0 = sincos(constant_term(a))
@@ -358,14 +373,7 @@ function trig_series_pair(a::TaylorPolynomial)
     if a.len == 1
         return TaylorPolynomial{T}(a.algebra, s0), TaylorPolynomial{T}(a.algebra, c0)
     end
-    n = working_order(a.algebra)
-    s, c = Vector{T}(undef, n + 1), Vector{T}(undef, n + 1)
-    sine, cosine = (s0, c0, -s0, -c0), (c0, -s0, -c0, s0)
-    factor = one(s0)
-    @inbounds for k in 0:n
-        s[k + 1], c[k + 1] = sine[mod(k, 4) + 1] * factor, cosine[mod(k, 4) + 1] * factor
-        factor /= degree_factor(factor, k + 1)
-    end
+    s, c = trig_coefficients(s0, c0, working_order(a.algebra))
     return series_pair(a, s, c)
 end
 Base.sincos(a::TaylorPolynomial) = isempty(valid(a).basis.products) ?
