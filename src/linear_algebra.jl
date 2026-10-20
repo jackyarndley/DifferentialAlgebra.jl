@@ -94,8 +94,8 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         R = scalar_eigen_type(T)
         diagonal = LinearAlgebra.diag(A)
         permutation = sortperm(constant_term.(diagonal))
-        values = map(diagonal[permutation]) do p
-            value = TaylorPolynomial{R}(p)
+        values = TaylorPolynomial{R}.(diagonal[permutation])
+        for value in values
             finish!(value, min(value.len, limit))
         end
         vectors = TaylorPolynomial{R}.(Matrix{R}(I, n, n)[:, permutation])

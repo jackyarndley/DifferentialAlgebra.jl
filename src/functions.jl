@@ -443,7 +443,7 @@ SpecialFunctions.digamma(a::TaylorPolynomial) = polygamma_series(a, 0)
 # Neighboring-order derivative identities keep the regular J/I solutions stable
 # near zero. Each stage forms Taylor coefficients directly, avoiding large
 # binomial/factorial intermediates and reusing the scalar seeds.
-function regular_bessel_series(fn, n, a, c0, s)
+function regular_bessel_series(fn::F, n, a, c0, s) where {F}
     x = constant_term(a)
     coefficient_iszero(x) && fn === SpecialFunctions.besselix &&
         throw(TaylorError("Scaled Bessel I is not analytic at zero"))
@@ -467,7 +467,7 @@ end
 
 # Bessel's second-order differential equation supplies the singular Y/K solutions.
 # With y=exp(s*x)*z, scaled I/K remain scaled throughout (no overflow-prone unscaling).
-function bessel_series(fn, n::Integer, a::TaylorPolynomial, q::Int, s)
+function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where {F}
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
     x = constant_term(a); c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
     a.len == 1 && return TaylorPolynomial(c0)
