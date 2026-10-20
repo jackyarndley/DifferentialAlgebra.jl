@@ -8,13 +8,21 @@ From a repository checkout:
 julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 ```
 
-Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
-Examples have a separate dependency environment.
+Tests run with bounds checking on Linux with Julia `1.10` and `1` (latest stable),
+and on Windows and macOS with latest stable. A non-blocking Linux job exercises
+Julia prereleases. Runic runs independently of the numerical tests. Examples
+have a separate dependency environment.
 Each test file imports its dependencies and includes its own helpers. SafeTestsets
 isolates file namespaces; the dispatcher runs files sequentially because global
 initialization invalidates its existing polynomials. Fresh-process checks also
 verify optional extension loading.
 Aqua checks package quality, including unbound type arguments.
+
+CompatHelper checks the package, documentation, example and benchmark environments
+daily; keep shared compatibility entries aligned. Dependabot checks GitHub Actions
+weekly. An optional `COMPATHELPER_PRIV` deploy-key secret lets CompatHelper pull
+requests trigger CI automatically; without it, maintainers must trigger those
+checks. Both validation workflows also support manual dispatch on a branch.
 
 The test suite uses Julia code and inline inputs. Function-coefficient tests
 combine scalar derivatives from ForwardDiff with an independent multinomial

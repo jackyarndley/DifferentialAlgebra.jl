@@ -2,29 +2,68 @@ name: Run tests
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Julia ${{ matrix.julia-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ['1.10', '1']
+        include:
+          - os: ubuntu-latest
+            julia-version: '1.10'
+            experimental: false
+          - os: ubuntu-latest
+            julia-version: '1'
+            experimental: false
+          - os: windows-latest
+            julia-version: '1'
+            experimental: false
+          - os: macos-latest
+            julia-version: '1'
+            experimental: false
+          - os: ubuntu-latest
+            julia-version: pre
+            experimental: true
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-runtest@v1
+        with:
+          check_bounds: 'yes'
+          coverage: 'false'
         env:
           JULIA_NUM_THREADS: '4'
-      - name: Check Runic formatting
-        if: matrix.julia-version == '1'
-        run: |
-          julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-          julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --check --diff --docstrings src test ext examples benchmark docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl
+
+  format:
+    name: Runic
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - uses: fredrikekre/runic-action@v1
+        with:
+          version: '1.11.1'
+          docstrings: 'true'

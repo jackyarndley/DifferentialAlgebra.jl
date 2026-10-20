@@ -1,0 +1,39 @@
+name: CompatHelper
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: compathelper
+  cancel-in-progress: false
+
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Install CompatHelper
+        shell: julia --color=yes --project=@compathelper {0}
+        run: |
+          using Pkg
+          Pkg.add(PackageSpec(name="CompatHelper", version="3"))
+      - name: Check dependency compatibility
+        shell: julia --color=yes --project=@compathelper {0}
+        run: |
+          using CompatHelper
+          CompatHelper.main(; subdirs=["", "docs", "examples", "benchmark"])
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional deploy key lets generated pull requests trigger CI.
+          COMPATHELPER_PRIV: ${{ secrets.COMPATHELPER_PRIV }}
