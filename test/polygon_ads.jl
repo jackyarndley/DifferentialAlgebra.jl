@@ -241,3 +241,56 @@ end
         end
     end
 end
+
+
+@testset "Automatic frames use nonlinear sensitivity" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        polygon = ConvexPolygon(
+            [
+                (-one(T), -one(T)), (one(T), -one(T)),
+                (one(T), one(T)), (-one(T), one(T)),
+            ]
+        )
+        for phi in (exp, sin, x -> x^3)
+            nonlinear(v) = phi(v[1] + 2v[2])
+            shifted(v) = nonlinear(v) + 1000v[1] + 250v[2] + 7
+            # Every nonconstant coefficient of the nonlinear gradient is
+            # parallel to (1,2), independently of the affine part or estimator.
+            expected = T[1 // 2 1; -1 1 // 2]
+            for estimator in (GuardedTail(), LastTerms(), ExtrapolatedTail())
+                a = adaptive_map(
+                    nonlinear, polygon; order = 3, atol = 1 // 4,
+                    estimator, max_patches = 512, table_bytes = budget
+                )
+                b = adaptive_map(
+                    shifted, polygon; order = 3, atol = 1 // 4,
+                    estimator, max_patches = 512, table_bytes = budget
+                )
+                @test T.(split_directions(a)) ≈ expected atol = 128eps(T)
+                @test T.(split_directions(b)) ≈ expected atol = 128eps(T)
+                @test a.converged && b.converged
+            end
+        end
+        affine = adaptive_map(
+            v -> 2v[1] + v[2], polygon; order = 1,
+            table_bytes = budget
+        )
+        @test split_directions(affine) == Matrix{Int}(I, 2, 2)
+        # Retaining a larger working basis must not hide the requested order.
+        orders = Int[]
+        callback(v) = (push!(orders, truncation_order()); v[1] + v[2])
+        adaptive_map(
+            callback, polygon; order = 1, estimator = LastTerms(),
+            check_points = false, table_bytes = budget
+        )
+        @test orders == [3, 1]
+        empty!(orders)
+        cubic(v) = (push!(orders, truncation_order()); (v[1] + 2v[2])^3)
+        fit = adaptive_map(
+            cubic, polygon; order = 2, atol = 1 // 2,
+            check_points = false, table_bytes = budget
+        )
+        @test length(orders) == 2length(fit.patches)
+        @test T.(split_directions(fit)) ≈ T[1 // 2 1; -1 1 // 2] atol = 128eps(T)
+    end
+end

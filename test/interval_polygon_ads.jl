@@ -224,3 +224,29 @@ end
         )
     end
 end
+
+
+@testset "Validated automatic frames ignore exact affine variation" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        polygon = ConvexPolygon(
+            [
+                (-one(T), -one(T)), (one(T), -one(T)),
+                (one(T), one(T)), (-one(T), one(T)),
+            ]
+        )
+        for phi in (exp, sin, x -> x^3)
+            nonlinear(v) = phi(v[1] + 2v[2])
+            shifted(v) = nonlinear(v) + 1000v[1] + 250v[2] + 7
+            for f in (nonlinear, shifted)
+                fit = adaptive_map(
+                    f, polygon; order = 3, atol = 1 // 4,
+                    estimator = IntervalBound(), max_patches = 512,
+                    table_bytes = budget
+                )
+                @test T.(split_directions(fit)) ≈ T[1 // 2 1; -1 1 // 2] atol = 128eps(T)
+                @test fit.converged
+                @test in_interval(f(T[1 // 7, 2 // 9]), fit(T[1 // 7, 2 // 9]))
+            end
+        end
+    end
+end

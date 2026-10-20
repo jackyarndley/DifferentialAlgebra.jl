@@ -156,7 +156,7 @@ Base.show(io::IO, a::PiecewisePolygonMap) = print(
 
 Split a 2D convex domain by straight lines in a linear coordinate frame. Exact
 rational clipping preserves coverage without gaps. Automatic directions use
-gradient/Hessian sensitivity of an interior degree-two probe; they are a
+nonlinear sensitivity of one interior probe of degree three to five; they are a
 heuristic choice of frame, not an optimality claim. Supply a nonsingular 2x2
 matrix with projection directions in its rows to override this choice. Use
 `directions=:axes` for an unrotated polygon baseline. Each child reevaluates `f`
@@ -185,14 +185,23 @@ end
 # scores enter a validated coefficient, remainder or acceptance calculation.
 function polygon_sensitivity(polynomials, radii, scales, tolerances, ::Type{T}) where {T}
     vectors = NTuple{2, T}[]
+    powers = zeros(Int, 2)
     for (p, tolerance) in zip(polynomials, tolerances)
-        value(alpha) = T(polygon_mid(coefficient(p, alpha)))
-        g = (value([1, 0]) / radii[1], value([0, 1]) / radii[2])
-        h11, h12, h22 = 2value([2, 0]) / radii[1]^2, value([1, 1]) / prod(radii), 2value([0, 2]) / radii[2]^2
-        push!(vectors, (g[1] / tolerance, g[2] / tolerance))
-        push!(vectors, (h11 * scales[1] / tolerance, h12 * scales[1] / tolerance))
-        push!(vectors, (h12 * scales[2] / tolerance, h22 * scales[2] / tolerance))
+        ratios = scales ./ radii
+        # Group gradient coefficients by their residual multiindex. Excluding
+        # the constant gradient removes affine variation. Scale the probe's
+        # normalized coordinates to the root span before comparing outputs.
+        for d in 1:(degree(p) - 1), j in 0:d
+            powers .= (j + 1, d - j)
+            x = (j + 1) * T(polygon_mid(coefficient(p, powers)))
+            powers .= (j, d - j + 1)
+            y = (d - j + 1) * T(polygon_mid(coefficient(p, powers)))
+            iszero(x) && iszero(y) && continue
+            weight = ratios[1]^j * ratios[2]^(d - j) / tolerance
+            push!(vectors, (weight * (x / radii[1]), weight * (y / radii[2])))
+        end
     end
+    isempty(vectors) && return Matrix{T}(I, 2, 2)
     all(v -> all(isfinite, v), vectors) || return Matrix{T}(I, 2, 2)
     scale = maximum(v -> max(abs(v[1]), abs(v[2])), vectors)
     iszero(scale) && return Matrix{T}(I, 2, 2)
@@ -330,10 +339,16 @@ function polygon_construct(
     ads_check_partition(partition, settings)
     probe, scales = polygon_probe(polygon)
     options = (; settings..., scales)
-    return with_algebra(max(2, options.working_order), 2; names, table_bytes) do ctx
-        B, A = if directions === nothing || directions === :auto
-            probe_options = (; options..., order = 2, working_order = 2, check_points = false)
-            candidate = with_order(2) do
+    automatic = directions === nothing || directions === :auto
+    probe_order = clamp(options.working_order, 3, 5)
+    basis_order = max(options.working_order, automatic ? probe_order : 2)
+    return with_algebra(basis_order, 2; names, table_bytes) do ctx
+        B, A = if automatic
+            probe_options = (;
+                options..., order = probe_order, working_order = probe_order,
+                check_points = false,
+            )
+            candidate = with_order(probe_order) do
                 polygon_candidate(f, probe, Matrix{PolygonReal}(I, 2, 2), Matrix{PolygonReal}(I, 2, 2), probe_options, ctx, estimator; probe = true)
             end
             frame = candidate isa ADSDomainFailure ? Matrix{T}(I, 2, 2) :

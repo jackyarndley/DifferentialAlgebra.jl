@@ -178,10 +178,12 @@ fit = adaptive_map(v -> exp(v[1]+v[2]), triangle;
                    directions=[1 1; -1 1])
 ```
 
-Automatic directions come from gradient/Hessian sensitivity of an interior
-degree-two probe. They are a heuristic frame choice, not a search for a global
-optimum. A nonsingular 2x2 `directions` matrix supplies projection rows; it can
-be oblique as well as rotated. `directions=:axes` is an unrotated polygon
+Automatic directions use the nonlinear gradient coefficients of one interior
+probe, scaled to the root domain. Its degree is the working order clamped to
+three through five. Affine coefficients do not steer the frame; cubic and higher
+terms can identify directions even when the center Hessian vanishes. This is a
+heuristic choice, not a search for a global optimum. A nonsingular 2x2 `directions`
+matrix supplies projection rows; it can be oblique as well as rotated. `directions=:axes` is an unrotated polygon
 baseline. The selected frame remains fixed during construction; each split
 clips a physical polygon by a line at the midpoint of a projected extent.
 `splitter=:width` on a polygon uses relative projected widths; `:oriented` or
