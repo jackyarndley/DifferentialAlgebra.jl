@@ -44,7 +44,11 @@ end
     B = [2 + x one(x) + 1.0e-8x; one(x) 4 + x]
     with_order(2) do
         set_coefficient_tolerance!(1.0e-4)
-        @test_throws ArgumentError DifferentialAlgebra.eigenpairs(A)
+        values, vectors = DifferentialAlgebra.eigenpairs(A)
+        @test constant_term(values) ≈ [3 - sqrt(2), 3 + sqrt(2)]
+        @test all(p -> coefficient(p, [1]) ≈ 1, values)
+        @test all(p -> iszero(coefficient(p, [2])), values)
+        @test maximum(degree, vectors) == 0
         @test_throws ArgumentError DifferentialAlgebra.eigenpairs(B)
         @test truncation_order() == 2
     end
@@ -125,5 +129,24 @@ end
                 @test all(isapprox.(JVda[i, j], JVfd[i, j] .* sfd[j], atol = 1.0e-13, rtol = 1.0e-13))
             end
         end
+    end
+end
+
+@testset "Eigenpairs use the working order" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 5, table_bytes = budget)
+        diagonal = [2 + x + x^4, 4 - x + x^5]
+        # Above-order off-diagonal entries must not disable the diagonal path.
+        A = [diagonal[1] x^5; zero(x) diagonal[2]]
+        values, vectors = with_order(() -> DifferentialAlgebra.eigenpairs(A), 2)
+        @test constant_term(values) == [2, 4]
+        @test coefficient.(values, Ref([1])) == [1, -1]
+        @test all(p -> degree(p) <= 2, values)
+        @test constant_term(vectors) == Matrix{Float64}(I, 2, 2)
+        @test values[1] !== diagonal[1]
+        set_coefficient!(values[1], [1], 7)
+        @test coefficient(diagonal[1], [1]) == 1
+        @test coefficient(diagonal[1], [4]) == 1
+        @test truncation_order() == 5
     end
 end

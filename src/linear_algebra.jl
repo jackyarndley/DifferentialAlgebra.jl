@@ -76,17 +76,28 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         R = scalar_eigen_type(T)
         return TaylorPolynomial{R}[], Matrix{TaylorPolynomial{R}}(undef, 0, 0)
     end
+    ctx = valid(first(A))
+    limit = ctx.basis.ends[ctx.cutoff + 1]
     for j in 1:n, i in 1:(j - 1)
         a, b = A[i, j], A[j, i]
-        all(k -> coefficient_at(a, k) == coefficient_at(b, k), 1:max(a.len, b.len)) ||
+        stop = min(limit, max(a.len, b.len))
+        all(k -> coefficient_at(a, k) == coefficient_at(b, k), 1:stop) ||
             throw(ArgumentError("Expected a symmetric matrix"))
     end
     T = mapreduce(coefficient_type, promote_type, A)
-    if all(iszero(A[i, j]) for i in 1:n for j in 1:n if i != j)
+    if all(
+            i == j || all(
+                coefficient_iszero,
+                @view(A[i, j].coeffs[1:min(A[i, j].len, limit)])
+            ) for i in 1:n, j in 1:n
+        )
         R = scalar_eigen_type(T)
         diagonal = LinearAlgebra.diag(A)
         permutation = sortperm(constant_term.(diagonal))
-        values = TaylorPolynomial{R}.(diagonal[permutation])
+        values = map(diagonal[permutation]) do p
+            value = TaylorPolynomial{R}(p)
+            finish!(value, min(value.len, limit))
+        end
         vectors = TaylorPolynomial{R}.(Matrix{R}(I, n, n)[:, permutation])
         return values, vectors
     end
@@ -94,11 +105,11 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
     F = LinearAlgebra.eigen(LinearAlgebra.Symmetric(A0))
     R, V = eltype(F.values), eltype(F.vectors)
     values, vectors = TaylorPolynomial{R}.(F.values), TaylorPolynomial{V}.(F.vectors)
-    all(a -> a.len == 1, A) && return values, vectors
+    all(a -> all(coefficient_iszero, @view(a.coeffs[2:min(a.len, limit)])), A) &&
+        return values, vectors
     scale = max(one(R), maximum(abs, F.values; init = zero(R)))
     minimum((abs(F.values[i] - F.values[j]) for i in 1:n for j in (i + 1):n); init = convert(R, Inf)) > 100eps(R) * scale ||
         throw(ArgumentError("Repeated or numerically indistinguishable eigenvalues do not define unique Taylor eigenvectors"))
-    ctx = valid(first(A))
     for k in 1:n
         v0, lambda0 = F.vectors[:, k], F.values[k]
         J = [A0 - lambda0 * I -v0; permutedims(v0) zero(R)]
