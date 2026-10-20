@@ -74,3 +74,34 @@ end
         @test truncation_order() == 3
     end
 end
+
+@testset "Substitution across coefficient types and table budgets" begin
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        DifferentialAlgebra.initialize!(6, 3; table_bytes = budget)
+        x, y, z = variable.(1:DifferentialAlgebra.nvariables(), T)
+        p = 3 + x + 2y + x^2 * y + 3x * z^2 + x^5
+        tolerance = T === Float32 ? T(2.0e-5) :
+            T === Float64 ? T(2.0e-13) : T(2)^(-200)
+        @test coefficient_norm(
+            DifferentialAlgebra.substitute(p, 1, 2) - (5 + 6y + 6z^2 + 32)
+        ) == 0
+        @test coefficient_norm(DifferentialAlgebra.substitute(p, 1) - (3 + 2y)) == 0
+        @test coefficient_norm(
+            DifferentialAlgebra.replace_variable(p, 1, 2, 2) -
+                (3 + 4y + 4y^3 + 6y * z^2 + 32y^5)
+        ) == 0
+        for v in 1:3
+            args = [x, y, z]
+            args[v] = 2args[v] + 1
+            @test coefficient_norm(
+                DifferentialAlgebra.translate_variable(p, v, 2, 1) - evaluate(p, args)
+            ) < tolerance
+            args[v] = -[x, y, z][v]
+            @test coefficient_norm(
+                DifferentialAlgebra.scale_variable(p, v, -1) - evaluate(p, args)
+            ) < tolerance
+        end
+        @test_throws ArgumentError DifferentialAlgebra.substitute(p, 0)
+        @test_throws ArgumentError DifferentialAlgebra.replace_variable(p, 1, 4)
+    end
+end

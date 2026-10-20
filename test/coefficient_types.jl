@@ -1,5 +1,5 @@
 using Test, DifferentialAlgebra
-using LinearAlgebra, Random, GenericLinearAlgebra, SpecialFunctions
+using LinearAlgebra, Random, SpecialFunctions
 
 include("support/allocations.jl")
 
@@ -86,11 +86,6 @@ end
         inverse = DifferentialAlgebra.invert(f)
         @test eltype(inverse) === TaylorPolynomial{T}
         @test maximum(DifferentialAlgebra.coefficient_norm, DifferentialAlgebra.evaluate(f, inverse) - [x, y, z]) < tolerance
-        A = [T(2) + x / T(10) one(x) / T(5); one(x) / T(5) T(4) + y / T(10)]
-        eigenvalues, eigenvectors = DifferentialAlgebra.eigenpairs(A)
-        @test eltype(eigenvalues) === TaylorPolynomial{T}
-        @test maximum(DifferentialAlgebra.coefficient_norm, A * eigenvectors - eigenvectors * Diagonal(eigenvalues)) < 10tolerance
-        @test maximum(DifferentialAlgebra.coefficient_norm, eigenvectors' * eigenvectors - I) < 10tolerance
         for f in (erf, erfc, a -> besselj(2, a), a -> bessely(2, a))
             @test f(p) isa TaylorPolynomial{T}
             @test DifferentialAlgebra.constant_term(f(p)) ≈ f(T(2)) rtol = tolerance

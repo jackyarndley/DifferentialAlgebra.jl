@@ -2,6 +2,7 @@ using Test, DifferentialAlgebra
 using LinearAlgebra, GenericLinearAlgebra, ForwardDiff
 
 include("support/processes.jl")
+include("support/coefficients.jl")
 
 import ForwardDiff: Dual
 
@@ -150,4 +151,55 @@ end
         @test coefficient(diagonal[1], [4]) == 1
         @test truncation_order() == 5
     end
+end
+
+# Every matrix access checks the public order, including accesses inside the
+# eigenpair lifting loop. This deterministically detects hidden set_truncation_order! calls.
+struct OrderCheckedMatrix{T} <: AbstractMatrix{T}
+    data::Matrix{T}
+    order::Int
+end
+Base.size(A::OrderCheckedMatrix) = size(A.data)
+function Base.getindex(A::OrderCheckedMatrix, i::Int, j::Int)
+    truncation_order() == A.order || error("eigenpairs changed the working order")
+    return A.data[i, j]
+end
+
+@testset "Eigenpair precision and working-order scope" begin
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, y, z = variables(T, 3; order = 6, table_bytes = budget)
+        tolerance = T === Float32 ? T(2.0e-5) :
+            T === Float64 ? T(2.0e-13) : T(2)^(-200)
+        A = OrderCheckedMatrix([2 + x / 10 one(x) / 5; one(x) / 5 4 + y / 10], 6)
+        values, vectors = DifferentialAlgebra.eigenpairs(A)
+        @test eltype(values) === TaylorPolynomial{T}
+        @test coefficientwise_error(A * vectors, vectors * Diagonal(values)) < 10tolerance
+        @test coefficientwise_error(vectors' * vectors, Matrix{T}(I, 2, 2)) < 10tolerance
+        @test truncation_order() == 6
+    end
+end
+
+@testset "Higher-order symmetric eigenpairs" begin
+    x, y = variables(2; order = 4)
+    set_coefficient_tolerance!(1.0e-24)
+    A = [2 + x 0.3 + y 0.2x; 0.3 + y 4 - y 0.1 + x * y; 0.2x 0.1 + x * y 7 + x + y]
+    values, vectors = DifferentialAlgebra.eigenpairs(A)
+    @test coefficientwise_error(A * vectors, vectors * Diagonal(values)) < 2.0e-12
+    @test coefficientwise_error(
+        transpose(vectors) * vectors,
+        TaylorPolynomial.(Matrix{Float64}(I, 3, 3))
+    ) < 2.0e-12
+    @test DifferentialAlgebra.truncation_order() == 4
+    # Evaluate the Taylor eigenvalues against independent numeric LAPACK.
+    for point in ([1.0e-3, 2.0e-3], [-2.0e-3, 1.0e-3])
+        numeric = [DifferentialAlgebra.evaluate(a, point) for a in A]
+        @test evaluate(values, point) ≈ eigvals(Symmetric(numeric)) atol = 2.0e-13
+    end
+    repeated, basis = DifferentialAlgebra.eigenpairs(
+        [1 + x TaylorPolynomial(); TaylorPolynomial() 1 + y]
+    )
+    @test coefficientwise_error(repeated, [1 + x, 1 + y]) == 0
+    @test coefficientwise_error(basis, TaylorPolynomial.(Matrix{Float64}(I, 2, 2))) == 0
+    @test_throws ArgumentError DifferentialAlgebra.eigenpairs([1 + x y; y 1 - x])
+    @test_throws ArgumentError DifferentialAlgebra.eigenpairs([x y; x y])
 end

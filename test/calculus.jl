@@ -1,5 +1,7 @@
 using Test, DifferentialAlgebra
 
+include("support/coefficients.jl")
+
 @testset "Polynomial differentiation and integration" begin
     x, y = variables(2; order = 5)
     p = 2 + x + 0.2y
@@ -45,6 +47,8 @@ end
         result = DifferentialAlgebra.with_algebra(2, 1) do _
             gradient(p)
         end
+        @test size(DifferentialAlgebra.linear_part(TaylorPolynomial{T}[])) == (0, 3)
+        @test size(DifferentialAlgebra.hessian_tensor(TaylorPolynomial{T}[])) == (3, 3, 0)
         @test length(result) == 3
         @test all(iszero, result - expected)
         @test all(d -> d.algebra === p.algebra, result)
@@ -59,4 +63,14 @@ end
             @test iszero(g[3] - 5)
         end
     end
+end
+
+@testset "Map Jacobian and Hessian shapes" begin
+    x, y = variables(2; order = 4)
+    @test size(DifferentialAlgebra.hessian_tensor([x * x + y, x * y])) == (2, 2, 2)
+    @test coefficientwise_error(DifferentialAlgebra.hessian(x * x + y)[1, 1], 2) == 0
+    @test coefficientwise_error(
+        DifferentialAlgebra.jacobian([x * x + y, x * y])[1, 2],
+        1
+    ) == 0
 end

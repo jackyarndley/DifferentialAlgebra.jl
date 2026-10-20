@@ -186,7 +186,7 @@ end
         ) < 1.0e-15
     end
 
-    @testset "Arrays and higher-order symmetric eigenpairs" begin
+    @testset "Polynomial array operations" begin
         DifferentialAlgebra.initialize!(4, 2)
         DifferentialAlgebra.set_coefficient_tolerance!(1.0e-24)
         x, y = variable.(1:DifferentialAlgebra.nvariables())
@@ -198,30 +198,6 @@ end
         ) < 1.0e-13
         @test coefficientwise_error(transpose(M), M) == 0
         @test coefficientwise_error(norm(M), sqrt(sum(abs2, M))) < 1.0e-13
-        A = [2 + x 0.3 + y 0.2x; 0.3 + y 4 - y 0.1 + x * y; 0.2x 0.1 + x * y 7 + x + y]
-        values, vectors = DifferentialAlgebra.eigenpairs(A)
-        @test coefficientwise_error(A * vectors, vectors * Diagonal(values)) < 2.0e-12
-        @test coefficientwise_error(
-            transpose(vectors) * vectors,
-            TaylorPolynomial.(Matrix{Float64}(I, 3, 3))
-        ) < 2.0e-12
-        @test DifferentialAlgebra.truncation_order() == 4
-        # Evaluate the Taylor eigenvalues against independent numeric LAPACK.
-        for point in ([1.0e-3, 2.0e-3], [-2.0e-3, 1.0e-3])
-            numeric = [DifferentialAlgebra.evaluate(a, point) for a in A]
-            @test DifferentialAlgebra.evaluate(values, point) ≈ eigvals(Symmetric(numeric)) atol = 2.0e-13
-        end
-        repeated, basis = DifferentialAlgebra.eigenpairs([1 + x TaylorPolynomial(); TaylorPolynomial() 1 + y])
-        @test coefficientwise_error(repeated, [1 + x, 1 + y]) == 0
-        @test coefficientwise_error(basis, TaylorPolynomial.(Matrix{Float64}(I, 2, 2))) == 0
-        @test_throws ArgumentError DifferentialAlgebra.eigenpairs([1 + x y; y 1 - x])
-        @test_throws ArgumentError DifferentialAlgebra.eigenpairs([x y; x y])
-        @test size(DifferentialAlgebra.hessian_tensor([x * x + y, x * y])) == (2, 2, 2)
-        @test coefficientwise_error(DifferentialAlgebra.hessian(x * x + y)[1, 1], 2) == 0
-        @test coefficientwise_error(
-            DifferentialAlgebra.jacobian([x * x + y, x * y])[1, 2],
-            1
-        ) == 0
     end
 
     @testset "Concurrent callers" begin
