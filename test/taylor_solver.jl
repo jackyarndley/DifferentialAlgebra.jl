@@ -3,6 +3,7 @@ using OrdinaryDiffEqCore, SciMLBase
 using SciMLBase: successful_retcode
 
 import DiffEqBase
+using IntervalArithmetic: Interval, interval
 
 @testset "SciML Taylor integration" begin
     oscillator(u, p, t) = [u[2], -u[1]]
@@ -114,4 +115,12 @@ end
     end
     @test_throws DimensionMismatch OrdinaryDiffEqCore._ode_interpolant!(zeros(1), 0.5, 0.6, initial, initial, k, cache, nothing, Val{0}, nothing)
     @test_throws ArgumentError OrdinaryDiffEqCore._ode_interpolant!(zeros(2), 0.5, 0.6, initial, initial, k, cache, nothing, Val{-1}, nothing)
+end
+
+@testset "TaylorMethod rejects interval coefficient states clearly" begin
+    x, = variables(Interval{Float64}, 1; order = 2)
+    for initial in ([1 + x], [interval(1)])
+        problem = ODEProblem((u, p, t) -> u, initial, (0.0, 1.0))
+        @test_throws ArgumentError init(problem, TaylorMethod(8))
+    end
 end

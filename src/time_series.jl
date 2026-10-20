@@ -256,6 +256,8 @@ extension. Supports in-place and out-of-place analytic vector ODEs, numeric or
 [`TaylorPolynomial`](@ref) states, forward/backward integration, `saveat`, dense
 Taylor interpolation and callbacks. Time order is independent of uncertainty
 order. Choose `order ≥ 3`; the state dimension stays fixed during a solve.
+Interval coefficients are unsupported by this ODE algorithm and are rejected at
+initialization; it does not certify time-integration errors.
 
 The step controller uses the last two retained time coefficients, scaled by
 `abstol` and `reltol`. Polynomial errors use the sum of absolute uncertainty
@@ -270,3 +272,9 @@ solution = solve(problem, TaylorMethod(20); abstol = 1.0e-12, reltol = 1.0e-12)
 ```
 """
 function TaylorMethod end
+
+# Optional scalar extensions reject unsupported controller scalars without
+# coupling the solver extension to those dependencies.
+taylor_solver_coefficient(::Type{<:Real}) = true
+taylor_solver_coefficient(::Type{TaylorPolynomial{T}}) where {T} =
+    taylor_solver_coefficient(T)

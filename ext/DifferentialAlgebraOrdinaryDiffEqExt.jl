@@ -30,6 +30,8 @@ function ODECore.alg_cache(
         f, t, dt, reltol, p, calck, ::Val{IIP}, verbose
     ) where {IIP}
     u isa Vector{<:Real} || throw(ArgumentError("TaylorMethod requires a real state vector"))
+    all(value -> DifferentialAlgebra.taylor_solver_coefficient(typeof(value)), u) ||
+        throw(ArgumentError("TaylorMethod does not support interval coefficients"))
     rhs = if IIP
         (u, p, t) -> begin
             # A constant derivative may be returned alongside time series.
