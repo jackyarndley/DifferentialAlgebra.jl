@@ -308,3 +308,15 @@ end
         @test coefficient(p, [1]) == 1
     end
 end
+
+@testset "Integer storage with a constant negative exponent" begin
+    x, = variables(Int, 1; order = 3)
+    @test constant_term(2^(-one(x))) == 0.5
+    @test constant_term((-2)^(-one(x))) == -0.5
+    @test coefficient_type(2^one(x)) === Float64
+    for base in (2, -2)
+        exponent = TimeSeries([-1, 0, 0])
+        @test coefficient(base^exponent, 0) == inv(base)
+        @test coefficient_type(base^exponent) === Float64
+    end
+end

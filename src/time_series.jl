@@ -145,7 +145,7 @@ function Base.:^(a::Real, b::TimeSeries)
     coefficient_iszero(base) &&
         return zero(b) + zero_base_power(base, constant_term(b), iszero(b))
     all(iszero, @view(b.coefficients[2:end])) &&
-        return zero(b) + domain_call(x -> base^x, constant_term(b))
+        return zero(b) + domain_call(x -> float(base)^x, constant_term(b))
     return exp(domain_call(log, base) * b)
 end
 Base.:^(::Irrational{:ℯ}, b::TimeSeries) = exp(b)

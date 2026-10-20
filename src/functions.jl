@@ -167,7 +167,7 @@ function Base.:^(a::Real, b::TaylorPolynomial)
         return finish!(scalar_argument(b, c0), 1)
     end
     if b.len == 1
-        c0 = domain_call(x -> base^x, constant_term(b))
+        c0 = domain_call(x -> float(base)^x, constant_term(b))
         return finish!(scalar_argument(b, c0), 1)
     end
     return exp(scaled(b, domain_call(log, base); filter = false))
