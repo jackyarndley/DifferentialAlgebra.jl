@@ -142,24 +142,26 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 end
 
 @testset "Certified ADS subdivides failed analytic fits" begin
-    f(v) = log(2 + sin(3v[1]))
+    # Recomputed products have independent discarded tails at order one.
+    # The exact argument is 2+x, but its root-cell enclosure crosses zero.
+    f(v) = log(2 + v[1] + v[1] * v[2] - v[1] * v[2])
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
-        box = [IA.interval(T, -1, 1)]
-        inputs = taylor_models(box; order = 4, table_bytes = budget)
+        box = [IA.interval(T, -1, 1), IA.interval(T, -1, 1)]
+        inputs = taylor_models(box; order = 1, table_bytes = budget)
         @test_throws DomainError f(inputs)
         for callback in (f, v -> [f(v), v[1]])
             fit = adaptive_map(
-                callback, box; estimator = IntervalBound(), order = 4,
-                table_bytes = budget, atol = 1 // 1000
+                callback, box; estimator = IntervalBound(), order = 1,
+                table_bytes = budget, atol = 1 // 16
             )
             @test fit.converged && length(fit.patches) > 1
             @test all(
-                p -> all(b -> IA.sup(abs(b)) <= T(1) / 1000, p.error_bounds),
+                p -> all(b -> IA.sup(abs(b)) <= T(1) / 16, p.error_bounds),
                 fit.patches
             )
             for point in (-1, -1 // 2, 0, 1 // 2, 1)
-                expected = log(2 + sin(3BigFloat(point)))
-                result = fit([point])
+                expected = log(2 + BigFloat(point))
+                result = fit([point, 0])
                 value = result isa AbstractVector ? first(result) : result
                 @test interval_contains(value, expected)
             end
@@ -167,12 +169,12 @@ end
         for strict in (false, true), limits in ((; max_depth = 0), (; max_patches = 1))
             @test_throws ErrorException adaptive_map(
                 f, box;
-                estimator = IntervalBound(), order = 4, strict, limits...
+                estimator = IntervalBound(), order = 1, strict, limits...
             )
         end
         @test_throws ErrorException adaptive_map(
             v -> log(v[1]), box;
-            estimator = IntervalBound(), order = 4, max_depth = 2, strict = false
+            estimator = IntervalBound(), order = 1, max_depth = 2, strict = false
         )
     end
 end

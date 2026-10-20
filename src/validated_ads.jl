@@ -5,6 +5,7 @@
 
 An owned numeric snapshot of a native Taylor model. Compilation copies retained
 interval coefficients, monomial exponents, remainder, domain and normalization.
+Independent function-range certificates are copied with the snapshot.
 `evaluate`, `enclose`, `domain` and `remainder` retain the model contract after
 algebra reinitialization. It supports numeric queries, not model arithmetic or
 polynomial composition. Internal arrays are read-only implementation data.
@@ -13,6 +14,7 @@ struct CompiledTaylorModel{T <: Real}
     _coefficients::Vector{T}
     _exponents::Matrix{Int}
     _remainder::T
+    _enclosure::Union{Nothing, T}
     _coordinates::ModelCoordinates{T}
     _order::Int
     _degree::Int
@@ -23,13 +25,19 @@ coefficient_type(::CompiledTaylorModel{T}) where {T} = T
 nvariables(a::CompiledTaylorModel) = length(a._coordinates.box)
 max_order(a::CompiledTaylorModel) = a._order
 degree(a::CompiledTaylorModel) = a._degree
-Base.copy(a::CompiledTaylorModel) = CompiledTaylorModel(deepcopy(a._coefficients), copy(a._exponents), deepcopy(a._remainder), deepcopy(a._coordinates), a._order, a._degree)
+function Base.copy(a::CompiledTaylorModel)
+    return CompiledTaylorModel(
+        deepcopy(a._coefficients), copy(a._exponents), deepcopy(a._remainder),
+        deepcopy(a._enclosure), deepcopy(a._coordinates), a._order, a._degree
+    )
+end
 function Base.deepcopy_internal(a::CompiledTaylorModel, copies::IdDict)
     return get!(copies, a) do
         CompiledTaylorModel(
             Base.deepcopy_internal(a._coefficients, copies),
             Base.deepcopy_internal(a._exponents, copies),
             Base.deepcopy_internal(a._remainder, copies),
+            Base.deepcopy_internal(a._enclosure, copies),
             Base.deepcopy_internal(a._coordinates, copies), a._order, a._degree
         )
     end

@@ -136,6 +136,15 @@ have zero radius and normalized value zero. Physical queries normalize with
 interval subtraction and division and intersect with the declared normalized
 box. Subboxes keep the entire original remainder.
 
+Elementary results also store an independent interval image of the whole input
+enclosure. Range queries intersect `P + R` with this certificate; for example,
+sine and cosine stay within `[-1,1]`, and exponential and square root stay
+nonnegative. Arithmetic propagates these value bounds with outward rounding.
+They do not reduce the absolute remainder, certify derivatives, or change ADS
+fit-error estimates. Copies and compiled snapshots own the certificates,
+including BigFloat endpoints. Explicit scalar and `TaylorModel(p, R, reference)`
+construction do not inherit the reference's generating-function certificate.
+
 Each coordinate family has an identity, domain, normalization, algebra owner
 and retained order. Binary arithmetic requires the same family and order.
 `taylor_models` follows `variables`' algebra-lifetime rules: reinitialization

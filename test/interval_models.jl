@@ -475,6 +475,83 @@ end
     end
 end
 
+@testset "Independent function ranges preserve the absolute remainder" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2), decoration in (IA.com, IA.def)
+        box = [
+            IA.setdecoration(IA.interval(T, -10, 10), decoration),
+            IA.setdecoration(IA.interval(T, 7), decoration),
+        ]
+        x, fixed = taylor_models(box; order = 12, table_bytes = budget)
+        for fn in (sin, cos, exp, sqrt)
+            argument = fn === sqrt ? 11 + x : x
+            m = fn(argument)
+            range = fn(fn === sqrt ? IA.interval(T, 1, 21) : box[1])
+            raw = enclose(polynomial(m), m._coordinates.normalized) + remainder(m)
+            original_remainder = remainder(m)
+            @test subset(enclose(m), range)
+            @test subset(enclose(m), raw)
+            # The asserted P+R model has no knowledge of its generating function.
+            asserted = TaylorModel(polynomial(m), remainder(m), m)
+            @test sameinterval(enclose(asserted), raw)
+            @test sameinterval(enclose(TaylorModel(20, m)), IA.interval(T, 20))
+            for result in (m, copy(m), deepcopy(m), compile(m), copy(compile(m)))
+                @test sameinterval(enclose(result), enclose(m))
+                @test sameinterval(remainder(result), original_remainder)
+                @test IA.decoration(enclose(result)) == decoration
+                @test IA.isguaranteed(enclose(result))
+                @test subset(enclose(result, box), range)
+                subbox = [IA.interval(T, -2, 3), box[2]]
+                @test subset(enclose(result, subbox), range)
+                for point in (-10, -3, 0, 2, 10)
+                    expected = setprecision(768) do
+                        fn(BigFloat(fn === sqrt ? 11 + point : point))
+                    end
+                    @test interval_contains(evaluate(result, [point, 7]), expected)
+                    @test subset(evaluate(result, [point, 7]), range)
+                end
+            end
+            with_order(1) do
+                set_coefficient_tolerance!(100)
+                @test sameinterval(enclose(m), enclose(compile(m)))
+                @test sameinterval(remainder(m), original_remainder)
+                set_coefficient_tolerance!(0)
+            end
+        end
+        s = sin(x)
+        @test IA.sup(enclose(s)) <= 1 && IA.inf(enclose(s)) >= -1
+        @test sameinterval(enclose(-s), -enclose(s))
+        for (result, range) in (
+                (s + 2, IA.interval(T, 1, 3)), (2 - s, IA.interval(T, 1, 3)),
+                (s * s, IA.interval(T, 0, 1)), (s * -2, IA.interval(T, -2, 2)),
+            )
+            @test subset(enclose(result), range)
+        end
+        @test subset(
+            enclose(log(2 + sin(3x))), IA.interval(T, 0, IA.sup(log(IA.interval(T, 3))))
+        )
+        @test interval_contains(evaluate(fixed + s, [0, 7]), 7)
+        snapshot = compile(s)
+        if T === BigFloat
+            # BigFloat endpoints are mutable: copies and query results must own them.
+            for result in (
+                    copy(s), deepcopy(s), snapshot, copy(snapshot), deepcopy(snapshot),
+                )
+                @test IA.inf(result._enclosure) !== IA.inf(s._enclosure)
+                @test IA.sup(result._enclosure) !== IA.sup(s._enclosure)
+            end
+            for bound in (enclose(s), enclose(snapshot), evaluate(snapshot, [0, 7]))
+                @test IA.inf(bound) !== IA.inf(s._enclosure)
+                @test IA.sup(bound) !== IA.sup(s._enclosure)
+            end
+        end
+        original = enclose(snapshot)
+        variables(1; order = 1)
+        @test sameinterval(enclose(snapshot), original)
+        @test interval_contains(evaluate(snapshot, [0, 7]), 0)
+        @test_throws ArgumentError enclose(s)
+    end
+end
+
 @testset "Normalized reciprocal, logarithm and square-root remainders" begin
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
         previous_sqrt_width = zero(T)

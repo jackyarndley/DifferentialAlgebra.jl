@@ -15,6 +15,10 @@
 - Taylor-model scalar operands and explicit remainders reject implicit floating
   values as NG. Use `interval(value)`, `IntervalArithmetic.exact(value)`, or exact
   integers/rationals in model arithmetic and `IntervalBound` callbacks.
+- Taylor-model queries intersect the polynomial-plus-remainder bound with an
+  independent function-range certificate when available. The stored absolute
+  remainder and ADS uniform fit-error contract are unchanged; compiled snapshots
+  retain the range certificate after algebra reinitialization.
 
 - Compound analytic operations, integer powers (including negative literals),
   and polynomial exponentiation filter coefficients only after completing the

@@ -67,12 +67,20 @@ function DA.enclose(p::TaylorPolynomial, box)
     return polynomial_bound(p, power_cache(box, DA.degree(p), I), I)
 end
 
-function model_result(p::TaylorPolynomial{I}, r::I, coordinates, order) where {I <: Interval}
+function model_result(
+        p::TaylorPolynomial{I}, r::I, coordinates, order,
+        enclosure::Union{Nothing, I} = nothing
+    ) where {I <: Interval}
     checked_interval(r; guaranteed = true)
     for k in 1:p.len
         checked_interval(p.coeffs[k]; guaranteed = true)
     end
-    return TaylorModel(p, r, coordinates, order, Val(:owned))
+    if enclosure !== nothing
+        !IA.isnai(enclosure) && !IA.isempty_interval(enclosure) &&
+            IA.decoration(enclosure) >= IA.def && IA.isguaranteed(enclosure) ||
+            throw(ArgumentError("A model range certificate must be valid and guaranteed"))
+    end
+    return TaylorModel(p, r, deepcopy(enclosure), coordinates, order, Val(:owned))
 end
 function coordinate_models(box, order)
     validated_rounding()
@@ -152,30 +160,48 @@ function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box
     end
     return result
 end
-function DA.enclose(a::TaylorModel{I}) where {I <: Interval}
+function intersect_range(a, bound)
+    return a._enclosure === nothing ? bound :
+        IA.intersect_interval(bound, a._enclosure; dec = :auto)
+end
+function model_bound(
+        a::TaylorModel{I}, normalized = a._coordinates.normalized
+    ) where {I <: Interval}
+    powers = power_cache(normalized, DA.degree(a), I)
+    return intersect_range(a, polynomial_bound(a._polynomial, powers, I) + a._remainder)
+end
+function DA.enclose(a::TaylorModel)
     validated_rounding()
     DA.model_valid(a)
-    return polynomial_bound(a._polynomial, power_cache(a._coordinates.normalized, DA.degree(a), I), I) + a._remainder
+    return deepcopy(model_bound(a))
 end
-function DA.enclose(a::TaylorModel{I}, physical_subbox) where {I <: Interval}
+function DA.enclose(a::TaylorModel, physical_subbox)
     normalized = normalized_box(a, physical_subbox)
-    return polynomial_bound(a._polynomial, power_cache(normalized, DA.degree(a), I), I) + a._remainder
+    return deepcopy(model_bound(a, normalized))
 end
-function DA.evaluate(a::TaylorModel{I}, physical_point) where {I <: Interval}
+function DA.evaluate(a::TaylorModel, physical_point)
     normalized = normalized_box(a, physical_point; point = true)
-    return polynomial_bound(a._polynomial, power_cache(normalized, DA.degree(a), I), I) + a._remainder
+    return deepcopy(model_bound(a, normalized))
 end
 
 Base.zero(a::TaylorModel) = TaylorModel(0, a)
 Base.one(a::TaylorModel) = TaylorModel(1, a)
 function Base.:-(a::TaylorModel)
     model_context(a)
-    return model_result(-a._polynomial, -a._remainder, a._coordinates, a._order)
+    enclosure = a._enclosure === nothing ? nothing : -a._enclosure
+    return model_result(
+        -a._polynomial, -a._remainder, a._coordinates, a._order, enclosure
+    )
 end
 for op in (:+, :-)
     @eval function Base.$op(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
         compatible_models(a, b)
-        return model_result($op(a._polynomial, b._polynomial), $op(a._remainder, b._remainder), a._coordinates, a._order)
+        enclosure = a._enclosure === nothing && b._enclosure === nothing ? nothing :
+            $op(model_bound(a), model_bound(b))
+        return model_result(
+            $op(a._polynomial, b._polynomial), $op(a._remainder, b._remainder),
+            a._coordinates, a._order, enclosure
+        )
     end
 end
 
@@ -281,9 +307,15 @@ function Base.:*(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
     tail = discarded_bound(p, q, a._order, powers, I)
     rp, rq = polynomial_bound(p, powers, I), polynomial_bound(q, powers, I)
     r = tail + rp * b._remainder + rq * a._remainder + a._remainder * b._remainder
+    enclosure = if a._enclosure === nothing && b._enclosure === nothing
+        nothing
+    else
+        ra = intersect_range(a, rp + a._remainder)
+        a === b ? IA.pown(ra, 2) : ra * intersect_range(b, rq + b._remainder)
+    end
     retained = DA.allocate(ctx, I, ctx.basis.ends[a._order + 1])
     DA.multiply!(retained, p, q, a._order)
-    return model_result(retained, r, a._coordinates, a._order)
+    return model_result(retained, r, a._coordinates, a._order, enclosure)
 end
 for op in (:+, :-, :*, :/)
     @eval begin
@@ -375,7 +407,8 @@ function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Inte
         p.coeffs[k] /= center
     end
     h = model_result(
-        DA.finish!(p, p.len; filter = false), h._remainder / center, a._coordinates, n
+        DA.finish!(p, p.len; filter = false), h._remainder / center, a._coordinates, n,
+        h._enclosure === nothing ? nothing : h._enclosure / center
     )
     result = TaylorModel(coefficients[end], a)
     for k in n:-1:1
@@ -407,7 +440,9 @@ function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Inte
     else
         sqrt_remainder(x, center, coefficients)
     end
-    return model_result(result._polynomial, result._remainder + tail, a._coordinates, n)
+    return model_result(
+        result._polynomial, result._remainder + tail, a._coordinates, n, fn(x)
+    )
 end
 
 function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
@@ -435,7 +470,9 @@ function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
     # Taylor's theorem: the (n+1)th normalized derivative is bounded on x;
     # h^(n+1) here is an interval power of the whole input displacement.
     tail = normalized_derivative(fn, x, n + 1) * IA.pown(x - center, n + 1)
-    return model_result(result._polynomial, result._remainder + tail, a._coordinates, n)
+    return model_result(
+        result._polynomial, result._remainder + tail, a._coordinates, n, fn(x)
+    )
 end
 for fn in (:inv, :exp, :log, :sin, :cos, :sqrt)
     @eval Base.$fn(a::TaylorModel) = elementary_model($fn, a)
@@ -456,7 +493,8 @@ function compile_models(models::AbstractVector{TaylorModel{I}}) where {I <: Inte
     return [
         DA.CompiledTaylorModel(
             deepcopy(m._polynomial.coeffs[1:m._polynomial.len]), exponents,
-            deepcopy(m._remainder), coordinates, m._order, DA.degree(m)
+            deepcopy(m._remainder), deepcopy(m._enclosure), coordinates,
+            m._order, DA.degree(m)
         ) for m in models
     ]
 end
@@ -464,14 +502,24 @@ DA.compile(a::TaylorModel{I}) where {I <: Interval} = only(compile_models([a]))
 
 function snapshot_bound(a::DA.CompiledTaylorModel{I}, normalized) where {I <: Interval}
     powers = power_cache(normalized, DA.degree(a), I)
-    return monomial_bound(a._coefficients, a._exponents, powers, I) + a._remainder
+    return deepcopy(
+        intersect_range(
+            a, monomial_bound(a._coefficients, a._exponents, powers, I) + a._remainder
+        )
+    )
 end
 function snapshot_bounds(
         models::AbstractVector{<:DA.CompiledTaylorModel{I}}, box
     ) where {I <: Interval}
     normalized = normalized_box(first(models), box)
     powers = power_cache(normalized, maximum(DA.degree, models), I)
-    return [monomial_bound(m._coefficients, m._exponents, powers, I) + m._remainder for m in models]
+    return [
+        deepcopy(
+            intersect_range(
+                m, monomial_bound(m._coefficients, m._exponents, powers, I) + m._remainder
+            )
+        ) for m in models
+    ]
 end
 function DA.enclose(a::DA.CompiledTaylorModel)
     validated_rounding()

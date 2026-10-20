@@ -17,6 +17,8 @@ A native interval-coefficient polynomial, absolute interval remainder, physical
 domain and affine coordinates. Load IntervalArithmetic to construct models with
 [`taylor_models`](@ref). Its invariant is `f(c + r .* ξ) ∈ P(ξ) + R` throughout
 the declared normalized box. The retained total degree is fixed at construction.
+Elementary operations also retain an independent interval range certificate.
+Queries intersect it with `P + R`; the polynomial and absolute remainder are unchanged.
 
 The three-argument constructor asserts the supplied remainder for the stored
 polynomial in the reference coordinates. It cannot certify an unknown generating
@@ -33,10 +35,14 @@ and enclosure do not depend on the working order or coefficient tolerance.
 struct TaylorModel{T <: Real}
     _polynomial::TaylorPolynomial{T}
     _remainder::T
+    _enclosure::Union{Nothing, T}
     _coordinates::ModelCoordinates{T}
     _order::Int
-    function TaylorModel(p::TaylorPolynomial{T}, r::T, coordinates::ModelCoordinates{T}, order::Int, ::Val{:owned}) where {T <: Real}
-        return new{T}(p, r, coordinates, order)
+    function TaylorModel(
+            p::TaylorPolynomial{T}, r::T, enclosure::Union{Nothing, T},
+            coordinates::ModelCoordinates{T}, order::Int, ::Val{:owned}
+        ) where {T <: Real}
+        return new{T}(p, r, enclosure, coordinates, order)
     end
 end
 
@@ -94,7 +100,10 @@ function Base.copy(a::TaylorModel)
     model_valid(a)
     c = a._coordinates
     coordinates = ModelCoordinates(deepcopy(c.box), deepcopy(c.center), deepcopy(c.radius), deepcopy(c.normalized), c.identity)
-    return TaylorModel(model_polycopy(a._polynomial), deepcopy(a._remainder), coordinates, a._order, Val(:owned))
+    return TaylorModel(
+        model_polycopy(a._polynomial), deepcopy(a._remainder), deepcopy(a._enclosure),
+        coordinates, a._order, Val(:owned)
+    )
 end
 Base.deepcopy_internal(a::TaylorModel, copies::IdDict) = get!(() -> copy(a), copies, a)
 Base.:+(a::TaylorModel) = (model_arithmetic(a); copy(a))
