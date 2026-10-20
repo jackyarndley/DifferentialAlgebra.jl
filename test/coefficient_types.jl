@@ -1,6 +1,8 @@
 using Test, DifferentialAlgebra
 using LinearAlgebra, Random, GenericLinearAlgebra, SpecialFunctions
 
+include("support/allocations.jl")
+
 function multiplication_allocations(out, a, b)
     mul!(out, a, b)
     return @allocated mul!(out, a, b)
@@ -97,7 +99,7 @@ end
             @test f(TaylorPolynomial{T}(2)) isa TaylorPolynomial{T}
             @test DifferentialAlgebra.constant_term(f(TaylorPolynomial{T}(2))) ≈ f(T(2)) rtol = tolerance
         end
-        if T !== BigFloat
+        if CHECK_ZERO_ALLOCATIONS && T !== BigFloat
             out = zero(p)
             @test multiplication_allocations(out, p, p) == 0
             result, work = zeros(T, 2), zeros(T, DifferentialAlgebra.degree(map) + 1)

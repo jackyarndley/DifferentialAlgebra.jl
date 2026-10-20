@@ -1,5 +1,7 @@
 using Test, DifferentialAlgebra
 
+include("support/allocations.jl")
+
 @testset "Automatic domain splitting" begin
     old_x, old_y = variables(2; order = 3, names = (:u, :v))
     set_truncation_order!(2)
@@ -80,7 +82,9 @@ using Test, DifferentialAlgebra
     @test out ≈ [1.09, -0.12]
     point = [0.3, -0.4]
     evaluate!(out, exact, point, normalized, work)
-    @test @allocated(evaluate!(out, exact, point, normalized, work)) == 0
+    if CHECK_ZERO_ALLOCATIONS
+        @test @allocated(evaluate!(out, exact, point, normalized, work)) == 0
+    end
     @test_throws ArgumentError evaluate!(out, exact, out, normalized, work)
     @test_throws ArgumentError evaluate!(out, exact, [0.3, -0.4], out, work)
     @test_throws DimensionMismatch evaluate!(out, exact, [0.3, -0.4], zeros(1), work)

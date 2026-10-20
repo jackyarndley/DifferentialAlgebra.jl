@@ -1,7 +1,7 @@
 using Test, DifferentialAlgebra
 
-@testset verbose = true "TEST 1: DifferentialAlgebra initialization" begin
-    @testset "1.1 Maximum order, number of variables, and number of monomials" begin
+@testset verbose = true "Algebra configuration" begin
+    @testset "Basis dimensions" begin
         for order in 1:10
             for nvar in 1:6
                 @testset "order=$(order), nvar=$(nvar)" begin
@@ -14,9 +14,9 @@ using Test, DifferentialAlgebra
         end
     end
 
-    @testset "1.2 Truncation order" begin
+    @testset "Working order" begin
         for k_user in 1:10
-            @testset "1.2 Trunction order (k_user=$k_user)" begin
+            @testset "order=$k_user" begin
                 DifferentialAlgebra.initialize!(10, 6)
 
                 DifferentialAlgebra.set_truncation_order!(k_user)
@@ -26,9 +26,9 @@ using Test, DifferentialAlgebra
         end
     end
 
-    @testset "1.3 Cutoff for the coefficients" begin
+    @testset "Coefficient tolerance" begin
         for cutoff_user in (1.0e-14, 1.0e-15, 1.0e-16)
-            @testset "1.3 Cutoff for the coefficients (cutoff_user=$cutoff_user)" begin
+            @testset "tolerance=$cutoff_user" begin
                 DifferentialAlgebra.initialize!(10, 6)
                 DifferentialAlgebra.set_coefficient_tolerance!(cutoff_user)
                 cutoff_da = DifferentialAlgebra.coefficient_tolerance()

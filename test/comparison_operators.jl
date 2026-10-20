@@ -2,7 +2,7 @@ using Test, DifferentialAlgebra
 using LinearAlgebra
 
 @testset verbose = true "Comparison operators" begin
-    @testset "Test ==" begin
+    @testset "Constant-part equality" begin
         DifferentialAlgebra.initialize!(10, 4)
 
         x = 1 + TaylorPolynomial(1, 1.0)
@@ -14,7 +14,7 @@ using LinearAlgebra
         @test x == y
     end
 
-    @testset "Test >=" begin
+    @testset "Constant-part ordering" begin
         DifferentialAlgebra.initialize!(10, 4)
 
         x = 1 + TaylorPolynomial(1, 1)
@@ -25,7 +25,7 @@ using LinearAlgebra
 
     end
 
-    @testset "Test isnan" begin
+    @testset "isnan" begin
         DifferentialAlgebra.initialize!(2, 2)
 
         x = 1.0 + TaylorPolynomial(1, 1.0)
@@ -36,7 +36,7 @@ using LinearAlgebra
         @test isnan(z) == true
     end
 
-    @testset "Test isinf" begin
+    @testset "isinf" begin
         DifferentialAlgebra.initialize!(2, 2)
 
         x = 1.0 + TaylorPolynomial(1, 1.0)
@@ -47,7 +47,7 @@ using LinearAlgebra
         @test isinf(z) == false
     end
 
-    @testset "Test isfinite" begin
+    @testset "isfinite" begin
         DifferentialAlgebra.initialize!(2, 2)
 
         x = 1.0 + TaylorPolynomial(1, 1.0)

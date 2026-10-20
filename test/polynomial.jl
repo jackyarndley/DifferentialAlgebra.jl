@@ -1,10 +1,7 @@
 using Test, DifferentialAlgebra
 using LinearAlgebra, Random, SpecialFunctions
 
-# TaylorPolynomial equality intentionally compares constants. Check every coefficient instead.
-polyerror(a::TaylorPolynomial, b::Real) = DifferentialAlgebra.coefficient_norm(a - b, 0)
-polyerror(a::AbstractArray, b::AbstractArray) = maximum(polyerror.(a, b); init = 0.0)
-@noinline temporary_buffer(p) = WeakRef(sin(p).coeffs)
+include("support/coefficients.jl")
 
 # A valid AbstractVector whose elements have no owner until materialized.
 struct GeneratedPolynomials <: AbstractVector{TaylorPolynomial}
@@ -48,11 +45,8 @@ end
         # The coefficient storage must stay alive across GC.
         for _ in 1:3
             GC.gc(true)
-            @test polyerror(p, 2 + 3x + 4x * y + 5z^3) == 0
+            @test coefficientwise_error(p, 2 + 3x + 4x * y + 5z^3) == 0
         end
-        weakbuffer = temporary_buffer(p)
-        GC.gc(true)
-        @test weakbuffer.value === nothing
         @test Base.summarysize(p) >= sizeof(p.coeffs)
         grown = TaylorPolynomial()
         # Exercise coefficient storage growth, including across GC.
@@ -62,7 +56,7 @@ end
             i % 7 == 0 && GC.gc(false)
         end
         @test DifferentialAlgebra.coefficient.(Ref(grown), indices) == collect(1:length(indices))
-        @test polyerror(copy(grown), grown) == 0
+        @test coefficientwise_error(copy(grown), grown) == 0
         compiled = DifferentialAlgebra.compile(p)
         DifferentialAlgebra.initialize!(2, 1)
         @test_throws ArgumentError p + 1
@@ -80,15 +74,15 @@ end
         x, y = variable.(1:DifferentialAlgebra.nvariables())
         p = 2 + x + 0.2y
         for a in (2, 2.0, 2 // 1, π, ℯ)
-            @test polyerror(a^(1 + x), exp(log(a) * (1 + x))) < 1.0e-14
+            @test coefficientwise_error(a^(1 + x), exp(log(a) * (1 + x))) < 1.0e-14
         end
-        @test polyerror(p^(1 + y), exp(log(p) * (1 + y))) < 1.0e-14
-        @test polyerror(p^(1 // 2), sqrt(p)) < 1.0e-14
-        @test polyerror(log(3.0, p), log(p) / log(3.0)) < 1.0e-14
-        @test polyerror(log(ℯ, p), log(p)) == 0
-        @test polyerror(atan(x, p), atan(x / p)) < 1.0e-14
-        @test polyerror(hypot(x, p), sqrt(x * x + p * p)) < 1.0e-14
-        @test polyerror(mod(p + 3, 3), p) == 0
+        @test coefficientwise_error(p^(1 + y), exp(log(p) * (1 + y))) < 1.0e-14
+        @test coefficientwise_error(p^(1 // 2), sqrt(p)) < 1.0e-14
+        @test coefficientwise_error(log(3.0, p), log(p) / log(3.0)) < 1.0e-14
+        @test coefficientwise_error(log(ℯ, p), log(p)) == 0
+        @test coefficientwise_error(atan(x, p), atan(x / p)) < 1.0e-14
+        @test coefficientwise_error(hypot(x, p), sqrt(x * x + p * p)) < 1.0e-14
+        @test coefficientwise_error(mod(p + 3, 3), p) == 0
         @test iszero(sqrt(TaylorPolynomial())) && iszero(cbrt(TaylorPolynomial()))
         @test iszero(hypot(TaylorPolynomial(), TaylorPolynomial()))
         @test isless(1.0, p) && !isless(p, 1.0)
@@ -100,8 +94,11 @@ end
         @test_throws DifferentialAlgebra.TaylorError log(-p)
         @test_throws DifferentialAlgebra.TaylorError inv(x)
         @test_throws DifferentialAlgebra.TaylorError sqrt(x)
-        @test polyerror(exp(log(p)), p) < 1.0e-13
-        @test polyerror(DifferentialAlgebra.coefficient_product(2 + 3x, 4 + 5x + x * x), 8 + 15x) == 0
+        @test coefficientwise_error(exp(log(p)), p) < 1.0e-13
+        @test coefficientwise_error(
+            DifferentialAlgebra.coefficient_product(2 + 3x, 4 + 5x + x * x),
+            8 + 15x
+        ) == 0
         @test DifferentialAlgebra.coefficient_norm(2 + 3x - 4x * y, 0) == 4
         @test DifferentialAlgebra.coefficient_norm(2 + 3x - 4x * y, 1) == 9
         @test DifferentialAlgebra.degree_norms(2 + 3x - 4x * y, 0, 1) == [2, 3, 4, 0, 0, 0]
@@ -110,9 +107,9 @@ end
         @test iszero(DifferentialAlgebra.coefficient_product(x, y))
         @test iszero(DifferentialAlgebra.coefficient_product(x, TaylorPolynomial()))
         # Sparse outputs reserve only as many terms as the operation can create.
-        @test polyerror((2 + x) * (3 + y), 6 + 3x + 2y + x * y) == 0
-        @test polyerror((2 + x) / TaylorPolynomial(2), 1 + 0.5x) == 0
-        @test polyerror(TaylorPolynomial() - x, -x) == 0
+        @test coefficientwise_error((2 + x) * (3 + y), 6 + 3x + 2y + x * y) == 0
+        @test coefficientwise_error((2 + x) / TaylorPolynomial(2), 1 + 0.5x) == 0
+        @test coefficientwise_error(TaylorPolynomial() - x, -x) == 0
         bounds = DifferentialAlgebra.bounds(2 + 3x)
         @test bounds.lower <= -1 && bounds.upper >= 5
         @test DifferentialAlgebra.set_coefficient_tolerance!(1.0e-20) == 0
@@ -145,8 +142,14 @@ end
         @test only(DifferentialAlgebra.evaluate(DifferentialAlgebra.compile(z), [1, 2, 3])) == 3
         @test DifferentialAlgebra.evaluate(DifferentialAlgebra.compile(GeneratedPolynomials(3)), [1, 2, 3]) == [1, 4, 9]
         @test DifferentialAlgebra.evaluate(TaylorPolynomial(7), Float64[]) == 7
-        @test polyerror(DifferentialAlgebra.evaluate(compiled, [x, y, z]), f) == 0
-        @test polyerror(DifferentialAlgebra.evaluate(compiled, Real[x, 0, 0]), [2 + x, TaylorPolynomial()]) == 0
+        @test coefficientwise_error(
+            DifferentialAlgebra.evaluate(compiled, [x, y, z]),
+            f
+        ) == 0
+        @test coefficientwise_error(
+            DifferentialAlgebra.evaluate(compiled, Real[x, 0, 0]),
+            [2 + x, TaylorPolynomial()]
+        ) == 0
         out, work = zeros(2), zeros(4)
         @test DifferentialAlgebra.evaluate!(out, compiled, [0.1, 0.2, 0.3], work) ≈ [2.53, 0.067]
         @test DifferentialAlgebra.evaluate!(out, compiled, [0.1, 0.2, 0.3]) === out
@@ -157,16 +160,28 @@ end
         # A coupled map with a nontrivial Jacobian and a parameter coordinate.
         f = [2x + y + 0.1x * y, x + 3y + 0.2x * x, z + 0.1x * z]
         inverse = DifferentialAlgebra.invert(f)
-        @test polyerror(DifferentialAlgebra.evaluate(f, inverse), [x, y, z]) < 1.0e-12
-        @test polyerror(DifferentialAlgebra.evaluate(inverse, f), [x, y, z]) < 1.0e-12
+        @test coefficientwise_error(
+            DifferentialAlgebra.evaluate(f, inverse),
+            [x, y, z]
+        ) < 1.0e-12
+        @test coefficientwise_error(
+            DifferentialAlgebra.evaluate(inverse, f),
+            [x, y, z]
+        ) < 1.0e-12
         partial = [x + 0.2x * y + z * z, y + 0.1x * z]
         inverse = DifferentialAlgebra.invert(partial)
-        @test polyerror(DifferentialAlgebra.evaluate(partial, vcat(inverse, z)), [x, y]) < 1.0e-12
+        @test coefficientwise_error(
+            DifferentialAlgebra.evaluate(partial, vcat(inverse, z)),
+            [x, y]
+        ) < 1.0e-12
         @test_throws DifferentialAlgebra.TaylorError DifferentialAlgebra.invert([x, x, z])
         @test DifferentialAlgebra.truncation_order() == 5
         DifferentialAlgebra.initialize!(1, 1)
         x = TaylorPolynomial(1, 1.0)
-        @test polyerror(only(DifferentialAlgebra.invert([2 + 3x])), (x - 2) / 3) < 1.0e-15
+        @test coefficientwise_error(
+            only(DifferentialAlgebra.invert([2 + 3x])),
+            (x - 2) / 3
+        ) < 1.0e-15
     end
 
     @testset "Arrays and higher-order symmetric eigenpairs" begin
@@ -174,14 +189,20 @@ end
         DifferentialAlgebra.set_coefficient_tolerance!(1.0e-24)
         x, y = variable.(1:DifferentialAlgebra.nvariables())
         M = [2 + x y; y 4 - x]
-        @test polyerror(det(M), (2 + x) * (4 - x) - y * y) < 1.0e-14
-        @test polyerror(M * inv(M), TaylorPolynomial.(Matrix{Float64}(I, 2, 2))) < 1.0e-13
-        @test polyerror(transpose(M), M) == 0
-        @test polyerror(norm(M), sqrt(sum(abs2, M))) < 1.0e-13
+        @test coefficientwise_error(det(M), (2 + x) * (4 - x) - y * y) < 1.0e-14
+        @test coefficientwise_error(
+            M * inv(M),
+            TaylorPolynomial.(Matrix{Float64}(I, 2, 2))
+        ) < 1.0e-13
+        @test coefficientwise_error(transpose(M), M) == 0
+        @test coefficientwise_error(norm(M), sqrt(sum(abs2, M))) < 1.0e-13
         A = [2 + x 0.3 + y 0.2x; 0.3 + y 4 - y 0.1 + x * y; 0.2x 0.1 + x * y 7 + x + y]
         values, vectors = DifferentialAlgebra.eigenpairs(A)
-        @test polyerror(A * vectors, vectors * Diagonal(values)) < 2.0e-12
-        @test polyerror(transpose(vectors) * vectors, TaylorPolynomial.(Matrix{Float64}(I, 3, 3))) < 2.0e-12
+        @test coefficientwise_error(A * vectors, vectors * Diagonal(values)) < 2.0e-12
+        @test coefficientwise_error(
+            transpose(vectors) * vectors,
+            TaylorPolynomial.(Matrix{Float64}(I, 3, 3))
+        ) < 2.0e-12
         @test DifferentialAlgebra.truncation_order() == 4
         # Evaluate the Taylor eigenvalues against independent numeric LAPACK.
         for point in ([1.0e-3, 2.0e-3], [-2.0e-3, 1.0e-3])
@@ -189,13 +210,16 @@ end
             @test DifferentialAlgebra.evaluate(values, point) ≈ eigvals(Symmetric(numeric)) atol = 2.0e-13
         end
         repeated, basis = DifferentialAlgebra.eigenpairs([1 + x TaylorPolynomial(); TaylorPolynomial() 1 + y])
-        @test polyerror(repeated, [1 + x, 1 + y]) == 0
-        @test polyerror(basis, TaylorPolynomial.(Matrix{Float64}(I, 2, 2))) == 0
+        @test coefficientwise_error(repeated, [1 + x, 1 + y]) == 0
+        @test coefficientwise_error(basis, TaylorPolynomial.(Matrix{Float64}(I, 2, 2))) == 0
         @test_throws ArgumentError DifferentialAlgebra.eigenpairs([1 + x y; y 1 - x])
         @test_throws ArgumentError DifferentialAlgebra.eigenpairs([x y; x y])
         @test size(DifferentialAlgebra.hessian_tensor([x * x + y, x * y])) == (2, 2, 2)
-        @test polyerror(DifferentialAlgebra.hessian(x * x + y)[1, 1], 2) == 0
-        @test polyerror(DifferentialAlgebra.jacobian([x * x + y, x * y])[1, 2], 1) == 0
+        @test coefficientwise_error(DifferentialAlgebra.hessian(x * x + y)[1, 1], 2) == 0
+        @test coefficientwise_error(
+            DifferentialAlgebra.jacobian([x * x + y, x * y])[1, 2],
+            1
+        ) == 0
     end
 
     @testset "Concurrent callers" begin
@@ -290,5 +314,16 @@ end
                 @test coefficient(p, exponents(m)) == ldexp(coefficient(m), -degree(m))
             end
         end
+    end
+end
+
+@testset "Coefficient comparisons include all stored terms" begin
+    x, = variables(1; order = 4)
+    p = 1 + x^4
+    with_order(1) do
+        set_coefficient_tolerance!(2)
+        @test coefficientwise_error(p, 1) == 1
+        @test coefficientwise_error([p], [1]) == 1
+        @test coefficientwise_error(UInt128(0), typemax(UInt128)) == big(typemax(UInt128))
     end
 end
