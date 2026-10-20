@@ -91,7 +91,8 @@ for S in (:AbstractFloat, :AbstractIrrational)
         Base.isequal(a::$S, b::TaylorPolynomial) = isequal(b, a)
     end
 end
-for op in (:(==), :<, :<=, :>, :>=, :isless)
+# Base defines > and >= by reversing < and <=.
+for op in (:(==), :<, :<=, :isless)
     @eval begin
         Base.$op(a::TaylorPolynomial, b::TaylorPolynomial) = Base.$op(constant_term(a), constant_term(b))
         Base.$op(a::TaylorPolynomial, b::Real) = Base.$op(constant_term(a), b)

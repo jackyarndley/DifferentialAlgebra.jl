@@ -275,6 +275,11 @@ end
         @test_throws ArgumentError TaylorModel(IA.exact(polynomial(x)), x)
         @test_throws ArgumentError x < 1
         @test_throws ArgumentError x == x
+        for op in (>, >=), (a, b) in (
+                    (x, y), (x, 1), (1, x), (x, polynomial(x)), (polynomial(x), x),
+                )
+            @test_throws ArgumentError op(a, b)
+        end
         @test_throws ArgumentError Float64(x)
         @test sameinterval(enclose(compile(x)), enclose(x))
         @test_throws ArgumentError compile([x, y])

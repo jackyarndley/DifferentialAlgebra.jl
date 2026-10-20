@@ -1,6 +1,31 @@
 using Test, DifferentialAlgebra
 using ForwardDiff
 
+@testset "Dual comparisons follow scalar coefficient semantics" begin
+    for T in (Float32, Float64, BigFloat)
+        x, = variables(T, 1; order = 3)
+        p = T(2) + x
+        for dual in (
+                ForwardDiff.Dual(T(2), T(1)),
+                ForwardDiff.Dual(T(2), T(-1)),
+                ForwardDiff.Dual(
+                    ForwardDiff.Dual(T(2), T(1)),
+                    ForwardDiff.Dual(T(-1), T(0)),
+                ),
+            )
+            for op in (==, <, <=, >, >=, isless)
+                @test op(p, dual) == op(T(2), dual)
+                @test op(dual, p) == op(dual, T(2))
+                @test op(one(p), dual) == op(one(T), dual)
+                @test op(dual, one(p)) == op(dual, one(T))
+            end
+            @test !isequal(p, dual) && !isequal(dual, p)
+            @test isequal(TaylorPolynomial(T(2)), dual) == isequal(T(2), dual)
+            @test isequal(dual, TaylorPolynomial(T(2))) == isequal(dual, T(2))
+        end
+    end
+end
+
 @testset "Dual scalar arithmetic preserves coefficient derivatives" begin
     for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
         x, = variables(T, 1; order = 3, table_bytes = budget)

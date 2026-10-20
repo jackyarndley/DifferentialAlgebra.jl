@@ -149,7 +149,7 @@ end
 compile(a::TaylorModel) = throw(ArgumentError("Load IntervalArithmetic to compile TaylorModel with its remainder and domain"))
 compile(a::AbstractVector{<:TaylorModel}) = throw(ArgumentError("compile is unsupported for TaylorModel"))
 invert(a::AbstractVector{<:TaylorModel}) = throw(ArgumentError("Verified model inversion is unsupported"))
-for op in (:(==), :<, :<=, :>, :>=, :isless, :isequal)
+for op in (:(==), :<, :<=, :isless, :isequal)
     @eval begin
         Base.$op(a::TaylorModel, b::TaylorModel) = throw(ArgumentError("Whole-model comparisons are unsupported"))
         Base.$op(a::TaylorModel, b::Real) = throw(ArgumentError("Whole-model comparisons are unsupported"))

@@ -59,6 +59,29 @@ using LinearAlgebra
     end
 end
 
+@testset "Reversed ordering preserves scalar comparisons" begin
+    for T in (Int, Rational{Int}, Rational{BigInt}, Float32, Float64, BigFloat)
+        x, y = variables(T, 2; order = 3)
+        cases = T <: AbstractFloat ?
+            ((1, 2), (2, 1), (2, 2), (NaN, 1), (1, NaN), (-Inf, Inf), (-0.0, 0.0)) :
+            ((1, 2), (2, 1), (2, 2))
+        for (a, b) in cases, op in (>, >=)
+            a, b = T(a), T(b)
+            p, q = a + x + x * y, b + y
+            @test @inferred(op(p, q)) == op(a, b)
+            @test @inferred(op(p, b)) == op(a, b)
+            @test @inferred(op(a, q)) == op(a, b)
+        end
+    end
+    stale = variable(1)
+    variables(1; order = 2)
+    for op in (>, >=)
+        @test_throws ArgumentError op(stale, 1)
+        @test_throws ArgumentError op(1, stale)
+        @test_throws ArgumentError op(stale, stale)
+    end
+end
+
 @testset "Predicates inspect the complete polynomial" begin
     x, y = variables(2; order = 3)
     @test !isone(1 + x)
