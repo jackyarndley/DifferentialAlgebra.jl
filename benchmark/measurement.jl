@@ -1,21 +1,40 @@
-# Shared setup for standalone scripts. Compilation is reported separately from
-# warmed batched minima; run paired revisions sequentially on the same machine.
-function warmed_measurement(f::F, samples, batch) where {F}
-    f()
-    seconds = minimum(1:samples) do _
-        elapsed = @elapsed for _ in 1:batch
-            f()
-        end
-        elapsed / batch
-    end
-    return (; seconds, bytes = @allocated(f()))
+using BenchmarkTools: BenchmarkTools, @benchmark
+
+let
+    packages = [
+        string(name, "=", Base.pkgversion(getfield(@__MODULE__, name)))
+            for name in (
+                :DifferentialAlgebra, :BenchmarkTools, :IntervalArithmetic,
+                :ForwardDiff, :SpecialFunctions, :DiffEqBase, :OrdinaryDiffEqCore,
+            ) if isdefined(@__MODULE__, name)
+    ]
+    revision = readchomp(`git -C $(pkgdir(DifferentialAlgebra)) rev-parse HEAD`)
+    println(
+        (;
+            julia = VERSION, revision, cpu = Sys.CPU_NAME,
+            threads = Threads.nthreads(), packages,
+        )
+    )
 end
 
-function measure(f; samples = 30, batch = 10)
+function warmed_measurement(f::F, samples, batch, seconds) where {F}
+    trial = if batch === nothing
+        @benchmark $f() samples = samples seconds = seconds
+    else
+        @benchmark $f() samples = samples evals = batch seconds = seconds
+    end
+    best = minimum(trial)
+    return (;
+        seconds = best.time / 1.0e9, bytes = best.memory,
+        allocations = best.allocs, evals = trial.params.evals,
+    )
+end
+
+function measure(f; samples = 30, batch = nothing, seconds = 0.5)
     # Dynamic entry keeps workload compilation inside the first-call timer.
-    # The specialized batched loop is compiled afterward, outside that timer.
+    # BenchmarkTools calibrates its warmed loop after that timer has stopped.
     first_call = @timed Base.invokelatest(f)
-    warmed = Base.invokelatest(warmed_measurement, f, samples, batch)
+    warmed = Base.invokelatest(warmed_measurement, f, samples, batch, seconds)
     compilation = hasproperty(first_call, :compile_time) ? first_call.compile_time : missing
     return (; warmed..., first_seconds = first_call.time, compilation)
 end

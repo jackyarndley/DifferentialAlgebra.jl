@@ -2,13 +2,6 @@ using DifferentialAlgebra, IntervalArithmetic, SpecialFunctions
 
 include("measurement.jl")
 
-revision = readchomp(`git -C $(pkgdir(DifferentialAlgebra)) rev-parse --short HEAD`)
-println(
-    (;
-        julia = VERSION, revision, cpu = Sys.CPU_NAME, threads = Threads.nthreads(),
-        interval_arithmetic = Base.pkgversion(IntervalArithmetic),
-    )
-)
 function report(name, f; budget = missing)
     try
         measurement = measure(f)

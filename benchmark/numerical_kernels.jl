@@ -2,8 +2,6 @@ using DifferentialAlgebra, SpecialFunctions
 
 include("measurement.jl")
 
-revision = readchomp(`git -C $(pkgdir(DifferentialAlgebra)) rev-parse --short HEAD`)
-println((; julia = VERSION, revision, special_functions = Base.pkgversion(SpecialFunctions)))
 for budget in (0, 32 * 1024^2)
     x, y, z = variables(3; order = 6, table_bytes = budget)
     p = 2 + x / 10 + y / 5 + z^2 / 20
@@ -40,33 +38,72 @@ for budget in (0, 32 * 1024^2)
     set_coefficient_tolerance!(1.0e-4)
     f = () -> erf(erf_argument)
     measurement = measure(f)
-    println((; budget, path = :filtered_erf, quadratic = coefficient(f(), [2]), measurement))
+    println(
+        (;
+            budget, path = :filtered_erf, quadratic = coefficient(f(), [2]), measurement,
+        )
+    )
     stored_x, = variables(1; order = 4, table_bytes = budget)
     stored = stored_x^4
     with_order(2) do
         measurement = measure(() -> differentiate(stored, [2]))
-        println((; budget, path = :repeated_derivative, quadratic = coefficient(differentiate(stored, [2]), [2]), measurement))
+        println(
+            (;
+                budget, path = :repeated_derivative,
+                quadratic = coefficient(differentiate(stored, [2]), [2]), measurement,
+            )
+        )
         measurement = measure(() -> hessian(stored))
-        println((; budget, path = :stored_hessian, quadratic = coefficient(hessian(stored)[1, 1], [2]), measurement))
+        println(
+            (;
+                budget, path = :stored_hessian,
+                quadratic = coefficient(hessian(stored)[1, 1], [2]), measurement,
+            )
+        )
     end
 end
 
 for T in (Float32, Float64, BigFloat)
     x, y = variables(T, 2; order = 6)
     p = T(1.0e10) * (x + y)^6
-    println((; type = T, path = :coefficient_norm, measurement = measure(() -> coefficient_norm(p, 2))))
-    println((; type = T, path = :degree_norms, measurement = measure(() -> DifferentialAlgebra.degree_norms(p, 0, 2))))
+    println(
+        (;
+            type = T, path = :coefficient_norm,
+            measurement = measure(() -> coefficient_norm(p, 2)),
+        )
+    )
+    println(
+        (;
+            type = T, path = :degree_norms,
+            measurement = measure(() -> DifferentialAlgebra.degree_norms(p, 0, 2)),
+        )
+    )
 end
 
 x, = variables(1; order = 3)
 let matrix = [2 + x one(x); one(x) 4 - x]
-    println((; path = :eigenpairs, measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix))))
+    println(
+        (;
+            path = :eigenpairs,
+            measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix)),
+        )
+    )
 end
 let matrix = [1 + x zero(x); zero(x) 1 - x]
-    println((; path = :diagonal_eigenpairs, measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix))))
+    println(
+        (;
+            path = :diagonal_eigenpairs,
+            measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix)),
+        )
+    )
 end
 let matrix = Matrix{TaylorPolynomial{Int}}(undef, 0, 0)
     measurement = measure(() -> DifferentialAlgebra.eigenpairs(matrix))
     values, vectors = DifferentialAlgebra.eigenpairs(matrix)
-    println((; path = :empty_eigenpairs, types = (eltype(values), eltype(vectors)), measurement))
+    println(
+        (;
+            path = :empty_eigenpairs,
+            types = (eltype(values), eltype(vectors)), measurement,
+        )
+    )
 end
