@@ -28,6 +28,11 @@ coefficient(p, [1, 1])
 
 Arithmetic follows Julia's promotion rules. Division or an elementary function
 may produce a different coefficient type when its scalar result requires one.
+Fixed-width integer coefficients have Julia's usual overflow behavior, including
+the scalar powers in affine substitutions. Exact binomial factors do not prevent
+those powers from overflowing. Use `BigInt` or `Rational{BigInt}` for unbounded
+exact arithmetic; for example, scaling `x^19` by 10 requires a coefficient of
+`big(10)^19`, which exceeds `typemax(Int64)`.
 The convenience constructor `TaylorPolynomial(c)` uses `typeof(float(c))`; use `TaylorPolynomial{T}(c)`
 to retain an exact scalar type.
 Explicit polynomial constants also avoid competing mixed-scalar methods when

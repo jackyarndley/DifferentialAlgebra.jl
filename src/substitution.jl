@@ -43,6 +43,10 @@ end
     translate_variable(p, variable, a = 1, c = 0)
 
 Replace one coordinate by `a*x[variable]+c`, retaining the other variables.
+Binomial factors are exact for integer and rational coefficients. Scalar powers
+still use the promoted coefficient type: fixed-width integer powers can overflow
+as in ordinary Julia arithmetic. Use `BigInt` or `Rational{BigInt}` coefficients
+when unbounded exact affine arithmetic is required.
 """
 translate_variable(p::TaylorPolynomial, v::Integer, a::Real = 1, c::Real = 0) = affine_variable(p, v, v, a, c)
 replace_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Real = 1) = affine_variable(p, from, to, a, 0)
