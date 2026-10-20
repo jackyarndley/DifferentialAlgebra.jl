@@ -100,7 +100,6 @@ end
         @test_throws DifferentialAlgebra.TaylorError log(-p)
         @test_throws DifferentialAlgebra.TaylorError inv(x)
         @test_throws DifferentialAlgebra.TaylorError sqrt(x)
-        @test_throws ArgumentError p^typemin(Cint)
         @test polyerror(exp(log(p)), p) < 1.0e-13
         @test polyerror(DifferentialAlgebra.coefficient_product(2 + 3x, 4 + 5x + x * x), 8 + 15x) == 0
         @test DifferentialAlgebra.coefficient_norm(2 + 3x - 4x * y, 0) == 4

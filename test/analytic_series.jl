@@ -286,3 +286,25 @@ end
         @test_throws ArgumentError DifferentialAlgebra.nthroot(T(1), 0)
     end
 end
+
+@testset "Large integer exponents" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 2, table_bytes = budget)
+        for n in (2^31, big(10)^100, typemax(UInt))
+            @test isone(one(x)^n)
+            @test iszero(x^n)
+            p = (1 + x)^n
+            @test constant_term(p) == 1
+            @test coefficient(p, [1]) ≈ Float64(n)
+            @test coefficient(p, [2]) ≈ Float64(binomial(big(n), 2))
+        end
+        @test isone(one(x)^typemin(Int))
+        @test isone((-one(x))^typemin(Int))
+        @test_throws DifferentialAlgebra.TaylorError zero(x)^typemin(Int)
+        @test_throws DifferentialAlgebra.TaylorError x^typemin(Int)
+        p = 1 + x
+        q = p^big(2)^31
+        set_coefficient!(q, [1], 7)
+        @test coefficient(p, [1]) == 1
+    end
+end

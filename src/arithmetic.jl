@@ -262,26 +262,42 @@ end
 Base.:*(a::TaylorPolynomial, b::TaylorPolynomial) = product(a, b)
 # Base's negative literal-power fallback filters inv(a) before raising it again.
 Base.literal_pow(::typeof(^), a::TaylorPolynomial, ::Val{N}) where {N} = a^N
-function Base.:^(a::TaylorPolynomial, n::Integer)
-    # Preserve the explicit range check in the existing API, avoiding abs(typemin).
-    typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Exponent out of range"))
+# Nonnegative powers keep one concrete accumulator type. Local filtering also
+# lets negative powers retain reciprocal coefficients until the final product.
+function integer_power(a::TaylorPolynomial, n::Integer; filter::Bool = true)
     ctx = valid(a)
-    n == 0 && return one(a)
-    n == 1 && return finish!(+a)
-    n == 2 && return product(a, a)
-    power = n < 0 ? quotient(one(coefficient_type(a)), a; filter = false) : a
-    n = abs(n)
-    result = nothing
-    while n > 0
-        if isodd(n)
-            result = isnothing(result) ? copy(power) :
-                product(result, power; filter = false)
-        end
-        n >>= 1
-        n > 0 && (power = product(power, power; filter = false))
+    if a.len == 1
+        c0 = a.coeffs[1]^n
+        return finish!(TaylorPolynomial{typeof(c0)}([c0], 1, ctx), 1; filter)
     end
-    return finish!(result, min(result.len, ctx.basis.ends[ctx.cutoff + 1]))
+    n == 0 && return finish!(
+        TaylorPolynomial{coefficient_type(a)}([one(coefficient_type(a))], 1, ctx), 1;
+        filter
+    )
+    n > ctx.cutoff && coefficient_iszero(a.coeffs[1]) && return zero(a)
+    n == 1 && return scaled(a, one(coefficient_type(a)); filter)
+    n == 2 && return product(a, a; filter)
+    while iseven(n)
+        a = product(a, a; filter = false)
+        n >>= 1
+    end
+    result = scaled(a, one(coefficient_type(a)); filter = false)
+    n >>= 1
+    while n > 0
+        a = product(a, a; filter = false)
+        isodd(n) && (result = product(result, a; filter = false))
+        n >>= 1
+    end
+    return finish!(result, result.len; filter)
 end
+function Base.:^(a::TaylorPolynomial, n::Integer)
+    n >= 0 && return integer_power(a, n)
+    n == -1 && return quotient(one(coefficient_type(a)), a)
+    reciprocal = quotient(one(coefficient_type(a)), a; filter = false)
+    # -(n+1) is representable even for typemin of a signed integer type.
+    return product(integer_power(reciprocal, -(n + 1); filter = false), reciprocal)
+end
+
 """
     coefficient_norm(p::TaylorPolynomial, type = 0)
 
