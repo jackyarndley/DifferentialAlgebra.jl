@@ -216,3 +216,33 @@ end
         end
     end
 end
+
+@testset "Inverse functions at boundary and large centers" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 4, table_bytes = budget)
+        for (f, center) in (
+                (asin, 1 - 1.0e-8), (acos, -1 + 1.0e-8),
+                (atanh, 1 - 1.0e-8), (atanh, -1 + 1.0e-8), (acosh, 1 + 1.0e-8),
+            )
+            p = f(center + x)
+            expected = setprecision(BigFloat, 256) do
+                [scalar_derivative(f, BigFloat(center), k) / factorial(k) for k in 0:4]
+            end
+            for k in 0:4
+                @test coefficient(p, [k]) ≈ Float64(expected[k + 1]) rtol = 5.0e-13
+            end
+        end
+        for f in (asinh, acosh)
+            p = f(1.0e200 + x)
+            @test coefficient(p, [1]) ≈ 1.0e-200
+            p = f(1.0e200 + 1.0e200x)
+            for k in 1:4
+                @test coefficient(p, [k]) ≈ (-1)^(k - 1) / k rtol = 5.0e-14
+            end
+        end
+        p = asinh(-1.0e200 + 1.0e200x)
+        for k in 1:4
+            @test coefficient(p, [k]) ≈ 1 / k rtol = 5.0e-14
+        end
+    end
+end

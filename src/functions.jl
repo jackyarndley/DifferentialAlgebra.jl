@@ -302,10 +302,26 @@ for fn in (:asin, :acos, :atan, :asinh, :acosh, :atanh)
         )
         x = constant_term(a); u = one(float(x)); c0 = domain_call($fn, x)
         a.len == 1 && return series(a, [c0]; filter)
+        x = coefficient_convert(typeof(c0), x)
+        # Scale floating centers before squaring. Compose in the normalized
+        # coordinate so tiny derivatives can still multiply large input slopes.
+        if $(fn in (:asinh, :acosh)) && x isa AbstractFloat && abs(x) > 2
+            radius = $(
+                fn === :asinh ? :(hypot(x, u)) :
+                    :(x * sqrt((u - inv(x)) * (u + inv(x))))
+            )
+            derivative = quadratic_power(
+                u, 2(x / radius), u, -u / 2,
+                a.algebra.cutoff - 1
+            )
+            return integral_series(normalized_argument(a, radius), c0, derivative; filter)
+        end
         q0, q1, q2, p = $(
-            fn in (:asin, :acos) ? :((u - x * x, -2x, -u, -u / 2)) :
-                fn == :atan ? :((u + x * x, 2x, u, -u)) : fn == :asinh ? :((u + x * x, 2x, u, -u / 2)) :
-                fn == :acosh ? :((x * x - u, 2x, u, -u / 2)) : :((u - x * x, -2x, -u, -u))
+            fn in (:asin, :acos) ? :(((u - x) * (u + x), -2x, -u, -u / 2)) :
+                fn == :atan ? :((u + x * x, 2x, u, -u)) :
+                fn == :asinh ? :((u + x * x, 2x, u, -u / 2)) :
+                fn == :acosh ? :(((x - u) * (x + u), 2x, u, -u / 2)) :
+                :(((u - x) * (u + x), -2x, -u, -u))
         )
         derivative = quadratic_power(q0, q1, q2, p, a.algebra.cutoff - 1)
         $(fn == :acos) && (derivative .*= -one(eltype(derivative)))
