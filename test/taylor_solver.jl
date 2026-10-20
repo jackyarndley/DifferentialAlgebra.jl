@@ -243,7 +243,7 @@ end
             step!(integrator)
             integrator.u[1] = 3
             integrator.p[1] = 2
-            u_modified!(integrator, true)
+            SciMLBase.derivative_discontinuity!(integrator, true)
             step!(integrator)
             @test only(integrator.u) ≈ 3exp(0.2) rtol = 1.0e-13
             reinit!(integrator, [3.0]; reinit_cache)
