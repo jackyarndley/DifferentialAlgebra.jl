@@ -2,6 +2,8 @@ using Test, DifferentialAlgebra
 
 @test !DifferentialAlgebra.isinitialized()
 @test_throws ArgumentError max_order()
+@test_throws r"Load OrdinaryDiffEqCore" TaylorMethod()
+@test_throws r"Load OrdinaryDiffEqCore" TaylorMethod(20)
 time_expansion = only(taylor_expand((u, p, t) -> u, [1.0], 0.0; order = 12))
 @test time_expansion(0.1) ≈ exp(0.1)
 @test !DifferentialAlgebra.isinitialized()

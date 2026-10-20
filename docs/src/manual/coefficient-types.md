@@ -33,6 +33,26 @@ to retain an exact scalar type.
 Explicit polynomial constants also avoid competing mixed-scalar methods when
 a custom number type defines broad operations on `Real` values.
 
+## Scalar queries and unsupported operations
+
+`sign(p)` and `signbit(p)` inspect the constant term, as branch comparisons do.
+`iszero`, `isone` and `isinteger` inspect all stored coefficients. Operations that
+need a scalar integer, including `Int(p)` and `floor(Int, p)`, are unsupported;
+apply them to `constant_term(p)` explicitly. Polynomial `round` and `trunc` are
+also unsupported.
+
+Use `TaylorPolynomial{BigFloat}(p)` or `TaylorPolynomial{BigInt}(p)` to choose a
+larger coefficient type; `big(p)` is unsupported. Use scalar multiplication in
+place of `ldexp(p, n)`. Construct rational coefficients explicitly and use `/`
+for Taylor-series division; `//` does not construct rational functions of
+polynomials. `muladd` evaluates the polynomial product and sum before final
+coefficient filtering. `fma` is unsupported: polynomial multiplication and
+coefficient accumulation do not promise a single fused rounding.
+
+Loading ForwardDiff enables mixed `Dual` and polynomial arithmetic. Dual
+partials remain in each coefficient; only domain and branch checks inspect the
+primal value.
+
 ## Scalar requirements
 
 | Operation | Requirements on the coefficient type |

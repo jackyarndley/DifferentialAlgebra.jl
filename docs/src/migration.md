@@ -61,3 +61,9 @@ From `17f74cc`:
 
 The internal, test-only `filled` helper is removed. Documented coefficient
 inspection, construction, and norm helpers remain available in `DifferentialAlgebra`.
+
+Variable names supplied both positionally and by keyword now raise
+`ArgumentError`. Polynomial displays separate variable factors with `*` when
+any variable name has more than one character, and parenthesize the components
+of `Complex{TaylorPolynomial}`. Mixed ForwardDiff dual/polynomial arithmetic
+preserves coefficient partials without requiring explicit polynomial constants.

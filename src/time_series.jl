@@ -271,7 +271,8 @@ problem = ODEProblem((u, p, t) -> [u[2], -u[1]], [0.0, 1.0], (0.0, 2π))
 solution = solve(problem, TaylorMethod(20); abstol = 1.0e-12, reltol = 1.0e-12)
 ```
 """
-function TaylorMethod end
+TaylorMethod(args...; kwargs...) =
+    throw(ArgumentError("Load OrdinaryDiffEqCore to use TaylorMethod"))
 
 # Optional scalar extensions reject unsupported controller scalars without
 # coupling the solver extension to those dependencies.

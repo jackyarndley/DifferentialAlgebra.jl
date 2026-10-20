@@ -344,5 +344,9 @@ function variables(::Type{T}, n::Integer; order::Integer, names = nothing, table
     return [variable(i, T) for i in 1:n]
 end
 variables(n::Integer; kwargs...) = variables(Float64, n; kwargs...)
-variables(::Type{T}, names::Union{Tuple, AbstractVector}; kwargs...) where {T <: Real} = variables(T, length(names); names, kwargs...)
+function variables(::Type{T}, names::Union{Tuple, AbstractVector}; kwargs...) where {T <: Real}
+    haskey(kwargs, :names) &&
+        throw(ArgumentError("Supply variable names positionally or by keyword, not both"))
+    return variables(T, length(names); names, kwargs...)
+end
 variables(names::Union{Tuple, AbstractVector}; kwargs...) = variables(Float64, names; kwargs...)

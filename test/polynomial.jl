@@ -163,7 +163,7 @@ end
         partial = [x + 0.2x * y + z * z, y + 0.1x * z]
         inverse = DifferentialAlgebra.invert(partial)
         @test polyerror(DifferentialAlgebra.evaluate(partial, vcat(inverse, z)), [x, y]) < 1.0e-12
-        @test_throws SingularException DifferentialAlgebra.invert([x, x, z])
+        @test_throws DifferentialAlgebra.TaylorError DifferentialAlgebra.invert([x, x, z])
         @test DifferentialAlgebra.truncation_order() == 5
         DifferentialAlgebra.initialize!(1, 1)
         x = TaylorPolynomial(1, 1.0)

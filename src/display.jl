@@ -11,9 +11,13 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     magnitude = negative ? -(coefficient isa Integer ? big(coefficient) : coefficient) : coefficient
     show(io, magnitude)
     any(!iszero, exponents) && print(io, ' ')
+    separator = any(name -> length(name) > 1, names)
+    factor = false
     for (i, power) in enumerate(exponents)
         iszero(power) && continue
+        separator && factor && print(io, '*')
         print(io, names[i])
+        factor = true
         if power != 1
             for digit in string(power)
                 print(io, ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')[digit - '0' + 1])
@@ -44,6 +48,14 @@ function Base.show(io::IO, p::TaylorPolynomial)
     end
     terms == 0 && show(io, zero(coefficient_type(p)))
     return nothing
+end
+
+function Base.show(io::IO, z::Complex{<:TaylorPolynomial})
+    print(io, '(')
+    show(io, z.re)
+    print(io, get(io, :compact, false) ? ")+(" : ") + (")
+    show(io, z.im)
+    return print(io, ")*im")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", p::TaylorPolynomial)

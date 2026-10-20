@@ -1,6 +1,34 @@
 using Test, DifferentialAlgebra
 using ForwardDiff
 
+@testset "Dual scalar arithmetic preserves coefficient derivatives" begin
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, = variables(T, 1; order = 3, table_bytes = budget)
+        a = ForwardDiff.Dual(T(2), T(3))
+        p = T(4) + x
+        for (result, values, partials) in (
+                (a + p, (6, 1, 0, 0), (3, 0, 0, 0)),
+                (p + a, (6, 1, 0, 0), (3, 0, 0, 0)),
+                (a - p, (-2, -1, 0, 0), (3, 0, 0, 0)),
+                (p - a, (2, 1, 0, 0), (-3, 0, 0, 0)),
+                (a * p, (8, 2, 0, 0), (12, 3, 0, 0)),
+                (p * a, (8, 2, 0, 0), (12, 3, 0, 0)),
+                (
+                    a / p, (1 // 2, -1 // 8, 1 // 32, -1 // 128),
+                    (3 // 4, -3 // 16, 3 // 64, -3 // 256),
+                ),
+                (p / a, (2, 1 // 2, 0, 0), (-3, -3 // 4, 0, 0)),
+            )
+            @test coefficient_type(result) === typeof(a)
+            for k in 0:3
+                c = coefficient(result, [k])
+                @test ForwardDiff.value(c) == T(values[k + 1])
+                @test only(ForwardDiff.partials(c)) == T(partials[k + 1])
+            end
+        end
+    end
+end
+
 @testset "Public interface and generic coefficients" begin
     x, y = variables(2; order = 4)
     @test [x, y] isa Vector{TaylorPolynomial{Float64}}

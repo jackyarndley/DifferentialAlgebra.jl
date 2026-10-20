@@ -101,7 +101,11 @@ function evaluate!(out::AbstractVector{T}, map::CompiledMap, args::AbstractVecto
     (Base.mightalias(out, args) || Base.mightalias(work, args) || Base.mightalias(out, work)) &&
         throw(ArgumentError("Output, inputs and workspace must not alias"))
     n = noutputs(map)
-    length(out) == n && length(work) >= map.depth + 1 || throw(DimensionMismatch("Invalid workspace"))
+    length(out) == n ||
+        throw(DimensionMismatch("Output has $(length(out)) entries; expected $n"))
+    length(work) >= map.depth + 1 || throw(
+        DimensionMismatch("Workspace needs at least $(map.depth + 1) entries")
+    )
     return if length(args) >= map.nvars
         evaluate_numeric!(out, map, args, work, Val(true))
     else
@@ -267,7 +271,12 @@ function invert(f::AbstractVector{<:TaylorPolynomial})
     end
     x = [variable(i, T) for i in 1:nv]
     c, A = constant_term.(f), linear_part(f)
-    Ainv = lu(A) \ Matrix{T}(I, nv, nv)
+    Ainv = try
+        lu(A) \ Matrix{T}(I, nv, nv)
+    catch error
+        error isa LinearAlgebra.SingularException || rethrow()
+        throw(TaylorError("Cannot invert a map with a singular linear part"))
+    end
     linear_inverse = _linear_transform(Ainv, x)
     nonlinear = compile(_linear_transform(Ainv, trim.(f, 2)))
     result = linear_inverse

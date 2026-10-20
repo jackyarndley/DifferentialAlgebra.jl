@@ -31,6 +31,8 @@ end
     @test_throws ArgumentError variables(("x+y", "y"); order = 3)
     @test_throws ArgumentError variables((:x, 2); order = 3)
     @test_throws ArgumentError variables(2; order = 3, names = "xy")
+    @test_throws ArgumentError variables((:a, :b); order = 3, names = (:c, :d))
+    @test_throws ArgumentError variables(Float32, [:a, :b]; order = 3, names = nothing)
     @test (x + v)([2, 3]) == 5
 
     initialize!(3, 2; names = (:r, :v))

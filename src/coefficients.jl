@@ -145,7 +145,10 @@ function calculus(
         order::Int = a.algebra.cutoff, filter::Bool = true
     )
     ctx = valid(a); b = ctx.basis
-    1 <= v <= b.variables && 0 <= p <= b.order || throw(ArgumentError("Invalid variable power"))
+    1 <= v <= b.variables ||
+        throw(ArgumentError("Variable index $v is outside 1:$(b.variables)"))
+    0 <= p <= b.order ||
+        throw(ArgumentError("Variable power $p is outside 0:$(b.order)"))
     T = if operation === :integrate
         unit = one(coefficient_type(a))
         typeof(unit / degree_factor(unit, 1))

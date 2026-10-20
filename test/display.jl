@@ -6,9 +6,9 @@ using Test, DifferentialAlgebra
     @test sprint(show, TaylorPolynomial(-2)) == "-2.0"
     @test sprint(show, x) == "1.0 x₁"
     @test sprint(show, -y) == "-1.0 x₂"
-    @test sprint(show, x * y) == "1.0 x₁x₂"
+    @test sprint(show, x * y) == "1.0 x₁*x₂"
     @test sprint(show, 2 + 3x - y^2) == "2.0 + 3.0 x₁ - 1.0 x₂²"
-    @test sprint(show, -2x + x * y - y^2) == "-2.0 x₁ + 1.0 x₁x₂ - 1.0 x₂²"
+    @test sprint(show, -2x + x * y - y^2) == "-2.0 x₁ + 1.0 x₁*x₂ - 1.0 x₂²"
     @test sprint(show, TaylorPolynomial(Inf)) == "Inf"
     @test sprint(show, TaylorPolynomial(-Inf)) == "-Inf"
     @test sprint(show, TaylorPolynomial(NaN)) == "NaN"
@@ -53,12 +53,23 @@ end
     @test occursin("xy", sprint(show, MIME"text/plain"(), [p]))
 
     q, r = variables(2; order = 12, names = ["q₁", "δr"])
-    @test string(q^10 * r^2) == "1.0 q₁¹⁰δr²"
+    @test string(q^10 * r^2) == "1.0 q₁¹⁰*δr²"
     @test string(p) == "TaylorPolynomial(inactive)"
     @test string(copy(q + r)) == "1.0 q₁ + 1.0 δr"
     @test string(evaluate(CompiledMap([q + r^2]), [q, r])[1]) == "1.0 q₁ + 1.0 δr²"
 
     x = variables(12; order = 2)
-    @test string(x[10] * x[12]) == "1.0 x₁₀x₁₂"
+    @test string(x[10] * x[12]) == "1.0 x₁₀*x₁₂"
     @test string(x[12]^2) == "1.0 x₁₂²"
+end
+
+@testset "Unambiguous products and complex coefficients" begin
+    a, b, ab = variables((:a, :b, :ab); order = 2)
+    @test string(a * b) == "1.0 a*b"
+    @test string(ab) == "1.0 ab"
+    @test string(a * b + ab) == "1.0 ab + 1.0 a*b"
+    @test string(Complex(1 + a, b - ab)) ==
+        "(1.0 + 1.0 a) + (1.0 b - 1.0 ab)*im"
+    @test sprint(show, Complex(a, -b); context = :compact => true) ==
+        "(1.0 a)+(-1.0 b)*im"
 end
