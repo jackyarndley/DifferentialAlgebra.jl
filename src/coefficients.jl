@@ -80,7 +80,7 @@ function set_coefficient!(a::TaylorPolynomial{T}, jj::AbstractVector{<:Integer},
     end
     c = coefficient_convert(T, value)
     a.coeffs[i] = keep(c, ctx) ? c : zero(T)
-    return finish!(a, max(i, a.len))
+    return finish!(a, max(i, a.len); filter = false)
 end
 """
     monomials(p)

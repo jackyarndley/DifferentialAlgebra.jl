@@ -1,4 +1,5 @@
 using Test, DifferentialAlgebra
+using LinearAlgebra
 
 @testset verbose = true "Comparison operators" begin
     @testset "Test ==" begin
@@ -56,4 +57,25 @@ using Test, DifferentialAlgebra
         @test isfinite(y) == false
         @test isfinite(z) == false
     end
+end
+
+@testset "Predicates inspect the complete polynomial" begin
+    x, y = variables(2; order = 3)
+    @test !isone(1 + x)
+    @test isone(one(x))
+    @test !isinteger(1 + x)
+    @test isinteger(TaylorPolynomial(2))
+    @test !isinteger(TaylorPolynomial(1.5))
+    for scale! in (lmul!, rmul!)
+        v = [x, y]
+        scale! === lmul! ? scale!(1 + x, v) : scale!(v, 1 + x)
+        @test coefficient(v[1], [2, 0]) == 1
+        @test coefficient(v[2], [1, 1]) == 1
+    end
+    A = reshape([x, y], 2, 1)
+    B = reshape([one(x)], 1, 1)
+    C = [zero(x), zero(x)]
+    mul!(reshape(C, 2, 1), A, B, 1 + x, false)
+    @test coefficient(C[1], [2, 0]) == 1
+    @test coefficient(C[2], [1, 1]) == 1
 end

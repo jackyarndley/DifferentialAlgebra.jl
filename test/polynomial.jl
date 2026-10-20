@@ -216,3 +216,15 @@ end
         @test all(fetch, jobs)
     end
 end
+
+@testset "Setting a coefficient preserves existing small coefficients" begin
+    x, y = variables(2; order = 3)
+    p = 1 + 1.0e-12x
+    set_coefficient_tolerance!(1.0e-10)
+    set_coefficient!(p, [0, 1], 2)
+    @test coefficient(p, [1, 0]) == 1.0e-12
+    @test coefficient(p, [0, 1]) == 2
+    set_coefficient!(p, [0, 1], 1.0e-12)
+    @test coefficient(p, [0, 1]) == 0
+    @test coefficient(p, [1, 0]) == 1.0e-12
+end

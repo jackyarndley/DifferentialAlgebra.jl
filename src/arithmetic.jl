@@ -4,7 +4,10 @@ function Base.copy(a::TaylorPolynomial{T}) where {T <: Real}
 end
 function TaylorPolynomial{T}(a::TaylorPolynomial) where {T <: Real}
     ctx = valid(a)
-    return TaylorPolynomial{T}([coefficient_convert(T, a.coeffs[i]) for i in 1:a.len], a.len, ctx)
+    out = TaylorPolynomial{T}(
+        [coefficient_convert(T, a.coeffs[i]) for i in 1:a.len], a.len, ctx
+    )
+    return finish!(out, a.len; filter = false)
 end
 Base.convert(::Type{TaylorPolynomial}, a::TaylorPolynomial) = a
 Base.convert(::Type{TaylorPolynomial}, x::Real) = TaylorPolynomial(x)
@@ -31,9 +34,14 @@ Base.float(::Type{TaylorPolynomial{T}}) where {T <: Real} = TaylorPolynomial{flo
 Base.eps(::Type{TaylorPolynomial}) = eps(Float64)
 Base.eps(::Type{TaylorPolynomial{T}}) where {T <: Real} = eps(T)
 Base.eps(a::TaylorPolynomial) = eps(constant_term(a))
-Base.Float64(a::TaylorPolynomial) = Float64(constant_term(a))
-Base.Float32(a::TaylorPolynomial) = Float32(constant_term(a))
-Base.BigFloat(a::TaylorPolynomial) = BigFloat(constant_term(a))
+function scalar_value(::Type{T}, a::TaylorPolynomial) where {T}
+    valid(a)
+    a.len == 1 || throw(InexactError(:convert, T, a))
+    return T(a.coeffs[1])
+end
+Base.Float64(a::TaylorPolynomial) = scalar_value(Float64, a)
+Base.Float32(a::TaylorPolynomial) = scalar_value(Float32, a)
+Base.BigFloat(a::TaylorPolynomial) = scalar_value(BigFloat, a)
 Base.conj(a::TaylorPolynomial) = a
 Base.real(a::TaylorPolynomial) = a
 Base.abs2(a::TaylorPolynomial) = a * a
@@ -46,6 +54,9 @@ Base.signbit(a::TaylorPolynomial) = signbit(constant_term(a))
 Base.sign(a::TaylorPolynomial) = sign(constant_term(a))
 Base.abs(a::TaylorPolynomial) = a * (signbit(a) ? -one(coefficient_type(a)) : one(coefficient_type(a)))
 Base.iszero(a::TaylorPolynomial) = (valid(a); a.len == 1 && coefficient_iszero(a.coeffs[1]))
+Base.isone(a::TaylorPolynomial) = (valid(a); a.len == 1 && coefficient_isone(a.coeffs[1]))
+Base.isinteger(a::TaylorPolynomial) =
+    (valid(a); a.len == 1 && coefficient_isinteger(a.coeffs[1]))
 Base.isnan(a::TaylorPolynomial) = (valid(a); any(isnan, @view a.coeffs[1:a.len]))
 Base.isinf(a::TaylorPolynomial) = (valid(a); any(isinf, @view a.coeffs[1:a.len]))
 Base.isfinite(a::TaylorPolynomial) = !isnan(a) && !isinf(a)

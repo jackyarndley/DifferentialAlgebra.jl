@@ -19,6 +19,9 @@ compatible_models(a, b) = (validated_rounding(); DA.model_compatible(a, b))
 # Skip only a valid, guaranteed exact zero. Even a thin NG/degraded zero must
 # participate in arithmetic so that its metadata is not silently erased.
 DA.coefficient_iszero(c::Interval) = IA.isthinzero(c) && IA.isguaranteed(c) && IA.decoration(c) == IA.com
+DA.coefficient_isone(c::Interval) = IA.isthin(c) && IA.inf(c) == 1 &&
+    IA.isguaranteed(c) && IA.decoration(c) == IA.com
+DA.coefficient_isinteger(c::Interval) = IA.isthin(c) && isinteger(IA.inf(c))
 DA.coefficient_convert(::Type{Interval{T}}, c::Union{Integer, Rational}) where {T <: IA.NumTypes} = IA.interval(T, c)
 DA.coefficient_convert(::Type{Interval{T}}, c::IA.ExactReal) where {T <: IA.NumTypes} = asinterval(Interval{T}, c)
 DA.coefficient_operand(::Type{Interval{T}}, c::Real) where {T <: IA.NumTypes} = DA.coefficient_convert(Interval{T}, c)

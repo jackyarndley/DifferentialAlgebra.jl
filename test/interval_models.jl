@@ -67,6 +67,12 @@ end
     for I in (IF, IB), budget in (0, 32 * 1024^2)
         T = IA.numtype(I)
         x, y = variables(I, 2; order = 4, table_bytes = budget)
+        @test isone(one(x)) && !isone(one(x) + x)
+        @test isinteger(TaylorPolynomial{I}(2)) && !isinteger(2 + x)
+        @test !isinteger(TaylorPolynomial{I}(IA.interval(T, 1, 2)))
+        nonguaranteed_one = TaylorPolynomial{I}(convert(I, 1.0))
+        @test !isone(nonguaranteed_one)
+        @test !IA.isguaranteed(coefficient(nonguaranteed_one * x, [1, 0]))
         z = IA.interval(T, -1, 1)
         p = z * x
         @test degree(p) == 1
@@ -128,7 +134,7 @@ end
         for f in (log, inv, sqrt)
             @test_throws (f === sqrt ? DomainError : DA.TaylorError) f(TaylorPolynomial{I}(z) + x)
         end
-        @test_throws MethodError Float64(p)
+        @test_throws InexactError Float64(p)
         set_coefficient_tolerance!(1)
         @test degree(IA.interval(T, 1 // 1000) * x) == 1
         set_coefficient_tolerance!(0)

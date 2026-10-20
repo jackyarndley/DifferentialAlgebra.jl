@@ -1,5 +1,11 @@
 # Coefficient types
 
+Converting a polynomial to `Float32`, `Float64`, or `BigFloat` requires a constant
+polynomial. Nonconstant inputs throw `InexactError` rather than discard terms.
+Use `constant_term(p)` explicitly when only the value at the expansion origin
+is needed. Converting between polynomial coefficient types preserves the stored
+terms, trimming only exact zeros introduced by conversion.
+
 `TaylorPolynomial{T}` is parameterized by a real scalar type `T <: Real`. This includes the
 `AbstractFloat` hierarchy and allows other real number types. A subtype bound
 alone does not supply arithmetic: each operation requires the corresponding

@@ -173,3 +173,31 @@ end
     @test isfinite(DifferentialAlgebra.random_polynomial())
     @test_throws ArgumentError besselj(typemin(Int), TaylorPolynomial(1.0))
 end
+
+@testset "Coefficient conversion trims exact underflow only" begin
+    x, = variables(1; order = 3)
+    p = 1.0e-50x
+    q = TaylorPolynomial{Float32}(p)
+    @test iszero(q) && degree(q) == 0
+    @test q.len == 1
+    @test coefficient(p, [1]) == 1.0e-50
+    p = 1 + 1.0e-8x
+    set_coefficient_tolerance!(1.0e-6)
+    q = TaylorPolynomial{Float32}(p)
+    @test coefficient(q, [1]) == Float32(1.0e-8)
+    @test degree(q) == 1
+end
+
+@testset "Scalar conversion cannot discard polynomial terms" begin
+    x, y = variables(2; order = 3)
+    for T in (Float32, Float64, BigFloat)
+        @test T(TaylorPolynomial(2)) == T(2)
+        @test convert(T, TaylorPolynomial(2)) == T(2)
+        @test_throws InexactError T(1 + x)
+        @test_throws InexactError convert(T, 1 + x)
+        @test_throws InexactError T[1 + x, y]
+        values = zeros(T, 2)
+        @test_throws InexactError values[1] = 1 + x
+        @test values == zeros(T, 2)
+    end
+end
