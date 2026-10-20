@@ -137,7 +137,7 @@ end
             @test guaranteed_coefficients(f(2 + x / 4 + y / 8))
         end
         for f in (log, inv, sqrt)
-            @test_throws (f === sqrt ? DomainError : DA.TaylorError) f(TaylorPolynomial{I}(z) + x)
+            @test_throws DA.TaylorError f(TaylorPolynomial{I}(z) + x)
         end
         @test_throws InexactError Float64(p)
         set_coefficient_tolerance!(1)

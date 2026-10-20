@@ -42,7 +42,7 @@ using Test, DifferentialAlgebra
     end
     t = TimeSeries([0.0, 1.0])
     for f in (inv, log, sqrt, cbrt, s -> s^0.5)
-        @test_throws DomainError f(t)
+        @test_throws DifferentialAlgebra.TaylorError f(t)
     end
     for T in (Float32, BigFloat, Rational{BigInt})
         exact = TimeSeries(T[1, -1, 0, 0, 0])
@@ -132,7 +132,7 @@ end
     @test_throws DimensionMismatch taylor_expand((u, p, t) -> 1.0, [1.0], 0.0)
     @test_throws ArgumentError taylor_expand((u, p, t) -> [1im], [1.0], 0.0)
     @test_throws ArgumentError taylor_expand((u, p, t) -> [TimeSeries([1.0, 1.0])], [1.0], 0.0)
-    @test_throws DomainError taylor_expand((u, p, t) -> [Inf], [1.0], 0.0)
+    @test_throws DifferentialAlgebra.TaylorError taylor_expand((u, p, t) -> [Inf], [1.0], 0.0)
     @test δ(0.3) == 0.3 # No algebra changes, even on failure.
 end
 
@@ -143,5 +143,34 @@ end
         @test f(s).coefficients ≈ expected
         expansion = only(taylor_expand((u, p, t) -> [f(t)], [0.0], 0.0; order = 8))
         @test expansion.coefficients ≈ [0; expected ./ (1:8)]
+    end
+end
+
+@testset "Time-series analytic domains" begin
+    for T in (Float32, Float64, BigFloat)
+        t = TimeSeries(T[0, 1, 0, 0])
+        for f in (log, sqrt, s -> s^(1 // 2), s -> (-2)^s)
+            @test_throws DifferentialAlgebra.TaylorError f(-one(t) + t)
+        end
+        @test iszero(T(0)^(2 + t))
+        @test coefficient(T(0)^zero(t), 0) == 1
+        @test coefficient(T(-2)^(2 + zero(t)), 0) == 4
+        @test_throws DifferentialAlgebra.TaylorError T(0)^t
+        @test_throws DifferentialAlgebra.TaylorError T(0)^(-one(t))
+        p = T(2)^t
+        @test coefficient_type(p) === T
+        @test coefficient(p, 1) ≈ log(T(2))
+        for f in (log, sqrt, s -> s^(1 // 2))
+            @test_throws DifferentialAlgebra.TaylorError taylor_expand(
+                (u, p, t) -> [f(u[1])], T[-1], T(0); order = 3
+            )
+        end
+        @test iszero(
+            only(
+                taylor_expand(
+                    (u, p, t) -> [T(0)^u[1]], T[2], T(0); order = 3
+                )
+            ) - 2
+        )
     end
 end

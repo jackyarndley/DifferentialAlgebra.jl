@@ -56,7 +56,7 @@ end
             @test DifferentialAlgebra.coefficient_norm(besseli(1, -(2 + x)) + besseli(1, 2 + x)) < tol
             @test DifferentialAlgebra.coefficient_norm(besseli(0, x) - (1 + x^2 / 4 + x^4 / 64)) < tol
             @test_throws DifferentialAlgebra.TaylorError besselix(0, x)
-            @test_throws DomainError besselk(0, -one(x))
+            @test_throws DifferentialAlgebra.TaylorError besselk(0, -one(x))
         end
     end
     DifferentialAlgebra.initialize!(4, 1)
@@ -122,5 +122,17 @@ end
             end
         end
         @test_throws ArgumentError polygamma(-1, x)
+    end
+end
+
+@testset "Real Bessel singular domains" begin
+    for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
+        x, = variables(T, 1; order = 3, table_bytes = budget)
+        for center in (-1, -2), slope in (0, 1), n in (0, 2)
+            p = T(center) + slope * x
+            for f in (bessely, besselk, besselkx)
+                @test_throws DifferentialAlgebra.TaylorError f(n, p)
+            end
+        end
     end
 end

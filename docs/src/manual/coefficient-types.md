@@ -46,7 +46,14 @@ a custom number type defines broad operations on `Real` values.
 
 An analytic expansion also requires a regular center, such as a nonzero
 constant for a reciprocal. Numerical precision and range are properties of the
-chosen scalar type. For configurable-precision types, construct coefficients
+chosen scalar type. An undefined real analytic expansion raises `TaylorError`,
+including gamma poles, negative real logarithms, and singular time-series centers.
+Invalid orders and other API parameters raise `ArgumentError`. A zero scalar base
+raised to a polynomial or time series is identically zero near a positive exponent;
+a varying exponent centered at zero is rejected. Negative scalar bases require a
+constant exponent with a defined real scalar power.
+
+For configurable-precision types, construct coefficients
 and perform calculations within that type's precision context.
 
 Loading IntervalArithmetic adds narrow coefficient hooks for exact-zero tests,

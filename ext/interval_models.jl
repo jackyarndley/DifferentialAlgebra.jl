@@ -300,7 +300,11 @@ DA.evaluate(a::DA.CompiledTaylorModel, point) = snapshot_bound(a, normalized_box
 function Base.sqrt(a::TaylorPolynomial{I}) where {I <: Interval}
     x = DA.constant_term(a)
     DA.coefficient_iszero(a) && return zero(a)
-    IA.inf(checked_interval(x)) > 0 || throw(DomainError(x, "Polynomial square-root expansion requires a strictly positive constant interval"))
+    IA.inf(checked_interval(x)) > 0 || throw(
+        DA.TaylorError(
+            "Polynomial square-root expansion requires a strictly positive constant interval"
+        )
+    )
     c0 = sqrt(x)
     return isempty(a.algebra.basis.products) ? DA.power_series(a, IA.interval(IA.numtype(I), 1 // 2), c0) : DA.square_root(a, c0)
 end

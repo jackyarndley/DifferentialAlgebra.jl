@@ -26,7 +26,10 @@ function normalized_argument(a::TaylorPolynomial, x::Real)
 end
 function domain_call(f, x)
     return try
-        f(x)
+        value = f(x)
+        value isa Real && isnan(value) &&
+            throw(TaylorError("The real expansion is undefined at $x"))
+        value
     catch err
         err isa DomainError || rethrow()
         throw(TaylorError(sprint(showerror, err)))
@@ -149,9 +152,25 @@ function Base.:^(a::TaylorPolynomial, p::AbstractFloat)
     return power_series(a, p, domain_call(x -> x^p, constant_term(a)))
 end
 Base.:^(a::TaylorPolynomial, p::Rational) = a^convert(float(promote_type(coefficient_type(a), typeof(p))), p)
+# A zero base is locally constant for positive exponents. At a varying zero
+# exponent the two-sided real function has no analytic expansion.
+function zero_base_power(base, exponent, identically_zero)
+    exponent > 0 && return zero(float(base))
+    identically_zero && return one(float(base))
+    throw(TaylorError("A zero base needs a positive exponent or an identically zero exponent"))
+end
 function Base.:^(a::Real, b::TaylorPolynomial)
     R = promote_type(typeof(a), coefficient_type(b))
-    return exp(scaled(b, log(coefficient_convert(R, a)); filter = false))
+    base = coefficient_convert(R, a)
+    if coefficient_iszero(base)
+        c0 = zero_base_power(base, constant_term(b), iszero(b))
+        return finish!(scalar_argument(b, c0), 1)
+    end
+    if b.len == 1
+        c0 = domain_call(x -> base^x, constant_term(b))
+        return finish!(scalar_argument(b, c0), 1)
+    end
+    return exp(scaled(b, domain_call(log, base); filter = false))
 end
 Base.:^(a::TaylorPolynomial, b::TaylorPolynomial) =
     exp(product(logarithm(a; filter = false), b; filter = false))
@@ -221,14 +240,17 @@ function square_root(a::TaylorPolynomial, c0; filter::Bool = true)
     return finish!(result, n; filter)
 end
 function root_series(a::TaylorPolynomial, p::Integer; filter::Bool = true)
-    p != 0 || throw(DomainError(p, "Zeroth root is undefined"))
+    p != 0 || throw(ArgumentError("Zeroth root is undefined"))
     p == 1 && return copy(a)
     p > 0 && coefficient_iszero(a) && return zero(a)
     x = constant_term(a)
     coefficient_iszero(x) && throw(TaylorError("Root is not analytic at a zero constant"))
     iseven(p) && x < 0 && throw(TaylorError("Even root of a negative constant"))
     exponent = one(float(x)) / p
-    c0 = p == 2 ? sqrt(x) : p == 3 ? cbrt(x) : copysign(abs(x)^exponent, x)
+    c0 = domain_call(
+        x -> p == 2 ? sqrt(x) :
+            p == 3 ? cbrt(x) : copysign(abs(x)^exponent, x), x
+    )
     p == 2 && !isempty(a.algebra.basis.products) && return square_root(a, c0; filter)
     return power_series(a, exponent, c0; filter)
 end
@@ -236,7 +258,7 @@ nthroot(a::TaylorPolynomial, p::Integer = 2) = root_series(a, p)
 Base.sqrt(a::TaylorPolynomial) = nthroot(a, 2)
 Base.cbrt(a::TaylorPolynomial) = nthroot(a, 3)
 function nthroot(x::Real, p::Integer = 2)
-    p != 0 || throw(DomainError(p, "Zeroth root is undefined"))
+    p != 0 || throw(ArgumentError("Zeroth root is undefined"))
     p == 1 && return x
     exponent = one(float(x)) / p
     return isodd(p) ? copysign(abs(x)^exponent, x) : x^exponent
@@ -447,7 +469,7 @@ end
 # With y=exp(s*x)*z, scaled I/K remain scaled throughout (no overflow-prone unscaling).
 function bessel_series(fn, n::Integer, a::TaylorPolynomial, q::Int, s)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
-    x = constant_term(a); c0 = scalar_bessel(fn, n, x)
+    x = constant_term(a); c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
     a.len == 1 && return TaylorPolynomial(c0)
     if fn in (SpecialFunctions.besselj, SpecialFunctions.besseli, SpecialFunctions.besselix)
         return regular_bessel_series(fn, n, a, c0, s)

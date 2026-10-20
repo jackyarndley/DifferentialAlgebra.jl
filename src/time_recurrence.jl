@@ -31,7 +31,7 @@ struct TimeNode{T, R} <: Number
     index::Int
 end
 function time_node(tape::TimeTape{T, R}, op, value, left = 0, right = 0, power = zero(R)) where {T, R}
-    isfinite(value) || throw(DomainError(value, "Nonfinite time coefficient"))
+    isfinite(value) || throw(TaylorError("Nonfinite time coefficient"))
     push!(tape.instructions, TimeInstruction{R}(op, left, right, power))
     push!(tape.constants, value)
     return TimeNode(tape, length(tape.constants))
@@ -48,7 +48,9 @@ Base.:+(a::TimeNode) = a
 Base.:-(a::TimeNode) = zero(a) - a
 function record_time_binary(op, f, a::TimeNode, b::TimeNode)
     a.tape === b.tape || throw(ArgumentError("Cannot mix independent time expansions"))
-    return time_node(a.tape, op, f(time_value(a), time_value(b)), a.index, b.index)
+    return time_node(
+        a.tape, op, domain_call(x -> f(x, time_value(b)), time_value(a)), a.index, b.index
+    )
 end
 for (f, op) in ((:+, :TimeAdd), (:-, :TimeSubtract), (:*, :TimeMultiply), (:/, :TimeDivide))
     @eval begin
@@ -69,17 +71,30 @@ end
 function record_time_power(a::TimeNode, p::Real)
     p isa TaylorPolynomial && return exp(p * log(a))
     isinteger(p) && return a^BigInt(p)
-    return time_node(a.tape, TimePower, time_value(a)^p, a.index, 0, p)
+    return time_node(a.tape, TimePower, domain_call(x -> x^p, time_value(a)), a.index, 0, p)
 end
 Base.:^(a::TimeNode, p::Real) = record_time_power(a, p)
 Base.:^(a::TimeNode, p::Rational) = record_time_power(a, p)
 Base.:^(a::TimeNode, b::TimeNode) = exp(b * log(a))
-Base.:^(a::Real, b::TimeNode) = exp(log(a) * b)
+function Base.:^(a::Real, b::TimeNode)
+    base = convert(promote_type(typeof(a), typeof(time_value(b))), a)
+    coefficient_iszero(base) && return time_constant(
+        b, zero_base_power(
+            base, time_value(b),
+            b.tape.instructions[b.index].operation === TimeConstant && iszero(time_value(b))
+        )
+    )
+    return exp(domain_call(log, base) * b)
+end
 Base.:^(::Irrational{:ℯ}, b::TimeNode) = exp(b)
-Base.sqrt(a::TimeNode) = time_node(a.tape, TimePower, sqrt(time_value(a)), a.index, 0, 1 // 2)
-Base.cbrt(a::TimeNode) = time_node(a.tape, TimePower, cbrt(time_value(a)), a.index, 0, 1 // 3)
+Base.sqrt(a::TimeNode) = time_node(
+    a.tape, TimePower, domain_call(sqrt, time_value(a)), a.index, 0, 1 // 2
+)
+Base.cbrt(a::TimeNode) = time_node(
+    a.tape, TimePower, domain_call(cbrt, time_value(a)), a.index, 0, 1 // 3
+)
 Base.exp(a::TimeNode) = time_node(a.tape, TimeExp, exp(time_value(a)), a.index)
-Base.log(a::TimeNode) = time_node(a.tape, TimeLog, log(time_value(a)), a.index)
+Base.log(a::TimeNode) = time_node(a.tape, TimeLog, domain_call(log, time_value(a)), a.index)
 function record_time_sincos(a::TimeNode, hyperbolic)
     x = time_value(a)
     s, c = hyperbolic ? (sinh(x), cosh(x)) : sincos(x)
@@ -211,7 +226,7 @@ function advance_time_coefficient!(values, instructions, reciprocals, k)
             c[k + 1] = time_weighted_sum(a, c, k, 0, Val(:exp)) / k
         elseif op === TimePower || op === TimeLog
             a = values[left]
-            iszero(constant_term(a[1])) && throw(DomainError(a[1], "The time expansion is not analytic here"))
+            iszero(constant_term(a[1])) && throw(TaylorError("The time expansion is not analytic here"))
             p = instruction.power
             value = op === TimeLog ? time_weighted_sum(a, c, k, p, Val(:log)) : time_weighted_sum(a, c, k, p, Val(:power))
             op === TimeLog && (value += k * a[k + 1])
@@ -279,7 +294,7 @@ function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, 
         node = tape.instructions[i]
         if node.operation in (TimeDivide, TimePower, TimeLog)
             denominator = values[node.operation === TimeDivide ? node.right : node.left][1]
-            iszero(constant_term(denominator)) && throw(DomainError(denominator, "The time expansion is not analytic here"))
+            iszero(constant_term(denominator)) && throw(TaylorError("The time expansion is not analytic here"))
             reciprocals[i] = inv(denominator)
         end
     end
@@ -287,7 +302,7 @@ function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, 
         k > 0 && advance_time_coefficient!(values, tape.instructions, reciprocals, k)
         for i in 1:nstate
             value = values[outputs[i]][k + 1] / (k + 1)
-            isfinite(value) || throw(DomainError(value, "Nonfinite time coefficient"))
+            isfinite(value) || throw(TaylorError("Nonfinite time coefficient"))
             values[i][k + 2] = value
         end
     end

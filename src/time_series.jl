@@ -79,7 +79,7 @@ end
 function Base.:/(a::TimeSeries, b::TimeSeries)
     n = time_order(a, b)
     b0 = constant_term(b)
-    iszero(constant_term(b0)) && throw(DomainError(b0, "Division needs an invertible constant coefficient"))
+    iszero(constant_term(b0)) && throw(TaylorError("Division needs an invertible constant coefficient"))
     c0 = constant_term(a) / b0
     c = Vector{typeof(c0)}(undef, n + 1)
     c[1] = c0
@@ -115,7 +115,7 @@ function time_recurrence(a::TimeSeries, c0, p, ::Val{MODE}) where {MODE}
     c[1] = c0
     a0 = constant_term(a)
     MODE !== :exp && n > 0 && iszero(constant_term(a0)) &&
-        throw(DomainError(a0, "The expansion needs an invertible constant coefficient"))
+        throw(TaylorError("The expansion needs an invertible constant coefficient"))
     reciprocal = MODE === :exp || n == 0 ? one(c0) : inv(a0)
     @inbounds for k in 1:n
         value = time_weighted_sum(a.coefficients, c, k, p, Val(MODE))
@@ -127,23 +127,34 @@ end
 Base.exp(a::TimeSeries) = time_recurrence(a, exp(constant_term(a)), 0, Val(:exp))
 function Base.log(a::TimeSeries)
     a0 = constant_term(a)
-    iszero(constant_term(a0)) && throw(DomainError(a0, "Logarithm needs a nonzero expansion point"))
-    return time_recurrence(a, log(a0), 0, Val(:log))
+    iszero(constant_term(a0)) && throw(TaylorError("Logarithm needs a nonzero expansion point"))
+    return time_recurrence(a, domain_call(log, a0), 0, Val(:log))
 end
 function time_power(a::TimeSeries, p::Real)
     p isa TaylorPolynomial && return exp(p * log(a))
     isinteger(p) && return a^BigInt(p)
     a0 = constant_term(a)
-    iszero(constant_term(a0)) && throw(DomainError(a0, "Fractional powers need a nonzero expansion point"))
-    return time_recurrence(a, a0^p, p, Val(:power))
+    iszero(constant_term(a0)) && throw(TaylorError("Fractional powers need a nonzero expansion point"))
+    return time_recurrence(a, domain_call(x -> x^p, a0), p, Val(:power))
 end
 Base.:^(a::TimeSeries, p::Real) = time_power(a, p)
 Base.:^(a::TimeSeries, p::Rational) = time_power(a, p)
 Base.:^(a::TimeSeries, b::TimeSeries) = exp(b * log(a))
-Base.:^(a::Real, b::TimeSeries) = exp(log(a) * b)
+function Base.:^(a::Real, b::TimeSeries)
+    base = coefficient_convert(promote_type(typeof(a), coefficient_type(b)), a)
+    coefficient_iszero(base) &&
+        return zero(b) + zero_base_power(base, constant_term(b), iszero(b))
+    all(iszero, @view(b.coefficients[2:end])) &&
+        return zero(b) + domain_call(x -> base^x, constant_term(b))
+    return exp(domain_call(log, base) * b)
+end
 Base.:^(::Irrational{:ℯ}, b::TimeSeries) = exp(b)
-Base.sqrt(a::TimeSeries) = time_recurrence(a, sqrt(constant_term(a)), 1 // 2, Val(:power))
-Base.cbrt(a::TimeSeries) = time_recurrence(a, cbrt(constant_term(a)), 1 // 3, Val(:power))
+Base.sqrt(a::TimeSeries) = time_recurrence(
+    a, domain_call(sqrt, constant_term(a)), 1 // 2, Val(:power)
+)
+Base.cbrt(a::TimeSeries) = time_recurrence(
+    a, domain_call(cbrt, constant_term(a)), 1 // 3, Val(:power)
+)
 function time_sincos(a::TimeSeries, hyperbolic::Bool)
     a0 = constant_term(a)
     s0, c0 = hyperbolic ? (sinh(a0), cosh(a0)) : sincos(a0)
@@ -225,12 +236,12 @@ function prepare_time_expansion(f, initial::AbstractVector{<:Real}, t0::Real; or
     epoch = t0 / one(t0)
     # Evaluate the constant RHS first to determine promotion, including uncertain
     # parameters supplied with an initially numeric state.
-    derivative = f(state, parameters, epoch)
+    derivative = domain_call(state -> f(state, parameters, epoch), state)
     derivative isa AbstractVector && length(derivative) == length(state) ||
         throw(DimensionMismatch("The right-hand side must return one derivative per state"))
     Base.require_one_based_indexing(derivative)
     all(x -> x isa Real, derivative) || throw(ArgumentError("Unsupported right-hand-side element"))
-    all(isfinite, derivative) || throw(DomainError(derivative, "Nonfinite time coefficient"))
+    all(isfinite, derivative) || throw(TaylorError("Nonfinite time coefficient"))
     T = foldl((S, x) -> promote_type(S, typeof(x)), state; init = typeof(first(state)))
     T = foldl((S, x) -> promote_type(S, typeof(x / 1)), derivative; init = T)
     return time_workspace(f, state, epoch, Int(order), parameters, T)

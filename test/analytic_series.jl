@@ -270,3 +270,19 @@ end
         @test_throws DifferentialAlgebra.TaylorError hypot(x, x)
     end
 end
+
+@testset "Real bases and analytic domains" begin
+    for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
+        x, = variables(T, 1; order = 3, table_bytes = budget)
+        @test iszero(T(0)^(2 + x))
+        @test isone(T(0)^zero(x))
+        @test constant_term(T(-2)^(2 + zero(x))) == 4
+        for exponent in (x, -x, -2 + x, -one(x))
+            @test_throws DifferentialAlgebra.TaylorError T(0)^exponent
+        end
+        @test_throws DifferentialAlgebra.TaylorError T(-2)^x
+        @test_throws DifferentialAlgebra.TaylorError (-one(x) + x)^T(0.5)
+        @test_throws ArgumentError DifferentialAlgebra.nthroot(x, 0)
+        @test_throws ArgumentError DifferentialAlgebra.nthroot(T(1), 0)
+    end
+end
