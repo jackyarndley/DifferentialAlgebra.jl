@@ -23,15 +23,11 @@ for budget in (0, 32 * 1024^2)
     end
 end
 
-const ODECore = OrdinaryDiffEqCore
-const TaylorExt = Base.get_extension(DifferentialAlgebra, :DifferentialAlgebraOrdinaryDiffEqExt)
 rhs(u, p, t) = [u[2], -u[1]]
-series = taylor_expand(rhs, [0.0, 1.0], 0.0; order = 20)
-k = [[coefficient(s, d) for s in series] for d in 0:20]
-cache = TaylorExt.TaylorCache(20, rhs, nothing, zeros(2))
-function measure_dense(k, cache)
-    initial, out = [0.0, 1.0], zeros(2)
-    dense!() = ODECore._ode_interpolant!(out, 0.5, 0.1, initial, out, k, cache, nothing, Val{0}, nothing)
-    return measure(dense!)
+problem = DiffEqBase.ODEProblem(rhs, [0.0, 1.0], (0.0, 0.1))
+solution = DiffEqBase.solve(problem, TaylorMethod(20); adaptive = false, dt = 0.1)
+function measure_dense(solution)
+    out = zeros(2)
+    return measure(() -> solution(out, 0.05))
 end
-println((; path = :dense_interpolation, measurement = measure_dense(k, cache)))
+println((; path = :dense_interpolation, measurement = measure_dense(solution)))

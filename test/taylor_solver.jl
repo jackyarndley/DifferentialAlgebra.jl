@@ -97,24 +97,23 @@ using IntervalArithmetic: Interval, interval
     @test_throws ArgumentError solve(ODEProblem((u, p, t) -> [p * u[1]], [1.0], (0.0, 1.0), 1 + δ), TaylorMethod(12))
 end
 
-@testset "Direct dense Horner interpolation" begin
-    ext = Base.get_extension(DifferentialAlgebra, :DifferentialAlgebraOrdinaryDiffEqExt)
-    cache = ext.TaylorCache(3, nothing, nothing, zeros(2))
+@testset "Public dense interpolation derivatives" begin
     # Independent polynomials: 1+2t+3t²+4t³ and 5-2t².
-    k = [[1.0, 5.0], [2.0, 0.0], [3.0, -2.0], [4.0, 0.0]]
-    initial = first(k)
+    rhs(u, p, t) = [2 + 6t + 12t^2, -4t]
+    problem = ODEProblem(rhs, [1.0, 5.0], (0.0, 0.6))
+    solution = solve(problem, TaylorMethod(3); adaptive = false, dt = 0.6)
     expected = ([1.978, 4.82], [4.88, -1.2], [13.2, -4], [24.0, 0.0], [0.0, 0.0])
     for D in 0:4, idxs in (nothing, [2, 1], 2, view([1, 2], 1:1))
         indices = idxs === nothing ? [1, 2] : idxs isa Integer ? [idxs] : idxs
         out = fill(NaN, length(indices))
         wanted = expected[D + 1][indices]
-        OrdinaryDiffEqCore._ode_interpolant!(out, 0.5, 0.6, initial, initial, k, cache, idxs, Val{D}, nothing)
+        solution(out, 0.3, Val{D}; idxs)
         @test out ≈ wanted
-        actual = OrdinaryDiffEqCore._ode_interpolant(0.5, 0.6, initial, initial, k, cache, idxs, Val{D}, nothing)
+        actual = solution(0.3, Val{D}; idxs)
         @test (idxs isa Integer ? [actual] : actual) ≈ wanted
     end
-    @test_throws DimensionMismatch OrdinaryDiffEqCore._ode_interpolant!(zeros(1), 0.5, 0.6, initial, initial, k, cache, nothing, Val{0}, nothing)
-    @test_throws ArgumentError OrdinaryDiffEqCore._ode_interpolant!(zeros(2), 0.5, 0.6, initial, initial, k, cache, nothing, Val{-1}, nothing)
+    @test_throws DimensionMismatch solution(zeros(1), 0.3)
+    @test_throws ArgumentError solution(zeros(2), 0.3, Val{-1})
 end
 
 @testset "TaylorMethod rejects interval coefficient states clearly" begin
