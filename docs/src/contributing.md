@@ -24,6 +24,18 @@ weekly. An optional `COMPATHELPER_PRIV` deploy-key secret lets CompatHelper pull
 requests trigger CI automatically; without it, maintainers must trigger those
 checks. Both validation workflows also support manual dispatch on a branch.
 
+The root, `docs/`, `examples/` and `benchmark/` projects are separate environments.
+Keep their shared compatibility bounds aligned. The SciML minimums follow
+OrdinaryDiffEqCore 4.18: DiffEqBase 7.21.2 and SciMLBase 3.53. The standalone
+ForwardDiff extension supports 0.10.36 and 1; SciMLBase 3 requires ForwardDiff 1,
+so the integration environments retain that bound. IntervalArithmetic stays on
+1.0.12 or later 1.0 patches
+because the validated extension checks its internal rounding configuration;
+review that check before allowing a new minor release. Benchmark setup uses
+`Pkg.develop(path=".")`, which also works on Julia 1.10.
+Separate CI jobs run the polygon and derivative tests with ForwardDiff 0.10.36
+on Julia 1.10 and latest stable, without the SciML or interval integrations.
+
 The test suite uses Julia code and inline inputs. Function-coefficient tests
 combine scalar derivatives from ForwardDiff with an independent multinomial
 expansion. Gaussian moment tests use exact rational integration-by-parts/Wick

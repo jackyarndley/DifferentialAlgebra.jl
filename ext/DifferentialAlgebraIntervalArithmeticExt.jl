@@ -9,6 +9,9 @@ using IntervalArithmetic: Interval
 # is inspected here, without calling configure or changing process settings.
 # Keep this version-specific access isolated in the optional extension.
 function validated_rounding()
+    isdefined(IA, :configuration_options) &&
+        hasproperty(IA.configuration_options, :rounding) ||
+        throw(ArgumentError("Cannot verify this IntervalArithmetic rounding configuration"))
     IA.configuration_options.rounding === :correct ||
         throw(ArgumentError("Validated enclosure and Taylor-model arithmetic require IntervalArithmetic.configure(rounding=:correct)"))
     return nothing
