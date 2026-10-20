@@ -43,7 +43,9 @@ order; enclosure and evaluation retain all their stored terms and remainder.
 
 `DifferentialAlgebra.set_coefficient_tolerance!(tolerance)` selects the current
 task's threshold for discarding small floating-point coefficients. The default
-threshold is zero. Filtering and truncation are
+threshold is zero. An explicit BigFloat threshold retains its precision;
+`coefficient_tolerance()` returns that value, or Float64 for other settings.
+Filtering and truncation are
 approximations, not rigorous error bounds.
 
 ## Memory and repeated calculations

@@ -219,8 +219,12 @@ truncation_order() = working_order(ready())
     coefficient_tolerance()
 
 The current task's absolute threshold for discarding small floating coefficients.
+Returns `Float64`, or the preserved `BigFloat` value when one was explicitly set.
 """
-coefficient_tolerance() = something(big_tolerance(ready()), float_tolerance(ready()))
+function coefficient_tolerance()
+    state = algebra_settings(ready())
+    return state === nothing ? 0.0 : something(state.big_epsilon, state.epsilon)
+end
 """
     set_truncation_order!(order = max_order())
 
