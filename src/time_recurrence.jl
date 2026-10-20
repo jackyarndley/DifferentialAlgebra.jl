@@ -30,6 +30,29 @@ struct TimeNode{T, R} <: Number
     tape::TimeTape{T, R}
     index::Int
 end
+# An in-place RHS can assign ordinary constants while recording a time graph.
+# Keep the storage concrete and attach those constants to the same tape.
+struct TimeDerivativeBuffer{N <: TimeNode} <: AbstractVector{N}
+    data::Vector{N}
+end
+Base.size(buffer::TimeDerivativeBuffer) = size(buffer.data)
+Base.IndexStyle(::Type{<:TimeDerivativeBuffer}) = IndexLinear()
+Base.getindex(buffer::TimeDerivativeBuffer, i::Int) = buffer.data[i]
+function Base.setindex!(buffer::TimeDerivativeBuffer, value, i::Int)
+    checkbounds(buffer.data, i)
+    reference = first(buffer.data)
+    node = value isa TimeNode ? value : time_constant(reference, value)
+    node.tape === reference.tape || throw(
+        ArgumentError(
+            "Cannot mix independent time expansions"
+        )
+    )
+    buffer.data[i] = node
+    return value
+end
+time_rhs_buffer(u::AbstractVector) = zero.(u)
+time_rhs_buffer(u::AbstractVector{<:TimeNode}) = TimeDerivativeBuffer(zero.(u))
+
 function time_node(tape::TimeTape{T, R}, op, value, left = 0, right = 0, power = zero(R)) where {T, R}
     isfinite(value) || throw(TaylorError("Nonfinite time coefficient"))
     push!(tape.instructions, TimeInstruction{R}(op, left, right, power))

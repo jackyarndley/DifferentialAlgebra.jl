@@ -124,3 +124,78 @@ end
         @test_throws ArgumentError init(problem, TaylorMethod(8))
     end
 end
+
+@testset "In-place Taylor state ownership and initialized derivatives" begin
+    concrete = Ref(true)
+    function growth!(du, u, p, t)
+        concrete[] &= isconcretetype(eltype(du))
+        du[1] += u[1]
+        # The untouched second derivative remains zero.
+        return nothing
+    end
+    for alias in (false, true)
+        initial = [1.0, 2.0]
+        problem = ODEProblem(growth!, initial, (0.0, 0.3))
+        integrator = init(
+            problem, TaylorMethod(12); adaptive = false, dt = 0.1,
+            alias = ODEAliasSpecifier(alias_u0 = alias)
+        )
+        storage = integrator.u
+        @test (storage === initial) == alias
+        @test integrator.uprev !== storage
+        for _ in 1:3
+            step!(integrator)
+            @test integrator.u === storage
+            @test integrator.u ≈ [exp(integrator.t), 2] rtol = 1.0e-13
+        end
+        @test concrete[]
+        @test initial ≈ (alias ? [exp(0.3), 2] : [1, 2]) rtol = 1.0e-13
+        @test integrator.sol(0.05) ≈ [exp(0.05), 2] rtol = 1.0e-13
+    end
+end
+
+@testset "In-place callbacks preserve aliased state storage" begin
+    growth!(du, u, p, t) = (du[1] = u[1]; nothing)
+    initial = [1.0]
+    callback = ContinuousCallback(
+        (u, t, integrator) -> t - 0.15,
+        integrator -> (integrator.u[1] *= 2)
+    )
+    integrator = init(
+        ODEProblem(growth!, initial, (0.0, 0.3)), TaylorMethod(14);
+        adaptive = false, dt = 0.1, callback,
+        alias = ODEAliasSpecifier(alias_u0 = true)
+    )
+    solution = solve!(integrator)
+    @test integrator.u === initial
+    @test only(initial) ≈ 2exp(0.3) rtol = 1.0e-13
+    @test only(solution(0.05)) ≈ exp(0.05) rtol = 1.0e-13
+    @test only(solution(0.25)) ≈ 2exp(0.25) rtol = 1.0e-13
+end
+
+@testset "In-place coefficient types and polynomial ownership" begin
+    growth!(du, u, p, t) = (du[1] = u[1]; nothing)
+    for T in (Float32, BigFloat)
+        initial = T[1]
+        endpoint = T(3) / 10
+        solution = solve(
+            ODEProblem(growth!, initial, (zero(T), endpoint)),
+            TaylorMethod(14); adaptive = false, dt = one(T) / 10
+        )
+        @test eltype(last(solution.u)) === T
+        @test only(last(solution.u)) ≈ exp(endpoint) rtol =
+            (T === Float32 ? T(1.0e-6) : T(1.0e-24))
+        @test initial == T[1]
+    end
+    x, = variables(1; order = 2)
+    polynomial = 1 + x
+    initial = [polynomial]
+    integrator = init(
+        ODEProblem(growth!, initial, (0.0, 0.3)), TaylorMethod(14);
+        adaptive = false, dt = 0.1, alias = ODEAliasSpecifier(alias_u0 = true)
+    )
+    solve!(integrator)
+    @test integrator.u === initial
+    @test coefficient_norm(only(initial) - exp(0.3) * (1 + x)) < 1.0e-13
+    @test coefficient_norm(polynomial - (1 + x)) == 0
+end

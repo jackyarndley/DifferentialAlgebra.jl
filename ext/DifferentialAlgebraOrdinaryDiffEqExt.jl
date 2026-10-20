@@ -22,6 +22,15 @@ struct TaylorCache{F, W, U} <: ODECore.OrdinaryDiffEqConstantCache
     workspace::W
     tmp::U
 end
+struct TaylorMutableCache{F, W, U} <: ODECore.OrdinaryDiffEqMutableCache
+    order::Int
+    rhs::F
+    workspace::W
+    tmp::U
+end
+const TaylorCaches = Union{TaylorCache, TaylorMutableCache}
+ODECore.full_cache(cache::TaylorMutableCache) = (cache.tmp,)
+ODECore.get_fsalfirstlast(::TaylorMutableCache, u) = (zero(u), zero(u))
 ODECore.get_tmp_cache(integrator, ::TaylorAlgorithm, cache::TaylorCache) = (cache.tmp,)
 
 function ODECore.alg_cache(
@@ -34,8 +43,7 @@ function ODECore.alg_cache(
         throw(ArgumentError("TaylorMethod does not support interval coefficients"))
     rhs = if IIP
         (u, p, t) -> begin
-            # A constant derivative may be returned alongside time series.
-            du = Vector{Number}(undef, length(u))
+            du = DifferentialAlgebra.time_rhs_buffer(u)
             f(du, u, p, t)
             return du
         end
@@ -46,7 +54,8 @@ function ODECore.alg_cache(
     if coefficient_type(first(workspace.series)) <: TaylorPolynomial && !(eltype(u) <: TaylorPolynomial)
         throw(ArgumentError("Use polynomial initial states when the ODE has uncertain polynomial parameters"))
     end
-    return TaylorCache(alg.order, rhs, workspace, zero.(u))
+    return IIP ? TaylorMutableCache(alg.order, rhs, workspace, zero.(u)) :
+        TaylorCache(alg.order, rhs, workspace, zero.(u))
 end
 
 function store_coefficients!(k, series)
@@ -56,7 +65,7 @@ function store_coefficients!(k, series)
     end
     return nothing
 end
-function ODECore.initialize!(integrator, cache::TaylorCache)
+function ODECore.initialize!(integrator, cache::TaylorCaches)
     integrator.kshortsize = cache.order + 1
     store_coefficients!(integrator.k, cache.workspace.series)
     integrator.stats.nf += 2
@@ -68,7 +77,7 @@ coefficient_size(x::TaylorPolynomial) = coefficient_norm(x, 1)
 tolerance_at(x::Number, i) = x
 tolerance_at(x::AbstractArray, i) = x[i]
 
-function ODECore.perform_step!(integrator, cache::TaylorCache, repeat_step = false)
+function ODECore.perform_step!(integrator, cache::TaylorCaches, repeat_step = false)
     (; uprev, t, dt, p, opts) = integrator
     if !repeat_step
         DifferentialAlgebra.update_time_expansion!(cache.workspace, cache.rhs, uprev, t, p)
@@ -87,7 +96,11 @@ function ODECore.perform_step!(integrator, cache::TaylorCache, repeat_step = fal
         end
         ODECore.set_EEst!(integrator, opts.internalnorm(error, t))
     end
-    integrator.u = u
+    if cache isa TaylorMutableCache
+        copyto!(integrator.u, u)
+    else
+        integrator.u = u
+    end
     opts.calck && store_coefficients!(integrator.k, cache.workspace.series)
     return nothing
 end
@@ -106,7 +119,7 @@ function dense_value(k, order, i, h, prototype, ::Val{D}) where {D}
     return value
 end
 function ODECore._ode_interpolant(
-        Θ, dt, y0, y1, k, cache::TaylorCache,
+        Θ, dt, y0, y1, k, cache::TaylorCaches,
         idxs, ::Type{Val{D}}, differential_vars
     ) where {D}
     D >= 0 || throw(ArgumentError("Derivative order must be nonnegative"))
@@ -116,7 +129,7 @@ function ODECore._ode_interpolant(
     return map(i -> dense_value(k, cache.order, i, h, y0[i], Val(D)), indices)
 end
 function ODECore._ode_interpolant!(
-        out, Θ, dt, y0, y1, k, cache::TaylorCache,
+        out, Θ, dt, y0, y1, k, cache::TaylorCaches,
         idxs, deriv::Type{Val{D}}, differential_vars
     ) where {D}
     D >= 0 || throw(ArgumentError("Derivative order must be nonnegative"))
@@ -129,7 +142,7 @@ function ODECore._ode_interpolant!(
     return out
 end
 function ODECore._ode_addsteps!(
-        k, t, uprev, u, dt, f, p, cache::TaylorCache,
+        k, t, uprev, u, dt, f, p, cache::TaylorCaches,
         always_calc_begin = false, allow_calc_end = true, force_calc_end = false
     )
     if length(k) < cache.order + 1 || always_calc_begin
@@ -138,6 +151,7 @@ function ODECore._ode_addsteps!(
     end
     return nothing
 end
-DiffEqBase.interp_summary(::Type{<:TaylorCache}, dense::Bool) = dense ? "Taylor polynomial in time" : "Linear interpolation"
+DiffEqBase.interp_summary(::Type{<:TaylorCaches}, dense::Bool) =
+    dense ? "Taylor polynomial in time" : "Linear interpolation"
 
 end
