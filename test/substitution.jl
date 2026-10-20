@@ -34,3 +34,30 @@ using .IntervalTestSupport: IA, sameinterval, interval_contains
         @test sameinterval(c, IA.interval(T, 2, 3))
     end
 end
+
+@testset "Composition filters only completed outputs" begin
+    for budget in (0, 32 * 1024^2)
+        x, y, z = variables(3; order = 3, table_bytes = budget)
+        small = [0.006x, 0.006x, zero(x)]
+        quadratic = [0.02x, zero(x), zero(x)]
+        parts = (0.02x, -0.014x, 0.006x)
+        p, q = x + y + z, 100x^2
+        compiled = compile([p, q])
+        set_coefficient_tolerance!(0.01)
+        @test coefficient(evaluate(p, small), [1, 0, 0]) ≈ 0.012
+        @test coefficient(evaluate(q, quadratic), [2, 0, 0]) ≈ 0.04
+        @test coefficient(compiled(quadratic)[2], [2, 0, 0]) ≈ 0.04
+        for (i, j, k) in (
+                (1, 2, 3), (1, 3, 2), (2, 1, 3),
+                (2, 3, 1), (3, 1, 2), (3, 2, 1),
+            )
+            result = evaluate(p, [parts[i], parts[j], parts[k]])
+            @test coefficient(result, [1, 0, 0]) ≈ 0.012
+        end
+        result = evaluate(p, small)
+        set_coefficient!(result, [1, 0, 0], 7)
+        @test coefficient(small[1], [1, 0, 0]) == 0.006
+        @test coefficient_tolerance() == 0.01
+        @test truncation_order() == 3
+    end
+end

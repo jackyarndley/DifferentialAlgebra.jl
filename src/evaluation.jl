@@ -183,8 +183,7 @@ function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where
             c = map.coefficients[j, i]
             coefficient_iszero(c) && continue
             for k in active[depth + 1]
-                value = result[j].coeffs[k] + c * work[depth + 1].coeffs[k]
-                result[j].coeffs[k] = keep(value, ctx) ? value : zero(T)
+                result[j].coeffs[k] += c * work[depth + 1].coeffs[k]
             end
         end
     end
@@ -214,7 +213,7 @@ function sparse_multiply!(out::TaylorPolynomial{T}, oi, a, ai, b, bi, marks, sta
     end
     n, last = 0, 1
     @inbounds for k in oi
-        if keep(out.coeffs[k], out.algebra)
+        if !coefficient_iszero(out.coeffs[k])
             n += 1; oi[n] = k; last = max(last, k)
         else
             out.coeffs[k] = zero(T)
