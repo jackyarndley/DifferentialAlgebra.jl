@@ -80,7 +80,9 @@ function DA.enclose(a::DA.ContinuousTaylorMap, query = nothing)
     first(a._patches).certificates !== nothing || throw(ArgumentError("Use an IntervalBound source for certified function enclosures"))
     lo, hi = continuity_query_bounds(a, query)
     result = nothing
-    for patch in a._patches
+    query_bounds = (DA.ads_float_bounds(lo)[1], DA.ads_float_bounds(hi)[2])
+    for index in DA.continuity_indices(a, query_bounds)
+        patch = a._patches[index]
         lower, upper = max.(lo, patch.lower), min.(hi, patch.upper)
         any(lower .> upper) && continue
         # The query/support intersection is conservatively bounded in projected

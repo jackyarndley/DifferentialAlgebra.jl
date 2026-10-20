@@ -8,6 +8,39 @@ function polygon_real(x::Union{Integer, Rational, AbstractFloat})
     return deepcopy(PolygonReal(x))
 end
 polygon_real(x) = throw(ArgumentError("Supply finite integer, rational or floating polygon coordinates"))
+
+# These bounds are only a filter for exact geometry. Nonfinite arithmetic gives
+# an inconclusive enclosure and therefore cannot exclude a point or support.
+ads_float_bounds(values) = (
+    map(x -> Float64(x, RoundDown), values),
+    map(x -> Float64(x, RoundUp), values),
+)
+function ads_product_bounds(lo, hi, xlo, xhi)
+    lo == hi == 0 && return (0.0, 0.0)
+    lo == hi == 1 && return (xlo, xhi)
+    lo == hi == -1 && return (-xhi, -xlo)
+    products = (lo * xlo, lo * xhi, hi * xlo, hi * xhi)
+    any(isnan, products) && return (-Inf, Inf)
+    return prevfloat(minimum(products)), nextfloat(maximum(products))
+end
+function ads_sum_bounds(lo, hi, xlo, xhi)
+    lo == hi == 0 && return (xlo, xhi)
+    xlo == xhi == 0 && return (lo, hi)
+    lower, upper = lo + xlo, hi + xhi
+    (isnan(lower) || isnan(upper)) && return (-Inf, Inf)
+    return prevfloat(lower), nextfloat(upper)
+end
+function ads_project_bounds(matrix_bounds, point_bounds)
+    lower, upper = matrix_bounds
+    xlo, xhi = point_bounds
+    lo, hi = zeros(size(lower, 1)), zeros(size(lower, 1))
+    for i in axes(lower, 1), j in axes(lower, 2)
+        a, b = ads_product_bounds(lower[i, j], upper[i, j], xlo[j], xhi[j])
+        lo[i], hi[i] = ads_sum_bounds(lo[i], hi[i], a, b)
+    end
+    return lo, hi
+end
+
 polygon_cross(a, b, c) = (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1])
 polygon_signed_area(v) = sum(v[i][1] * v[mod1(i + 1, length(v))][2] - v[i][2] * v[mod1(i + 1, length(v))][1] for i in eachindex(v)) / 2
 
@@ -53,6 +86,27 @@ Base.copy(p::ConvexPolygon{T}) where {T} = ConvexPolygon{T}(deepcopy(p._vertices
 Base.deepcopy_internal(p::ConvexPolygon, copies::IdDict) = get!(() -> copy(p), copies, p)
 Base.show(io::IO, p::ConvexPolygon) = print(io, "ConvexPolygon(", length(p._vertices), " vertices)")
 polygon_contains(p::ConvexPolygon, x) = all(i -> polygon_cross(p._vertices[i], p._vertices[mod1(i + 1, length(p._vertices))], x) >= 0, eachindex(p._vertices))
+
+function polygon_filter(p::ConvexPolygon)
+    planes = Matrix{PolygonReal}(undef, length(p._vertices), 3)
+    for i in eachindex(p._vertices)
+        a, b = p._vertices[i], p._vertices[mod1(i + 1, length(p._vertices))]
+        dx, dy = b[1] - a[1], b[2] - a[2]
+        planes[i, :] .= (dy, -dx, dy * a[1] - dx * a[2])
+    end
+    return ads_float_bounds(planes)
+end
+function polygon_contains_filtered(p::ConvexPolygon, point, bounds, planes)
+    lower, upper = planes
+    lo, hi = ads_project_bounds((view(lower, :, 1:2), view(upper, :, 1:2)), bounds)
+    for i in eachindex(lo)
+        hi[i] <= lower[i, 3] && continue
+        lo[i] > upper[i, 3] && return false
+        a, b = p._vertices[i], p._vertices[mod1(i + 1, length(p._vertices))]
+        polygon_cross(a, b, polygon_real.(point)) >= 0 || return false
+    end
+    return true
+end
 
 function polygon_box(lower, upper)
     length(lower) == length(upper) == 2 || throw(DimensionMismatch("Polygonal ADS requires two coordinate bounds"))

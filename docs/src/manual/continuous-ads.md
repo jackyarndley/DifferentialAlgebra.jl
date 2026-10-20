@@ -127,8 +127,11 @@ and domain/error accessors own their storage; changing a source map cannot
 change the wrapper. Snapshots survive algebra reinitialization. Internal arrays
 are read-only implementation data. Construction restores the caller's algebra;
 do not overlap construction with other global-algebra calculations.
-Numeric evaluation scans supports and allocates; it does not change the existing
-ordinary DA buffer/allocation guarantees.
+Numeric evaluation and certified enclosure queries use a balanced tree of
+outward support bounds. Floating filters exclude distant supports; ambiguous
+face checks use exact rational geometry. Numeric evaluation allocates in
+proportion to the supports visited, while `blend_weights` returns a full vector.
+The original ordinary DA buffer/allocation guarantees are unchanged.
 
 The [continuity example](../generated/ads_continuity.md) plots values, gradients,
 Hessians and original-function interval bands. The

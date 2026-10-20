@@ -163,3 +163,244 @@ end
         @test ForwardDiff.gradient(six_s, zeros(T, 6)) == ones(T, 6)
     end
 end
+
+# Full scans use independent power-basis tapers and exact geometry. They do not
+# use the support index or its floating filters.
+function scan_continuity_weights(a, point)
+    T = promote_type(eltype(first(a._patches).center), eltype(point))
+    z = T.(a._directions) * point
+    x = RContinuity.(DA.continuity_primal.(point))
+    exact = [sum(a._directions[i, j] * x[j] for j in eachindex(x)) for i in eachindex(x)]
+    c = a.continuity == :c0 ? [1, -1] :
+        a.continuity == :c1 ? [1, 0, -3, 2] : [1, 0, 0, -10, 15, -6]
+    weights = map(a._patches) do p
+        weight = one(first(z))
+        for i in eachindex(z)
+            p.core_lower[i] <= exact[i] <= p.core_upper[i] && continue
+            p.lower[i] < exact[i] < p.upper[i] || return zero(weight)
+            t = if exact[i] < p.core_lower[i]
+                (T(p.core_lower[i]) - z[i]) / T(p.core_lower[i] - p.lower[i])
+            else
+                (z[i] - T(p.core_upper[i])) / T(p.upper[i] - p.core_upper[i])
+            end
+            t = clamp(t, zero(t), one(t))
+            weight *= sum(c[k] * t^(k - 1) for k in eachindex(c))
+        end
+        weight
+    end
+    return z, weights ./ sum(weights)
+end
+function scan_continuity(a, point)
+    z, weights = scan_continuity_weights(a, point)
+    R = promote_type(eltype(first(a._patches).map.coefficients), eltype(z))
+    value = zeros(R, noutputs(a))
+    for (p, weight) in zip(a._patches, weights)
+        iszero(DA.continuity_primal(weight)) && continue
+        normalized = [
+            iszero(p.radius[i]) ? zero(z[i]) : (z[i] - p.center[i]) / p.radius[i]
+                for i in eachindex(z)
+        ]
+        value .+= weight .* evaluate(p.map, normalized)
+    end
+    return a._scalar ? only(value) : value
+end
+function scan_continuity_enclosure(a, query)
+    result = nothing
+    for p in a._patches
+        lower = max.(RContinuity.(IA.inf.(query)), p.lower)
+        upper = min.(RContinuity.(IA.sup.(query)), p.upper)
+        any(lower .> upper) && continue
+        T = IA.numtype(typeof(first(p.certificates)._remainder))
+        box = [
+            IA.intersect_interval(interval(T, lo, hi), b; dec = :auto)
+                for (lo, hi, b) in zip(lower, upper, first(p.certificates)._coordinates.box)
+        ]
+        values = [enclose(m, box) for m in p.certificates]
+        result = result === nothing ? values : IA.hull.(result, values; dec = :auto)
+    end
+    return a._scalar ? only(result) : result
+end
+
+@testset "Conservative floating projection filters" begin
+    bigtwo = big(2)^1100
+    matrices = (
+        RContinuity[1 0; 0 1], RContinuity[1 // 3 -7 // 9; 5 // 11 2 // 17],
+        RContinuity[bigtwo 1; -bigtwo -1],
+        RContinuity[1 // bigtwo -1 // bigtwo; 1 -1],
+    )
+    points = (
+        [0.0, -0.0], [prevfloat(1.0), nextfloat(1.0)],
+        [nextfloat(0.0), -nextfloat(0.0)], [floatmax(Float64), -floatmax(Float64)],
+        RContinuity[1 // 3, 1 // 7], BigFloat[1 // 3, 1 // 7],
+        RContinuity[bigtwo, bigtwo + 1],
+    )
+    for B in matrices, point in points
+        lower, upper = DA.ads_project_bounds(
+            DA.ads_float_bounds(B),
+            DA.ads_float_bounds(point)
+        )
+        exact = B * RContinuity.(point)
+        for i in eachindex(exact)
+            @test lower[i] == -Inf || RContinuity(lower[i]) <= exact[i]
+            @test upper[i] == Inf || exact[i] <= RContinuity(upper[i])
+        end
+    end
+    polygons = (
+        ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)]),
+        ConvexPolygon([(0, 0), (1, 1 // 3), (0, 1)]),
+        ConvexPolygon([(1, 1), (2, 1), (2, 1 + 1 // big(10)^30)]),
+    )
+    for polygon in polygons
+        planes = DA.polygon_filter(polygon)
+        vertices = polygon_vertices(polygon)
+        for x in vcat(vertices, [(1 // 3, 1 // 3), (0, 0), (2, 2)])
+            exact = DA.polygon_contains(polygon, RContinuity.(x))
+            @test DA.polygon_contains_filtered(
+                polygon, x,
+                DA.ads_float_bounds(x), planes
+            ) == exact
+        end
+        for vertex in vertices, direction in (-1, 0, 1)
+            x = Float64.(vertex)
+            shifted = (
+                direction < 0 ? prevfloat(x[1]) :
+                    direction > 0 ? nextfloat(x[1]) : x[1], x[2],
+            )
+            exact = DA.polygon_contains(polygon, RContinuity.(shifted))
+            @test DA.polygon_contains_filtered(
+                polygon, shifted,
+                DA.ads_float_bounds(shifted), planes
+            ) == exact
+        end
+    end
+end
+
+@testset "Indexed supports agree with independent full scans" begin
+    f(v) = v[1]^2 + 2v[2]^2
+    polygon = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+    for budget in (0, 32 * 1024^2), oriented in (false, true)
+        fit = if oriented
+            adaptive_map(
+                f, polygon; directions = [1 1 // 3; -1 // 3 1],
+                order = 1, atol = 1 // 8, table_bytes = budget
+            )
+        else
+            adaptive_map(
+                f, [-1.0, -1.0], [1.0, 1.0];
+                order = 1, atol = 1 // 8, table_bytes = budget
+            )
+        end
+        for continuity in (:c0, :c1, :c2)
+            smooth = continuous_map(f, fit; continuity, table_bytes = budget)
+            @test length(smooth._nodes) == 2length(smooth._patches) - 1
+            for point in (
+                    [0.123, 0.234], [0.0, 0.0], [-1.0, 1.0],
+                    [prevfloat(0.25), nextfloat(0.25)], [0.25, 0.25],
+                )
+                _, expected = scan_continuity_weights(smooth, point)
+                @test blend_weights(smooth, point) ≈ expected atol = 2.0e-14
+                @test smooth(point) ≈ scan_continuity(smooth, point) atol = 2.0e-14
+                exact = smooth._directions * RContinuity.(point)
+                matching = findall(smooth._patches) do p
+                    all(p.lower .<= exact .<= p.upper)
+                end
+                _, bounds = DA.continuity_query(smooth, point)
+                indices = DA.continuity_indices(smooth, bounds)
+                @test issubset(matching, indices)
+            end
+            if continuity == :c2
+                point = [0.123, 0.234]
+                @test ForwardDiff.gradient(smooth, point) ≈
+                    ForwardDiff.gradient(x -> scan_continuity(smooth, x), point)
+                @test ForwardDiff.hessian(smooth, point) ≈
+                    ForwardDiff.hessian(x -> scan_continuity(smooth, x), point)
+            end
+            owned = copy(smooth)
+            @test owned._nodes !== smooth._nodes
+            @test owned._float_directions !== smooth._float_directions
+            @test owned._patches[1].bounds[1] !== smooth._patches[1].bounds[1]
+            @test owned._patches[1].tapers !== smooth._patches[1].tapers
+            @test_throws DomainError smooth([nextfloat(1.0), 0.0])
+        end
+    end
+    # A local query must not visit the whole partition. This verifies the index
+    # independently of timing, and blend_weights still returns one entry per fit.
+    fit = adaptive_map(f, [-1.0, -1.0], [1.0, 1.0]; order = 1, atol = 1 // 64)
+    smooth = continuous_map(f, fit)
+    _, bounds = DA.continuity_query(smooth, [0.123, 0.234])
+    @test length(DA.continuity_indices(smooth, bounds)) < length(smooth._patches) ÷ 8
+    @test length(blend_weights(smooth, [0.123, 0.234])) == length(smooth._patches)
+end
+
+@testset "Exact fallback at faces and beyond Float64 precision" begin
+    for budget in (0, 32 * 1024^2)
+        f(v) = v[1]^3
+        fit = adaptive_map(
+            f, [-1.0], [1.0]; order = 2, atol = 1 // 2,
+            table_bytes = budget
+        )
+        smooth = continuous_map(f, fit; table_bytes = budget)
+        for face in unique(
+                vcat(
+                    [
+                        vcat(p.lower, p.core_lower, p.core_upper, p.upper)
+                            for p in smooth._patches
+                    ]...
+                )
+            )
+            for x in (prevfloat(Float64(face)), Float64(face), nextfloat(Float64(face)))
+                -1 <= x <= 1 || continue
+                @test blend_weights(smooth, [x]) ≈
+                    last(scan_continuity_weights(smooth, [x]))
+                @test smooth([x]) ≈ scan_continuity(smooth, [x]) atol = 2.0e-15
+            end
+        end
+        fixed = adaptive_map(
+            v -> v[1]^2 + v[2], BigFloat[-1, 1 // 3],
+            BigFloat[1, 1 // 3]; order = 1, atol = 1 // 8, table_bytes = budget
+        )
+        fixed_smooth = continuous_map(v -> v[1]^2 + v[2], fixed; table_bytes = budget)
+        point = BigFloat[1 // 7, 1 // 3]
+        @test fixed_smooth(point) ≈ scan_continuity(fixed_smooth, point)
+        @test_throws DomainError fixed_smooth([point[1], nextfloat(point[2])])
+        # Build in one precision, query in another: cached Float64 directions
+        # and tapers must never determine BigFloat or nested-dual arithmetic.
+        polygon = ConvexPolygon([(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)])
+        f2(v) = v[1]^2 + v[2]^2
+        source = adaptive_map(
+            f2, polygon; directions = [1 1 // 3; -1 // 3 1],
+            order = 1, atol = 1 // 8, table_bytes = budget
+        )
+        high = continuous_map(f2, source; table_bytes = budget)
+        setprecision(512) do
+            point = BigFloat[1 // 7, 2 // 9]
+            @test high(point) isa BigFloat
+            @test high(point) ≈ scan_continuity(high, point) atol = 200eps(BigFloat)
+            @test ForwardDiff.gradient(high, point) ≈
+                ForwardDiff.gradient(x -> scan_continuity(high, x), point)
+            @test ForwardDiff.hessian(high, point) ≈
+                ForwardDiff.hessian(x -> scan_continuity(high, x), point)
+        end
+    end
+end
+
+@testset "Indexed interval enclosures retain closed support intersections" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        f(v) = v[1]^2
+        box = [interval(T, -1, 1)]
+        fit = adaptive_map(
+            f, box; estimator = IntervalBound(), order = 1,
+            atol = 1 // 64, table_bytes = budget
+        )
+        smooth = continuous_map(f, fit; table_bytes = budget)
+        queries = [[interval(T, x)] for x in (-1, -1 // 4, 0, 1 // 4, 1)]
+        append!(queries, ([interval(T, -1 // 2, 1 // 2)], box))
+        for query in queries
+            @test sameinterval(
+                enclose(smooth, query),
+                scan_continuity_enclosure(smooth, query)
+            )
+            @test isguaranteed(enclose(smooth, query))
+        end
+    end
+end

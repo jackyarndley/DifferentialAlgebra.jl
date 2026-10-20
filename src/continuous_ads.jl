@@ -10,6 +10,56 @@ struct ContinuityPatch{T, C, V, E}
     map::CompiledMap{C}
     certificates::V
     errors::E
+    # Rows are support/core lower and core/support upper faces, respectively.
+    bounds::Tuple{Matrix{Float64}, Matrix{Float64}}
+    tapers::Matrix{Float64}
+end
+
+# Unlike a partition tree, sibling supports overlap. Each cut bounds the entire
+# corresponding subtree outward; visiting both sides preserves closed faces.
+struct ContinuityNode
+    axis::Int
+    left_upper::Float64
+    right_lower::Float64
+    left::Int
+    right::Int
+    patch::Int
+end
+ads_query_bounds(node::ContinuityNode, query) =
+    (query[1][node.axis], query[2][node.axis])
+ads_visit_left(node::ContinuityNode, lo, hi) = lo <= node.left_upper
+ads_visit_right(node::ContinuityNode, lo, hi) = hi >= node.right_lower
+function continuity_index!(nodes, patches, indices)
+    index = length(nodes) + 1
+    push!(nodes, ContinuityNode(0, 0, 0, 0, 0, first(indices)))
+    length(indices) == 1 && return index
+    widths = [
+        maximum(i -> patches[i].center[j], indices) -
+            minimum(i -> patches[i].center[j], indices)
+            for j in eachindex(first(patches).center)
+    ]
+    axis = argmax(widths)
+    sort!(indices; by = i -> patches[i].center[axis])
+    middle = length(indices) ÷ 2
+    left, right = indices[1:middle], indices[(middle + 1):end]
+    upper = maximum(i -> patches[i].bounds[2][4, axis], left)
+    lower = minimum(i -> patches[i].bounds[1][1, axis], right)
+    l = continuity_index!(nodes, patches, left)
+    r = continuity_index!(nodes, patches, right)
+    nodes[index] = ContinuityNode(axis, upper, lower, l, r, 0)
+    return index
+end
+function continuity_index(patches)
+    nodes = ContinuityNode[]
+    sizehint!(nodes, 2length(patches) - 1)
+    continuity_index!(nodes, patches, collect(eachindex(patches)))
+    return nodes
+end
+function continuity_indices(a, bounds)
+    indices = Int[]
+    ads_visit_intersections(i -> push!(indices, i), a._nodes, bounds)
+    # Retain the original summation and hulling order, independent of the tree.
+    return sort!(indices)
 end
 
 """
@@ -31,12 +81,18 @@ ADS tolerance is inherited: overlap fits are reevaluated. Supply `atol` to
 `continuous_map` to check their recomputed bounds/estimates explicitly.
 
 Domain/accessor/copy storage is owned. Snapshots survive algebra reinitialization.
-Internal data are read-only. Evaluation scans the overlapping supports.
+Internal data are read-only. A spatial index selects overlapping supports;
+conservative floating bounds fall back to exact geometry near faces.
 """
 struct ContinuousTaylorMap{D, P, E}
     _domain::D
     _bounds::Tuple{Vector{PolygonReal}, Vector{PolygonReal}}
     _directions::Matrix{PolygonReal}
+    _float_directions::Matrix{Float64}
+    _direction_bounds::Tuple{Matrix{Float64}, Matrix{Float64}}
+    _root_bounds::Tuple{Matrix{Float64}, Matrix{Float64}}
+    _domain_filter::Tuple{Matrix{Float64}, Matrix{Float64}}
+    _nodes::Vector{ContinuityNode}
     _patches::Vector{P}
     _errors::E
     _order::Int
@@ -49,7 +105,15 @@ noutputs(a::ContinuousTaylorMap) = noutputs(first(a._patches).map)
 max_order(a::ContinuousTaylorMap) = a._order
 degree(::ContinuousTaylorMap) = throw(ArgumentError("A blended map is not a polynomial; max_order gives its retained local order"))
 (a::ContinuousTaylorMap)(point) = evaluate(a, point)
-Base.copy(a::ContinuousTaylorMap) = ContinuousTaylorMap(deepcopy(a._domain), deepcopy(a._bounds), deepcopy(a._directions), deepcopy(a._patches), deepcopy(a._errors), a._order, a._scalar, a.continuity)
+function Base.copy(a::ContinuousTaylorMap)
+    return ContinuousTaylorMap(
+        deepcopy(a._domain), deepcopy(a._bounds), deepcopy(a._directions),
+        copy(a._float_directions), deepcopy(a._direction_bounds),
+        deepcopy(a._root_bounds), deepcopy(a._domain_filter), copy(a._nodes),
+        deepcopy(a._patches),
+        deepcopy(a._errors), a._order, a._scalar, a.continuity
+    )
+end
 Base.deepcopy_internal(a::ContinuousTaylorMap, copies::IdDict) = get!(() -> copy(a), copies, a)
 function Base.getproperty(a::ContinuousTaylorMap, name::Symbol)
     if name in (:error_bounds, :error_estimate)
@@ -186,7 +250,12 @@ function continuous_map(
             continuity_check_support(core, lo, hi, T)
             p = continuity_candidate(f, lo, hi, layout.A, options, ctx, estimator)
             p.scalar == layout.scalar && noutputs(p.map) == noutputs(fit) || throw(DimensionMismatch("Overlap callback changed output shape"))
-            patch = ContinuityPatch(deepcopy(core[1]), deepcopy(core[2]), lo, hi, p.center, p.radius, p.map, p.certificates, p.errors)
+            faces = permutedims(hcat(lo, core[1], core[2], hi))
+            tapers = permutedims(hcat(core[1], core[2], core[1] - lo, hi - core[2]))
+            patch = ContinuityPatch(
+                deepcopy(core[1]), deepcopy(core[2]), lo, hi, p.center, p.radius,
+                p.map, p.certificates, p.errors, ads_float_bounds(faces), Float64.(tapers)
+            )
             patches === nothing && (patches = typeof(patch)[])
             patch isa eltype(patches) || throw(ArgumentError("Overlap callback changed coefficient type"))
             push!(patches, patch)
@@ -195,6 +264,11 @@ function continuous_map(
         continuity_check_tolerance(errors, atol)
         return ContinuousTaylorMap(
             deepcopy(layout.domain), deepcopy(layout.bounds), deepcopy(layout.B),
+            Float64.(layout.B), ads_float_bounds(layout.B),
+            ads_float_bounds(hcat(layout.bounds...)),
+            layout.domain isa ConvexPolygon ? polygon_filter(layout.domain) :
+                (zeros(0, 0), zeros(0, 0)),
+            continuity_index(patches),
             patches, errors, Int(order), layout.scalar, continuity
         )
     end
@@ -215,25 +289,83 @@ function continuity_taper(t, order)
     u = one(t) - t
     return order == 0 ? u : order == 1 ? u^2 * (1 + 2t) : u^3 * (1 + 3t + 6t^2)
 end
-function continuity_weight(p, z, exact, order)
+function continuity_query(a, point)
+    point isa Union{Tuple, AbstractVector} && length(point) == nvariables(a) ||
+        throw(DimensionMismatch("Provide exactly one physical coordinate per variable"))
+    point isa AbstractVector && Base.require_one_based_indexing(point)
+    x = continuity_primal.(point)
+    all(isfinite, x) || throw(ArgumentError("Physical coordinates must be finite"))
+    bounds = ads_float_bounds(x)
+    lower, upper = a._root_bounds
+    inside = if a._domain isa ConvexPolygon
+        polygon_contains_filtered(a._domain, x, bounds, a._domain_filter)
+    elseif all(
+            i -> bounds[1][i] >= upper[i, 1] && bounds[2][i] <= lower[i, 2],
+            eachindex(x)
+        )
+        true
+    elseif any(
+            i -> bounds[2][i] < lower[i, 1] || bounds[1][i] > upper[i, 2],
+            eachindex(x)
+        )
+        false
+    else
+        all(
+            i -> a._bounds[1][i] <= polygon_real(x[i]) <= a._bounds[2][i],
+            eachindex(x)
+        )
+    end
+    inside || throw(DomainError(point, "Point lies outside the continuity map domain"))
+    return x, ads_project_bounds(a._direction_bounds, bounds)
+end
+function continuity_side(a, p, point, bounds, i)
+    lo, hi = bounds[1][i], bounds[2][i]
+    lower, upper = p.bounds
+    lo >= upper[2, i] && hi <= lower[3, i] && return 0
+    (hi <= lower[1, i] || lo >= upper[4, i]) && return 2
+    lo > upper[1, i] && hi < lower[2, i] && return -1
+    lo > upper[3, i] && hi < lower[4, i] && return 1
+    # Only an inconclusive filter reaches exact projection. This includes core
+    # faces, closed support endpoints, fixed axes and sub-Float64 geometry.
+    x = sum(a._directions[i, j] * polygon_real(point[j]) for j in eachindex(point))
+    p.core_lower[i] <= x <= p.core_upper[i] && return 0
+    p.lower[i] < x < p.upper[i] || return 2
+    return x < p.core_lower[i] ? -1 : 1
+end
+function continuity_weight(a, p, z, point, bounds, order)
     T = eltype(z)
+    cached = continuity_primal(first(z)) isa Float64
     weight = one(first(z))
     for i in eachindex(z)
-        x = exact[i]
-        p.core_lower[i] <= x <= p.core_upper[i] && continue
-        p.lower[i] < x < p.upper[i] || return zero(weight)
-        t = x < p.core_lower[i] ? (T(p.core_lower[i]) - z[i]) / T(p.core_lower[i] - p.lower[i]) : (z[i] - T(p.core_upper[i])) / T(p.upper[i] - p.core_upper[i])
+        side = continuity_side(a, p, point, bounds, i)
+        side == 0 && continue
+        side == 2 && return zero(weight)
+        if side == -1
+            face = cached ? T(p.tapers[1, i]) : T(p.core_lower[i])
+            gap = cached ? T(p.tapers[3, i]) : T(p.core_lower[i] - p.lower[i])
+            t = (face - z[i]) / gap
+        else
+            face = cached ? T(p.tapers[2, i]) : T(p.core_upper[i])
+            gap = cached ? T(p.tapers[4, i]) : T(p.upper[i] - p.core_upper[i])
+            t = (z[i] - face) / gap
+        end
         weight *= continuity_taper(clamp(t, zero(t), one(t)), order)
     end
     return weight
 end
 function continuity_coordinates(a, point)
-    exact = continuity_point(a, point)
+    primal, bounds = continuity_query(a, point)
     T = evaluation_type(eltype(first(a._patches).center), point)
-    z = T.(a._directions) * T[point...]
+    coordinates = T[point...]
+    B = continuity_primal(first(coordinates)) isa Float64 ?
+        a._float_directions : T.(a._directions)
+    z = B * coordinates
+    indices = continuity_indices(a, bounds)
     order = a.continuity == :c0 ? 0 : a.continuity == :c1 ? 1 : 2
-    weights = [continuity_weight(p, z, exact, order) for p in a._patches]
-    return z, weights
+    weights = [
+        continuity_weight(a, a._patches[i], z, primal, bounds, order) for i in indices
+    ]
+    return z, indices, weights
 end
 """
     blend_weights(map::ContinuousTaylorMap, physical_point)
@@ -242,14 +374,17 @@ Return normalized compact-support weights. They are nonnegative and sum to
 one in exact arithmetic, with ordinary rounding in numeric/dual evaluation.
 """
 function blend_weights(a::ContinuousTaylorMap, point)
-    _, weights = continuity_coordinates(a, point)
-    return weights ./ sum(weights)
+    _, indices, active = continuity_coordinates(a, point)
+    weights = zeros(eltype(active), length(a._patches))
+    weights[indices] .= active ./ sum(active)
+    return weights
 end
 function evaluate(a::ContinuousTaylorMap, point)
-    z, weights = continuity_coordinates(a, point)
+    z, indices, weights = continuity_coordinates(a, point)
     R = promote_type(eltype(first(a._patches).map.coefficients), eltype(z))
     result = zeros(R, noutputs(a))
-    for (p, w) in zip(a._patches, weights)
+    for (index, w) in zip(indices, weights)
+        p = a._patches[index]
         iszero(continuity_primal(w)) && continue
         normalized = [iszero(p.radius[i]) ? zero(z[i]) : (z[i] - p.center[i]) / p.radius[i] for i in eachindex(z)]
         result .+= w .* evaluate(p.map, normalized)
