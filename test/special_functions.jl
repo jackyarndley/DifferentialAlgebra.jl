@@ -44,7 +44,7 @@ end
                 @test DifferentialAlgebra.coefficient_norm(gamma(p + 1) - p * gamma(p)) < 10tol
                 @test abs(DifferentialAlgebra.evaluate(gamma(p), [BigFloat(1) / 1000]) - gamma(center + BigFloat(1) / 10000)) < BigFloat(1.0e-16)
             end
-            @test_throws DomainError polygamma(2, zero(x))
+            @test_throws DifferentialAlgebra.TaylorError polygamma(2, zero(x))
             for center in (BigFloat(1) / 8, BigFloat(2), BigFloat(20), BigFloat(300)), n in (0, 2)
                 p = center + x / 100
                 i, k = besselix(n, p), besselkx(n, p)
@@ -109,5 +109,18 @@ end
         @test coefficient(tiny, [2]) ≈ 1 / 8
         @test besselj(3, 1.0e-3 + x)([0.1]) ≈ besselj(3, 0.101) rtol = 1.0e-12
         @test besseli(2, 0.1 + x)([1.0]) ≈ besseli(2, 1.1) rtol = 1.0e-12
+    end
+end
+
+@testset "Gamma-family poles" begin
+    for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
+        x, = variables(T, 1; order = 3, table_bytes = budget)
+        for center in (0, -1, -2), slope in (0, 1)
+            p = T(center) + slope * x
+            for f in (gamma, loggamma, digamma, p -> polygamma(2, p))
+                @test_throws DifferentialAlgebra.TaylorError f(p)
+            end
+        end
+        @test_throws ArgumentError polygamma(-1, x)
     end
 end

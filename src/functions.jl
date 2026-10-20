@@ -394,16 +394,24 @@ function derivative_series(f, a::TaylorPolynomial, c0; filter::Bool = true)
     end
     return series(a, c; filter)
 end
+function gamma_argument(a::TaylorPolynomial)
+    x = constant_term(a)
+    x <= 0 && coefficient_isinteger(x) &&
+        throw(TaylorError("Gamma-family expansion has a pole at $x"))
+    return x
+end
 gamma_series(a::TaylorPolynomial, c0; filter::Bool = true) =
     derivative_series((k, x) -> scalar_psi(k - 1, x), a, c0; filter)
-SpecialFunctions.loggamma(a::TaylorPolynomial) = gamma_series(a, domain_call(SpecialFunctions.loggamma, constant_term(a)))
+function SpecialFunctions.loggamma(a::TaylorPolynomial)
+    return gamma_series(a, domain_call(SpecialFunctions.loggamma, gamma_argument(a)))
+end
 function SpecialFunctions.gamma(a::TaylorPolynomial)
-    value, sign = domain_call(SpecialFunctions.logabsgamma, constant_term(a))
+    value, sign = domain_call(SpecialFunctions.logabsgamma, gamma_argument(a))
     return scaled(exponential(gamma_series(a, value; filter = false); filter = false), sign)
 end
 function polygamma_series(a::TaylorPolynomial, n::Integer)
     n >= 0 || throw(ArgumentError("Invalid polygamma order"))
-    x = constant_term(a); c0 = scalar_psi(n, x)
+    x = gamma_argument(a); c0 = domain_call(x -> scalar_psi(n, x), x)
     return derivative_series((k, x) -> scalar_psi(n + k, x), a, c0)
 end
 SpecialFunctions.polygamma(n::Integer, a::TaylorPolynomial) = polygamma_series(a, n)
