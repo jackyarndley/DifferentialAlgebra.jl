@@ -246,22 +246,24 @@ function square_root(a::TaylorPolynomial, c0; filter::Bool = true)
 end
 function root_series(a::TaylorPolynomial, p::Integer; filter::Bool = true)
     p != 0 || throw(ArgumentError("Zeroth root is undefined"))
-    p == 1 && return copy(a)
-    p > 0 && coefficient_iszero(a) && return zero(a)
     x = constant_term(a)
-    coefficient_iszero(x) && throw(TaylorError("Root is not analytic at a zero constant"))
+    coefficient_iszero(x) && !(p > 0 && coefficient_iszero(a)) &&
+        throw(TaylorError("Root is not analytic at a zero constant"))
     iseven(p) && x < 0 && throw(TaylorError("Even root of a negative constant"))
     exponent = one(float(x)) / p
     c0 = domain_call(
         x -> p == 2 ? sqrt(x) :
             p == 3 ? cbrt(x) : copysign(abs(x)^exponent, x), x
     )
+    coefficient_iszero(a) && return finish!(scalar_argument(a, c0), 1; filter)
     p == 2 && !isempty(a.algebra.basis.products) && return square_root(a, c0; filter)
     return power_series(a, exponent, c0; filter)
 end
-nthroot(a::TaylorPolynomial, p::Integer = 2) = root_series(a, p)
-Base.sqrt(a::TaylorPolynomial) = nthroot(a, 2)
-Base.cbrt(a::TaylorPolynomial) = nthroot(a, 3)
+# The identity root preserves the stored coefficient type and degrees. Other
+# roots use the scalar root's working type, including at the zero polynomial.
+nthroot(a::TaylorPolynomial, p::Integer = 2) = p == 1 ? copy(a) : root_series(a, p)
+Base.sqrt(a::TaylorPolynomial) = root_series(a, 2)
+Base.cbrt(a::TaylorPolynomial) = root_series(a, 3)
 function nthroot(x::Real, p::Integer = 2)
     p != 0 || throw(ArgumentError("Zeroth root is undefined"))
     p == 1 && return x
@@ -377,12 +379,16 @@ Base.atan(a::Real, b::TaylorPolynomial) = atan(scalar_argument(b, a), b)
 function Base.hypot(a::TaylorPolynomial, b::TaylorPolynomial)
     compatible(a, b)
     a0, b0 = constant_term(a), constant_term(b)
-    abs(b0) > abs(a0) && ((a, b) = (b, a); a0 = b0)
+    return abs(b0) > abs(a0) ? dominant_hypot(b, a, b0, a0) :
+        dominant_hypot(a, b, a0, b0)
+end
+# Keep each coordinate's concrete type when selecting the dominant argument.
+function dominant_hypot(a::TaylorPolynomial, b::TaylorPolynomial, a0, b0)
     if coefficient_iszero(a0)
         iszero(a) && iszero(b) && return scalar_argument(a, hypot(a0, b0))
         throw(TaylorError("hypot is not analytic at the origin"))
     end
-    iszero(b) && return abs(a)
+    iszero(b) && return scaled(a, sign(a0) * one(hypot(a0, b0)))
     # The dominant coordinate stays outside the root: dividing both inputs by
     # a tiny center can overflow their squared slopes before rescaling them.
     ratio = quotient(b, a; filter = false)

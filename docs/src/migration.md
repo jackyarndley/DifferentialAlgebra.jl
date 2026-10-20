@@ -25,6 +25,10 @@
   norm types and stable accumulation are unchanged.
 - Diagonal polynomial eigenpairs derive scalar working types without a dense
   eigensolve; BigFloat and Rational{BigInt} diagonals need no optional solver.
+- Polynomial `sqrt`, `cbrt`, and `hypot` use their scalar operation's working
+  coefficient type, including zero roots and axis-aligned hypotenuses with
+  integer or rational coefficients. `nthroot(p, 1)` still copies all stored terms
+  with their original type.
 
 - Import `erf`, `erfc`, `gamma`, `loggamma`, `besselj`, `bessely`, `besseli`,
   `besselk`, `besselix`, and `besselkx` from SpecialFunctions. Their polynomial

@@ -213,3 +213,65 @@ end
         @test @inferred(coefficient(p, [1, 0])) == one(T)
     end
 end
+
+@testset "Scalar working types for roots and hypotenuses" begin
+    for T in (
+                Int, BigInt, Rational{Int}, Rational{BigInt}, Float32, Float64, BigFloat,
+            ), budget in (0, 32 * 1024^2)
+        x, = variables(T, 1; order = 4, table_bytes = budget)
+        p, q = T(3) + x + x^4, T(4) + 2x
+        z = zero(x)
+        root_cases = (
+            (sqrt, T(4) + x + x^4, 4, 1 // 4, -1 // 64),
+            (cbrt, T(8) + x + x^4, 8, 1 // 12, -1 // 288),
+        )
+        with_order(2) do
+            for (f, argument, center, linear, quadratic) in root_cases
+                R = typeof(f(T(center)))
+                value = @inferred f(argument)
+                @test value isa TaylorPolynomial{R}
+                @test constant_term(value) == R(2)
+                @test coefficient(value, [1]) ≈ R(linear) rtol = 8eps(R)
+                @test coefficient(value, [2]) ≈ R(quadratic) rtol = 8eps(R)
+                @test degree(value) == 2
+                zero_root = @inferred f(z)
+                @test zero_root isa TaylorPolynomial{R}
+                @test iszero(zero_root)
+                @test zero_root.coeffs !== z.coeffs
+                set_coefficient!(value, [1], R(3))
+                @test coefficient(argument, [1]) == one(T)
+                @test coefficient(argument, [4]) == one(T)
+
+                identity_root = DifferentialAlgebra.nthroot(argument, 1)
+                @test identity_root isa TaylorPolynomial{T}
+                @test identity_root.coeffs !== argument.coeffs
+                @test coefficient(identity_root, [4]) == one(T)
+            end
+            R = typeof(hypot(T(3), T(4)))
+            value = @inferred hypot(p, q)
+            @test value isa TaylorPolynomial{R}
+            # sqrt(25 + 22x + 5x^2) has these exact first coefficients.
+            @test constant_term(value) == R(5)
+            @test coefficient(value, [1]) ≈ R(11 // 5) rtol = 8eps(R)
+            @test coefficient(value, [2]) ≈ R(2 // 125) rtol = 64eps(R)
+            @test degree(value) == 2
+            @test value.coeffs !== p.coeffs && value.coeffs !== q.coeffs
+            @test @inferred(hypot(z, z)) isa TaylorPolynomial{R}
+            @test iszero(hypot(z, z))
+            for argument in (p, -p)
+                for axis_value in (@inferred(hypot(argument, z)), @inferred(hypot(z, argument)))
+                    @test axis_value isa TaylorPolynomial{R}
+                    @test constant_term(axis_value) == R(3)
+                    @test coefficient(axis_value, [1]) == one(R)
+                    @test degree(axis_value) == 1
+                    @test axis_value.coeffs !== argument.coeffs
+                end
+            end
+        end
+        @test coefficient(p, [4]) == one(T)
+    end
+    x, = variables(Float32, 1; order = 2)
+    big_zero = TaylorPolynomial{BigFloat}(zero(x))
+    @test @inferred(hypot(3 + x, big_zero)) isa TaylorPolynomial{BigFloat}
+    @test @inferred(hypot(big_zero, 3 + x)) isa TaylorPolynomial{BigFloat}
+end
