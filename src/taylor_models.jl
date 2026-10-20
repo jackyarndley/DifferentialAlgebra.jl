@@ -1,10 +1,10 @@
 # IntervalArithmetic supplies the implementation through a package extension.
 # This file only declares native storage and the dependency-free API.
 struct ModelCoordinates{T <: Real}
-    box::Tuple{Vararg{T}}
-    center::Tuple{Vararg{T}}
-    radius::Tuple{Vararg{T}}
-    normalized::Tuple{Vararg{T}}
+    box::Vector{T}
+    center::Vector{T}
+    radius::Vector{T}
+    normalized::Vector{T}
     identity::Base.RefValue{Nothing}
 end
 
@@ -81,7 +81,7 @@ Return an independent physical validity domain: a vector of intervals for
 models/validated box ADS, `(lower, upper)` vectors in a named tuple for ordinary
 box ADS, or a `ConvexPolygon` for polygon ADS.
 """
-domain(a::TaylorModel) = (model_valid(a); collect(deepcopy(a._coordinates.box)))
+domain(a::TaylorModel) = (model_valid(a); deepcopy(a._coordinates.box))
 coefficient_type(::TaylorModel{T}) where {T} = T
 nvariables(a::TaylorModel) = model_valid(a).basis.variables
 max_order(a::TaylorModel) = (model_valid(a); a._order)

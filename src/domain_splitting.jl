@@ -64,20 +64,25 @@ struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator, O <:
     _options::O
     converged::Bool
 end
+# Public collections own their vector; kernels read the stored patches directly.
+ads_patches(map) = getfield(map, :patches)
+Base.getproperty(map::PiecewiseTaylorMap, name::Symbol) =
+    name === :patches ? copy(ads_patches(map)) : getfield(map, name)
 nvariables(map::PiecewiseTaylorMap) = length(map.lower)
-noutputs(map::PiecewiseTaylorMap) = noutputs(first(map.patches).map)
+noutputs(map::PiecewiseTaylorMap) = noutputs(first(ads_patches(map)).map)
 degree(map::PiecewiseTaylorMap) = map.max_degree
 max_order(map::PiecewiseTaylorMap) = map._order
 domain(map::PiecewiseTaylorMap) = (lower = deepcopy(map.lower), upper = deepcopy(map.upper))
 Base.copy(map::PiecewiseTaylorMap) = PiecewiseTaylorMap(
-    deepcopy(map.lower), deepcopy(map.upper), deepcopy(map.patches), deepcopy(map.nodes),
+    deepcopy(map.lower), deepcopy(map.upper),
+    deepcopy(ads_patches(map)), deepcopy(map.nodes),
     map.max_degree, map._order, map.scalar, map._estimator,
     deepcopy(map._options), map.converged
 )
 
 function Base.show(io::IO, map::PiecewiseTaylorMap)
     return print(
-        io, "PiecewiseTaylorMap(", length(map.patches), " patches, ",
+        io, "PiecewiseTaylorMap(", length(ads_patches(map)), " patches, ",
         noutputs(map), " outputs, ", nvariables(map), " variables, ",
         map.converged ? "converged" : "unresolved", ")"
     )
@@ -336,7 +341,7 @@ function ads_patch(map::PiecewiseTaylorMap, point)
     length(point) == nvariables(map) || throw(DimensionMismatch("Provide one coordinate per domain dimension"))
     all(i -> !(point[i] isa TaylorPolynomial) && map.lower[i] <= point[i] <= map.upper[i], eachindex(point)) ||
         throw(DomainError(point, "Point lies outside the map domain"))
-    return map.patches[ads_point_patch(map.nodes, point)]
+    return ads_patches(map)[ads_point_patch(map.nodes, point)]
 end
 
 """

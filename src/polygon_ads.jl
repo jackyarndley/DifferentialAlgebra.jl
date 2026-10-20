@@ -15,8 +15,13 @@ domain(p::PolygonPatch) = copy(p._domain)
 function Base.getproperty(p::PolygonPatch, name::Symbol)
     raw = getfield(p, :_patch)
     name in (:depth, :status) && return getproperty(raw, name)
-    name === :error_estimate && return raw isa TaylorModelPatch ? deepcopy(raw.error_bounds) : copy(raw.error_estimate)
-    name === :error_bounds && return raw isa TaylorModelPatch ? deepcopy(raw.error_bounds) : throw(ArgumentError("This patch has heuristic estimates, not certified bounds"))
+    if name in (:error_estimate, :error_bounds)
+        raw isa TaylorModelPatch && return raw.error_bounds
+        name === :error_bounds && throw(
+            ArgumentError("This patch has heuristic estimates, not certified bounds")
+        )
+        return copy(raw.error_estimate)
+    end
     return getfield(p, name)
 end
 Base.propertynames(::PolygonPatch) = (:_domain, :_patch, :depth, :status, :error_estimate, :error_bounds)
@@ -48,7 +53,7 @@ accessors and `copy` own their data; internal arrays are read-only.
 struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator, O <: NamedTuple}
     _domain::ConvexPolygon{T}
     _directions::Matrix{PolygonReal}
-    patches::Tuple{Vararg{PolygonPatch{T, P}}}
+    patches::Vector{PolygonPatch{T, P}}
     nodes::Vector{PolygonNode}
     _order::Int
     _scalar::Bool
@@ -56,6 +61,8 @@ struct PiecewisePolygonMap{T <: AbstractFloat, P, E <: ADSEstimator, O <: NamedT
     _options::O
     converged::Bool
 end
+Base.getproperty(a::PiecewisePolygonMap, name::Symbol) =
+    name === :patches ? copy(ads_patches(a)) : getfield(a, name)
 domain(a::PiecewisePolygonMap) = copy(a._domain)
 """
     split_directions(map::PiecewisePolygonMap)
@@ -65,16 +72,19 @@ onto the splitting frame. It need not be orthonormal.
 """
 split_directions(a::PiecewisePolygonMap) = deepcopy(a._directions)
 nvariables(::PiecewisePolygonMap) = 2
-noutputs(a::PiecewisePolygonMap) = noutputs(first(a.patches))
-degree(a::PiecewisePolygonMap) = maximum(degree, a.patches)
+noutputs(a::PiecewisePolygonMap) = noutputs(first(ads_patches(a)))
+degree(a::PiecewisePolygonMap) = maximum(degree, ads_patches(a))
 max_order(a::PiecewisePolygonMap) = a._order
 Base.copy(a::PiecewisePolygonMap) = PiecewisePolygonMap(
-    copy(a._domain), deepcopy(a._directions), deepcopy(a.patches), deepcopy(a.nodes),
+    copy(a._domain), deepcopy(a._directions), deepcopy(ads_patches(a)), deepcopy(a.nodes),
     a._order, a._scalar, a._estimator, deepcopy(a._options), a.converged
 )
 Base.deepcopy_internal(a::PiecewisePolygonMap, copies::IdDict) = get!(() -> copy(a), copies, a)
 (a::PiecewisePolygonMap)(point) = evaluate(a, point)
-Base.show(io::IO, a::PiecewisePolygonMap) = print(io, "PiecewisePolygonMap(", length(a.patches), " polygons, ", a.converged ? "converged" : "unresolved", ")")
+Base.show(io::IO, a::PiecewisePolygonMap) = print(
+    io, "PiecewisePolygonMap(", length(ads_patches(a)), " polygons, ",
+    a.converged ? "converged" : "unresolved", ")"
+)
 
 """
     adaptive_map(
@@ -222,7 +232,7 @@ function ads_finalize(::PolygonADS, polygon, p, depth, status, order)
 end
 function ads_result(g::PolygonADS, patches, nodes, scalar, options)
     return PiecewisePolygonMap(
-        copy(g.root), deepcopy(g.B), Tuple(patches), nodes, options.order, scalar,
+        copy(g.root), deepcopy(g.B), patches, nodes, options.order, scalar,
         options.estimator, ads_saved_options(options),
         all(p -> p.status == :converged, patches)
     )
@@ -293,7 +303,7 @@ function evaluate(a::PiecewisePolygonMap, point)
     a._estimator isa IntervalBound && return polygon_interval_query(a, point; point = true)
     x = polygon_point(a, point)
     patch = ads_point_patch(a.nodes, x)
-    p = a.patches[patch]._patch
+    p = ads_patches(a)[patch]._patch
     T = evaluation_type(eltype(p.center), point)
     projected = T.(a._directions) * T[point[1], point[2]]
     z = map(projected, p.center, p.radius) do value, center, radius

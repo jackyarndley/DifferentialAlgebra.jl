@@ -4,7 +4,10 @@ function DA.continuity_layout(a::DA.PiecewiseTaylorModel)
     box = DA.domain(a)
     lo, hi = DA.polygon_real.(IA.inf.(box)), DA.polygon_real.(IA.sup.(box))
     B = Matrix{DA.PolygonReal}(DA.I, length(lo), length(lo))
-    cores = [(DA.polygon_real.(IA.inf.(DA.domain(p))), DA.polygon_real.(IA.sup.(DA.domain(p)))) for p in a.patches]
+    cores = [
+        (DA.polygon_real.(IA.inf.(DA.domain(p))), DA.polygon_real.(IA.sup.(DA.domain(p))))
+            for p in DA.ads_patches(a)
+    ]
     return (domain = box, bounds = (lo, hi), B, A = copy(B), cores, scalar = a._scalar)
 end
 DA.continuity_scalar_type(::DA.PiecewiseTaylorModel{I}) where {I <: Interval} = IA.numtype(I)
@@ -21,12 +24,14 @@ function DA.continuity_candidate(f, lo, hi, A, options, ctx, ::DA.IntervalBound)
     map = DA.compile(mids)
     coordinates = first(z)._coordinates
     return (;
-        center = IA.inf.(collect(coordinates.center)), radius = IA.inf.(collect(coordinates.radius)),
+        center = IA.inf.(coordinates.center), radius = IA.inf.(coordinates.radius),
         map, certificates = compile_models(values),
         errors = fit.errors, scalar = fit.scalar,
     )
 end
-function DA.continuity_errors(patches::AbstractVector{<:DA.ContinuityPatch{T, C, V, E}}) where {T, C, V, E <: Tuple}
+function DA.continuity_errors(
+        patches::AbstractVector{<:DA.ContinuityPatch{T, C, V, E}}
+    ) where {T, C, V, E <: AbstractVector{<:Interval}}
     return [foldl((a, p) -> IA.hull(a, p.errors[j]; dec = :auto), Iterators.drop(patches, 1); init = first(patches).errors[j]) for j in eachindex(first(patches).errors)]
 end
 function DA.continuity_check_tolerance(errors::AbstractVector{I}, atol) where {I <: Interval}

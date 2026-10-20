@@ -103,8 +103,10 @@ end
 
 function ads_check_partition(partition, options)
     partition === nothing && return nothing
-    length(partition.patches) <= options.max_patches || throw(ArgumentError("max_patches is smaller than the existing partition"))
-    maximum(p -> p.depth, partition.patches) <= options.max_depth || throw(ArgumentError("max_depth is smaller than the existing partition"))
+    length(ads_patches(partition)) <= options.max_patches ||
+        throw(ArgumentError("max_patches is smaller than the existing partition"))
+    maximum(p -> p.depth, ads_patches(partition)) <= options.max_depth ||
+        throw(ArgumentError("max_depth is smaller than the existing partition"))
     return nothing
 end
 
@@ -117,7 +119,7 @@ function ads_queue(geometry, partition)
     else
         for (i, node) in enumerate(nodes)
             node.patch == 0 && continue
-            p = partition.patches[node.patch]
+            p = ads_patches(partition)[node.patch]
             push!(pending, (ads_patch_domain(geometry, p), p.depth, i))
         end
         reverse!(pending)

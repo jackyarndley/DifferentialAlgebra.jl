@@ -13,9 +13,7 @@ Examples have a separate dependency environment.
 Each test file imports its dependencies and includes its own helpers. SafeTestsets
 isolates file namespaces; the dispatcher runs files sequentially because algebra
 configuration is global. Fresh-process checks also verify optional extension loading.
-Aqua checks package quality. Its unbound-argument audit exempts exactly five
-generated snapshot constructors whose tuple arguments can syntactically be empty
-on Julia 1.10; supported construction requires nonempty coordinates and patches.
+Aqua checks package quality, including unbound type arguments.
 
 The test suite uses Julia code and inline inputs. Function-coefficient tests
 combine scalar derivatives from ForwardDiff with an independent multinomial

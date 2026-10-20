@@ -17,7 +17,7 @@ struct CompiledTaylorModel{T <: Real}
     _order::Int
     _degree::Int
 end
-domain(a::CompiledTaylorModel) = collect(deepcopy(a._coordinates.box))
+domain(a::CompiledTaylorModel) = deepcopy(a._coordinates.box)
 remainder(a::CompiledTaylorModel) = deepcopy(a._remainder)
 coefficient_type(::CompiledTaylorModel{T}) where {T} = T
 nvariables(a::CompiledTaylorModel) = length(a._coordinates.box)
@@ -40,7 +40,7 @@ end
     TaylorModelPatch
 
 A Taylor-model patch with certified enclosures on a box subdomain.
-`models` is a tuple of owned `CompiledTaylorModel`s;
+`models` returns an independent vector of read-only `CompiledTaylorModel`s;
 `error_bounds` encloses each original output minus its polynomial with stored
 midpoint coefficients, uniformly on this patch. It includes both the absolute
 remainder and retained coefficient widths. `depth` counts bisections; `status`
@@ -48,22 +48,30 @@ is `:converged`, `:max_depth`, `:max_patches` or `:roundoff`. Data are read-only
 `domain(patch)` returns an independent copy of the physical box.
 """
 struct TaylorModelPatch{T <: Real}
-    models::Tuple{Vararg{CompiledTaylorModel{T}}}
-    error_bounds::Tuple{Vararg{T}}
+    models::Vector{CompiledTaylorModel{T}}
+    error_bounds::Vector{T}
     depth::Int
     status::Symbol
 end
-domain(p::TaylorModelPatch) = domain(first(p.models))
-nvariables(p::TaylorModelPatch) = nvariables(first(p.models))
-noutputs(p::TaylorModelPatch) = length(p.models)
-max_order(p::TaylorModelPatch) = max_order(first(p.models))
-degree(p::TaylorModelPatch) = maximum(degree, p.models)
+model_snapshots(p::TaylorModelPatch) = getfield(p, :models)
+function Base.getproperty(p::TaylorModelPatch, name::Symbol)
+    name === :models && return copy(model_snapshots(p))
+    name === :error_bounds && return deepcopy(getfield(p, :error_bounds))
+    return getfield(p, name)
+end
+
+domain(p::TaylorModelPatch) = domain(first(model_snapshots(p)))
+nvariables(p::TaylorModelPatch) = nvariables(first(model_snapshots(p)))
+noutputs(p::TaylorModelPatch) = length(model_snapshots(p))
+max_order(p::TaylorModelPatch) = max_order(first(model_snapshots(p)))
+degree(p::TaylorModelPatch) = maximum(degree, model_snapshots(p))
 
 """
     PiecewiseTaylorModel
 
 A collection of Taylor-model patches on a box subdomain partition, produced by
-`adaptive_map(...; estimator=IntervalBound())`. `patches` is an immutable tuple of `TaylorModelPatch`s.
+`adaptive_map(...; estimator=IntervalBound())`. `patches` returns an independent
+vector of read-only `TaylorModelPatch`s.
 `converged` means every uniform absolute error
 bound met the requested tolerance. Even unresolved patches retain valid model
 enclosures. Numeric point and subbox queries include remainders, reject queries
@@ -74,8 +82,8 @@ options, including its tolerances and limits. The requested retained order can
 exceed `degree(map)`. Explicit keywords override saved values.
 """
 struct PiecewiseTaylorModel{T <: Real, N, E <: ADSEstimator, O <: NamedTuple}
-    _domain::Tuple{Vararg{T}}
-    patches::Tuple{Vararg{TaylorModelPatch{T}}}
+    _domain::Vector{T}
+    patches::Vector{TaylorModelPatch{T}}
     nodes::Vector{N}
     _order::Int
     _scalar::Bool
@@ -83,19 +91,26 @@ struct PiecewiseTaylorModel{T <: Real, N, E <: ADSEstimator, O <: NamedTuple}
     _options::O
     converged::Bool
 end
-domain(a::PiecewiseTaylorModel) = collect(deepcopy(a._domain))
+Base.getproperty(a::PiecewiseTaylorModel, name::Symbol) =
+    name === :patches ? copy(ads_patches(a)) : getfield(a, name)
+domain(a::PiecewiseTaylorModel) = deepcopy(a._domain)
 nvariables(a::PiecewiseTaylorModel) = length(a._domain)
-noutputs(a::PiecewiseTaylorModel) = length(first(a.patches).models)
+noutputs(a::PiecewiseTaylorModel) = length(model_snapshots(first(ads_patches(a))))
 max_order(a::PiecewiseTaylorModel) = a._order
-degree(a::PiecewiseTaylorModel) = maximum(degree(m) for p in a.patches for m in p.models)
+degree(a::PiecewiseTaylorModel) =
+    maximum(degree(m) for p in ads_patches(a) for m in model_snapshots(p))
 (a::PiecewiseTaylorModel)(point) = evaluate(a, point)
 Base.copy(a::PiecewiseTaylorModel) = PiecewiseTaylorModel(
-    deepcopy(a._domain), deepcopy(a.patches), deepcopy(a.nodes), a._order,
+    deepcopy(a._domain), deepcopy(ads_patches(a)), deepcopy(a.nodes), a._order,
     a._scalar, a._estimator, deepcopy(a._options), a.converged
 )
 Base.deepcopy_internal(a::PiecewiseTaylorModel, copies::IdDict) = get!(() -> copy(a), copies, a)
 function Base.show(io::IO, a::PiecewiseTaylorModel)
-    return print(io, "PiecewiseTaylorModel(", length(a.patches), " patches, ", noutputs(a), " outputs, ", nvariables(a), " variables, ", a.converged ? "converged" : "unresolved", ")")
+    return print(
+        io, "PiecewiseTaylorModel(", length(ads_patches(a)), " patches, ",
+        noutputs(a), " outputs, ", nvariables(a), " variables, ",
+        a.converged ? "converged" : "unresolved", ")"
+    )
 end
 
 function adaptive_map(

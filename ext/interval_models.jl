@@ -81,22 +81,22 @@ function coordinate_models(box, order)
     T = mapreduce(IA.numtype, promote_type, box)
     T in (Float64, BigFloat) || throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
     I = Interval{T}
-    physical = Tuple(deepcopy(asinterval(I, x)) for x in box)
-    centers = Tuple(
+    physical = [deepcopy(asinterval(I, x)) for x in box]
+    centers = [
         IA.setdecoration(IA.interval(T, IA.mid(x)), IA.decoration(x))
             for x in physical
-    )
-    radii = Tuple(
+    ]
+    radii = [
         IA.setdecoration(IA.interval(T, IA.sup(abs(x - c))), IA.decoration(x))
             for (x, c) in zip(physical, centers)
-    )
+    ]
     foreach(x -> checked_interval(x; guaranteed = true), radii)
-    normalized = Tuple(
+    normalized = [
         IA.setdecoration(
             IA.isthinzero(r) ? zero(I) : IA.interval(T, -1, 1),
             IA.decoration(x)
         ) for (x, r) in zip(physical, radii)
-    )
+    ]
     coordinates = DA.ModelCoordinates(physical, centers, radii, normalized, Ref(nothing))
     return [model_result(centers[i] + radii[i] * DA.variable(i, I), zero(I), coordinates, Int(order)) for i in eachindex(physical)]
 end
@@ -291,12 +291,12 @@ function compile_models(models::AbstractVector{TaylorModel{I}}) where {I <: Inte
     # these read-only snapshots, but own their coefficients and remainders.
     coordinates = deepcopy(reference._coordinates)
     exponents = Matrix{Int}(b.exponents[:, 1:maximum(m -> m._polynomial.len, models)])
-    return Tuple(
+    return [
         DA.CompiledTaylorModel(
             deepcopy(m._polynomial.coeffs[1:m._polynomial.len]), exponents,
             deepcopy(m._remainder), coordinates, m._order, DA.degree(m)
         ) for m in models
-    )
+    ]
 end
 DA.compile(a::TaylorModel{I}) where {I <: Interval} = only(compile_models([a]))
 
@@ -304,7 +304,9 @@ function snapshot_bound(a::DA.CompiledTaylorModel{I}, normalized) where {I <: In
     powers = power_cache(normalized, DA.degree(a), I)
     return monomial_bound(a._coefficients, a._exponents, powers, I) + a._remainder
 end
-function snapshot_bounds(models::Tuple{Vararg{DA.CompiledTaylorModel{I}}}, box) where {I <: Interval}
+function snapshot_bounds(
+        models::AbstractVector{<:DA.CompiledTaylorModel{I}}, box
+    ) where {I <: Interval}
     normalized = normalized_box(first(models), box)
     powers = power_cache(normalized, maximum(DA.degree, models), I)
     return [monomial_bound(m._coefficients, m._exponents, powers, I) + m._remainder for m in models]

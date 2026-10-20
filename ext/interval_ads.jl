@@ -38,7 +38,7 @@ function validated_fit(f, inputs, reference, ctx, order)
     DA.ads_check_context(ctx, order)
     I = DA.coefficient_type(reference)
     powers = power_cache(reference._coordinates.normalized, maximum(DA.degree, models), I)
-    errors = Tuple(fit_error(m, powers) for m in models)
+    errors = [fit_error(m, powers) for m in models]
     return (; payload = ValidatedFit(models), errors, scalar)
 end
 
@@ -136,7 +136,7 @@ function DA.ads_local_patch(fit::ValidatedFit, box, errors, depth, status, order
 end
 function DA.ads_result(g::DA.BoxADS, patches::Vector{DA.TaylorModelPatch{I}}, nodes, scalar, options) where {I}
     return DA.PiecewiseTaylorModel(
-        g.root, Tuple(patches), nodes, options.order, scalar, options.estimator,
+        collect(g.root), patches, nodes, options.order, scalar, options.estimator,
         DA.ads_saved_options(options), all(p -> p.status == :converged, patches)
     )
 end
@@ -193,10 +193,15 @@ function piecewise_query(a::DA.PiecewiseTaylorModel{I}, box; point = false) wher
     all(i -> IA.issubset_interval(query[i], a._domain[i]), eachindex(query)) || throw(DomainError(box, "Query lies outside the ADS validity domain"))
     result = nothing
     DA.ads_visit_intersections(a.nodes, (IA.inf.(query), IA.sup.(query))) do index
-        patch = a.patches[index]
-        intersection = Tuple(IA.intersect_interval(query[i], first(patch.models)._coordinates.box[i]; dec = :auto) for i in eachindex(query))
+        patch = DA.ads_patches(a)[index]
+        models = DA.model_snapshots(patch)
+        original = first(models)._coordinates.box
+        intersection = Tuple(
+            IA.intersect_interval(query[i], original[i]; dec = :auto)
+                for i in eachindex(query)
+        )
         any(IA.isempty_interval, intersection) && return nothing
-        bounds = snapshot_bounds(patch.models, intersection)
+        bounds = snapshot_bounds(models, intersection)
         if result === nothing
             result = bounds
         else

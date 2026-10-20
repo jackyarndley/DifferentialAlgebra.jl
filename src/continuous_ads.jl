@@ -37,7 +37,7 @@ struct ContinuousTaylorMap{D, P, E}
     _domain::D
     _bounds::Tuple{Vector{PolygonReal}, Vector{PolygonReal}}
     _directions::Matrix{PolygonReal}
-    _patches::Tuple{Vararg{P}}
+    _patches::Vector{P}
     _errors::E
     _order::Int
     _scalar::Bool
@@ -65,13 +65,16 @@ Base.show(io::IO, a::ContinuousTaylorMap) = print(io, "ContinuousTaylorMap(", a.
 function continuity_layout(a::PiecewiseTaylorMap)
     lo, hi = polygon_real.(a.lower), polygon_real.(a.upper)
     B = Matrix{PolygonReal}(I, length(lo), length(lo))
-    cores = [(polygon_real.(p.lower), polygon_real.(p.upper)) for p in a.patches]
+    cores = [(polygon_real.(p.lower), polygon_real.(p.upper)) for p in ads_patches(a)]
     return (domain = (lower = copy(a.lower), upper = copy(a.upper)), bounds = (lo, hi), B, A = copy(B), cores, scalar = a.scalar)
 end
 function continuity_layout(a::PiecewisePolygonMap)
     B, A = polygon_frame(split_directions(a))
     lo, hi = polygon_projection_bounds(a._domain, B)
-    cores = [(collect(x), collect(y)) for p in a.patches for (x, y) in (polygon_projection_bounds(p._domain, B),)]
+    cores = [
+        (collect(x), collect(y)) for p in ads_patches(a)
+            for (x, y) in (polygon_projection_bounds(p._domain, B),)
+    ]
     return (domain = domain(a), bounds = (collect(lo), collect(hi)), B, A, cores, scalar = a._scalar)
 end
 continuity_estimator(a::PiecewiseTaylorMap) = a._estimator
@@ -184,7 +187,10 @@ function continuous_map(
         end
         errors = continuity_errors(patches)
         continuity_check_tolerance(errors, atol)
-        return ContinuousTaylorMap(deepcopy(layout.domain), deepcopy(layout.bounds), deepcopy(layout.B), Tuple(patches), errors, Int(order), layout.scalar, continuity)
+        return ContinuousTaylorMap(
+            deepcopy(layout.domain), deepcopy(layout.bounds), deepcopy(layout.B),
+            patches, errors, Int(order), layout.scalar, continuity
+        )
     end
 end
 

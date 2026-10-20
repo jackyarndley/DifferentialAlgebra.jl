@@ -70,7 +70,9 @@ function polygon_interval_constraints(a, query)
     return [((one(R), zero(R)), hi[1]), ((-one(R), zero(R)), -lo[1]), ((zero(R), one(R)), hi[2]), ((zero(R), -one(R)), -lo[2])]
 end
 
-function polygon_snapshot_bounds(models::Tuple{Vararg{DA.CompiledTaylorModel{I}}}, points, B) where {I <: Interval}
+function polygon_snapshot_bounds(
+        models::AbstractVector{<:DA.CompiledTaylorModel{I}}, points, B
+    ) where {I <: Interval}
     model = first(models)
     T = IA.numtype(I)
     projected = map(x -> DA.polygon_project(B, x), points)
@@ -100,7 +102,7 @@ function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; p
         ((lo[1], lo[2]), (lo[1], hi[2]), (hi[1], lo[2]), (hi[1], hi[2]))
     end
     DA.ads_visit_intersections(a.nodes, query_points) do index
-        patch = a.patches[index]
+        patch = DA.ads_patches(a)[index]
         points = if point
             DA.polygon_contains(patch._domain, exact) ? (exact,) : ()
         elseif query === nothing
@@ -114,7 +116,9 @@ function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; p
             remaining
         end
         isempty(points) && return nothing
-        values = polygon_snapshot_bounds(patch._patch.models, points, a._directions)
+        values = polygon_snapshot_bounds(
+            DA.model_snapshots(patch._patch), points, a._directions
+        )
         result = result === nothing ? values : [IA.hull(x, y; dec = :auto) for (x, y) in zip(result, values)]
         return nothing
     end

@@ -70,3 +70,9 @@ preserves coefficient partials without requiring explicit polynomial constants.
 
 ADS refinement now inherits the original tolerances and construction options,
 including resource limits. Supply keywords explicitly to change them.
+
+ADS patch collections, Taylor-model patch outputs and error bounds use vectors.
+Public `patches` and `models` accessors return independent containers; their
+snapshot entries remain read-only. Use `copy(snapshot)` for independent snapshot
+storage. Interval polygon `error_estimate` now returns a vector consistently
+with ordinary polygon estimates.

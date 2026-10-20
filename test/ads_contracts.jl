@@ -20,6 +20,62 @@ contract_same(a::Interval, b::Interval) = sameinterval(a, b)
 contract_same(a::Real, b::Real) = a == b
 contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
 
+@testset "Snapshot collections use owned vector storage" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        f(v) = [v[1]^2 + v[2]^2, v[1]]
+        for kind in (:ordinary, :validated, :polygon)
+            estimator = kind === :ordinary ? LastTerms() : IntervalBound()
+            build(atol) = adaptive_map(
+                f, T[-1, -1], T[1, 1]; estimator, order = 1, atol,
+                splitter = kind === :polygon ? :oriented : :width,
+                directions = kind === :polygon ? :axes : nothing,
+                table_bytes = budget
+            )
+            fits = [build(atol) for atol in (1 // 2, 1 // 8)]
+            @test typeof(fits[1]) === typeof(fits[2])
+            @test length.(getproperty.(fits, :patches)) == [4, 16]
+            for fit in fits
+                @test isconcretetype(fieldtype(typeof(fit), :patches))
+                @test fit.patches isa Vector
+                @test @inferred(degree(fit)) == 1
+                before = fit([1 // 8, -1 // 4])
+                patches = fit.patches
+                count = length(patches)
+                empty!(patches)
+                @test length(fit.patches) == count
+                @test contract_same(fit([1 // 8, -1 // 4]), before)
+                patch = first(fit.patches)
+                raw = patch isa PolygonPatch ? patch._patch : patch
+                if raw isa TaylorModelPatch
+                    @test isconcretetype(fieldtype(typeof(raw), :models))
+                    models = raw.models
+                    @test models isa Vector && raw.error_bounds isa Vector
+                    empty!(models)
+                    @test noutputs(raw) == 2
+                    bounds = raw.error_bounds
+                    bounds[1] = interval(T, 999)
+                    @test IA.sup(raw.error_bounds[1]) < 999
+                end
+                smooth = continuous_map(f, fit; table_bytes = budget)
+                @test isconcretetype(fieldtype(typeof(smooth), :_patches))
+                @test smooth._patches isa Vector
+                saved = smooth([1 // 8, -1 // 4])
+                @test copy(smooth)([1 // 8, -1 // 4]) == saved
+            end
+        end
+        box = [interval(T, -1, 1), interval(T, 2)]
+        x, y = taylor_models(box; order = 2, table_bytes = budget)
+        for name in (:box, :center, :radius, :normalized)
+            @test isconcretetype(fieldtype(typeof(x._coordinates), name))
+            @test getproperty(x._coordinates, name) isa Vector{Interval{T}}
+        end
+        saved = domain(x)
+        box[1] = interval(T, 999)
+        @test all(sameinterval.(domain(x), saved))
+        @test copy(x)._coordinates.box !== x._coordinates.box
+    end
+end
+
 @testset "Refinement inherits owned construction options" begin
     square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
     for estimator in (GuardedTail(), LastTerms(), IntervalBound()),
