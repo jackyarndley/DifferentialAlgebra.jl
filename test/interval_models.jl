@@ -431,3 +431,31 @@ end
     end
     @test sameinterval(enclose(x * x), IA.interval(0, 1))
 end
+
+@testset "Model domains preserve decorations at fixed and varying coordinates" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        box = [
+            IA.setdecoration(IA.interval(T, 1 // 2, 1), IA.def),
+            IA.setdecoration(IA.interval(T, 2), IA.def),
+        ]
+        x, fixed = taylor_models(box; order = 3, table_bytes = budget)
+        for m in (x, fixed, exp(x), x - x, TaylorModel(3, x))
+            full, explicit, snapshot = enclose(m), enclose(m, domain(m)), compile(m)
+            @test IA.decoration(full) == IA.def
+            @test IA.decoration(explicit) == IA.def
+            @test IA.decoration(enclose(snapshot)) == IA.def
+            @test IA.isguaranteed(full) && IA.isguaranteed(explicit)
+            @test IA.decoration(evaluate(m, [3 // 4, 2])) == IA.def
+            @test IA.decoration(evaluate(snapshot, [3 // 4, 2])) == IA.def
+        end
+        @test interval_contains(enclose(fixed), 2)
+        @test IA.isthinzero(enclose(x - x))
+        # An unused degraded coordinate still belongs to the model's domain.
+        x, fixed = taylor_models(
+            [IA.interval(T, 1 // 2, 1), box[2]];
+            order = 3, table_bytes = budget
+        )
+        @test IA.decoration(enclose(exp(x))) == IA.def
+        @test IA.decoration(enclose(compile(TaylorModel(1, x)))) == IA.def
+    end
+end

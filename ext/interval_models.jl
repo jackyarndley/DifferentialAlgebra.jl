@@ -25,7 +25,7 @@ function power_cache(box, order, ::Type{I}) where {I <: Interval}
     powers = Matrix{I}(undef, length(box), order + 1)
     for v in eachindex(box)
         x = asinterval(I, box[v])
-        powers[v, 1] = one(I)
+        powers[v, 1] = IA.pown(x, 0)
         for k in 1:order
             powers[v, k + 1] = IA.pown(x, k)
         end
@@ -34,6 +34,10 @@ function power_cache(box, order, ::Type{I}) where {I <: Interval}
 end
 function monomial_bound(coefficients, exponents, powers, ::Type{I}) where {I <: Interval}
     result = zero(I)
+    # Even a constant or zero polynomial retains the domain's scalar metadata.
+    for v in axes(powers, 1)
+        result *= powers[v, 1]
+    end
     @inbounds for k in eachindex(coefficients)
         c = asinterval(I, coefficients[k])
         checked_interval(c)
@@ -78,10 +82,21 @@ function coordinate_models(box, order)
     T in (Float64, BigFloat) || throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
     I = Interval{T}
     physical = Tuple(deepcopy(asinterval(I, x)) for x in box)
-    centers = Tuple(IA.interval(T, IA.mid(x)) for x in physical)
-    radii = Tuple(IA.interval(T, IA.sup(abs(x - c))) for (x, c) in zip(physical, centers))
+    centers = Tuple(
+        IA.setdecoration(IA.interval(T, IA.mid(x)), IA.decoration(x))
+            for x in physical
+    )
+    radii = Tuple(
+        IA.setdecoration(IA.interval(T, IA.sup(abs(x - c))), IA.decoration(x))
+            for (x, c) in zip(physical, centers)
+    )
     foreach(x -> checked_interval(x; guaranteed = true), radii)
-    normalized = Tuple(IA.isthinzero(r) ? zero(I) : IA.interval(T, -1, 1) for r in radii)
+    normalized = Tuple(
+        IA.setdecoration(
+            IA.isthinzero(r) ? zero(I) : IA.interval(T, -1, 1),
+            IA.decoration(x)
+        ) for (x, r) in zip(physical, radii)
+    )
     coordinates = DA.ModelCoordinates(physical, centers, radii, normalized, Ref(nothing))
     return [model_result(centers[i] + radii[i] * DA.variable(i, I), zero(I), coordinates, Int(order)) for i in eachindex(physical)]
 end
@@ -126,7 +141,14 @@ function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box
         # Both sets enclose the same exact normalized coordinate. The public
         # :auto policy preserves the minimum input decoration and all NG flags;
         # the default set-operation decoration would be trv even for valid sets.
-        result[i] = IA.isthinzero(c.radius[i]) ? zero(I) : IA.intersect_interval((x - c.center[i]) / c.radius[i], c.normalized[i]; dec = :auto)
+        result[i] = if IA.isthinzero(c.radius[i])
+            IA.setdecoration(zero(I), min(IA.decoration(x), IA.decoration(c.box[i])))
+        else
+            IA.intersect_interval(
+                (x - c.center[i]) / c.radius[i], c.normalized[i];
+                dec = :auto
+            )
+        end
     end
     return result
 end
