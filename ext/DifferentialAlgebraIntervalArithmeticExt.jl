@@ -19,6 +19,35 @@ end
 model_context(a) = (validated_rounding(); DA.model_arithmetic(a))
 compatible_models(a, b) = (validated_rounding(); DA.model_compatible(a, b))
 
+function checked_interval(x::Interval; guaranteed::Bool = false)
+    !IA.isnai(x) && !IA.isempty_interval(x) && IA.isbounded(x) &&
+        IA.decoration(x) >= IA.def || throw(
+        ArgumentError(
+            "Require finite, nonempty intervals without loose-evaluation decorations"
+        )
+    )
+    guaranteed && !IA.isguaranteed(x) && throw(
+        ArgumentError(
+            "Taylor models require guaranteed intervals; an NG input was supplied"
+        )
+    )
+    return x
+end
+const SupportedScalar = Union{Integer, Rational, AbstractFloat, AbstractIrrational}
+# Explicit interval conversion preserves decorations and guarantee flags.
+asinterval(::Type{Interval{T}}, x::Interval) where {T <: IA.NumTypes} =
+    IA.interval(T, x)
+asinterval(::Type{Interval{T}}, x::SupportedScalar) where {T <: IA.NumTypes} =
+    IA.interval(T, x)
+asinterval(::Type{Interval{T}}, x::IA.ExactReal) where {T <: IA.NumTypes} =
+    asinterval(Interval{T}, x.value)
+asinterval(::Type{<:Interval}, x) = throw(
+    ArgumentError(
+        "Unsupported scalar; supply a real value or decorated Interval explicitly"
+    )
+)
+
+
 # Skip only a valid, guaranteed exact zero. Even a thin NG/degraded zero must
 # participate in arithmetic so that its metadata is not silently erased.
 DA.coefficient_iszero(c::Interval) = IA.isthinzero(c) && IA.isguaranteed(c) && IA.decoration(c) == IA.com
