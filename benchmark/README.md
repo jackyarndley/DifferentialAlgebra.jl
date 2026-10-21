@@ -13,6 +13,7 @@ julia --startup-file=no --project=benchmark benchmark/cleanup.jl
 julia --startup-file=no --project=benchmark benchmark/unified_ads.jl
 julia --startup-file=no --project=benchmark benchmark/interval_models.jl
 julia --startup-file=no --project=benchmark benchmark/interval_kernels.jl
+julia --startup-file=no --project=benchmark benchmark/interval_cleanup.jl --bigfloat
 julia --startup-file=no --project=benchmark benchmark/polygon_ads.jl
 julia --startup-file=no --project=benchmark benchmark/continuous_ads.jl
 ```
@@ -47,7 +48,7 @@ Keep only the latest output per script in `measurements/`, with its revision in 
 header. Historical logs remain in Git history. Release changes and API migration
 instructions live in [NEWS](../NEWS.md) and the [migration guide](../docs/src/migration.md).
 
-Current Julia 1.13.2 outputs (the header identifies the measured revision):
+Current outputs (headers identify the measured revision and Julia version):
 
 | Script | Output |
 |:--|:--|
@@ -57,6 +58,7 @@ Current Julia 1.13.2 outputs (the header identifies the measured revision):
 | Shared ADS driver | [Measurements](measurements/unified_ads.txt) |
 | Interval models | [Measurements](measurements/interval_models.txt) |
 | Interval kernel comparison | [Measurements](measurements/interval_kernels.txt) |
+| Interval cleanup | [Measurements](measurements/interval_cleanup.txt) |
 | Polygon ADS | [Measurements](measurements/polygon_ads.txt) |
 | Continuous ADS | [Measurements](measurements/continuous_ads.txt) |
 
@@ -73,3 +75,8 @@ allocation stacks. Run paired revisions sequentially using the same script; the
 reference revision can omit the new private discarded-product comparison.
 Full-precision bounds, decorations and guarantee flags accompany each workload.
 See [kernel results](interval_kernels.md) for the measured scope and comparison.
+
+The interval cleanup script measures scalar addition/subtraction, model construction,
+and live/snapshot range queries. Pass `--bigfloat` to include 256-bit endpoints.
+Every case prints bounds and metadata for comparison between revisions. See
+[cleanup results](interval_cleanup.md) for the paired measurements.

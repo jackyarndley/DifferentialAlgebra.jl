@@ -20,43 +20,27 @@ end
 # {0} only selects endpoints, avoiding a second rounded interval product.
 # Track every intermediate decoration: overflow can degrade a product even
 # when a fixed coordinate subsequently makes that term zero.
-function discarded_unit_kernel(p, q, order, bounds)
-    basis = p.algebra.basis
-    fixed, zero_bound, _, odd_bound = bounds
-    result = zero(IA.BareInterval{Float64})
-    decoration = IA.com
-    @inbounds for i in 1:p.len
-        ac = p.coeffs[i]
-        DA.coefficient_iszero(ac) && continue
-        degree = order - basis.degrees[i]
-        first_j = degree < 0 ? 1 : degree >= basis.degrees[q.len] ?
-            q.len + 1 : basis.ends[degree + 1] + 1
-        parity, support = monomial_masks(basis, i)
-        for j in first_j:q.len
-            bc = q.coeffs[j]
-            DA.coefficient_iszero(bc) && continue
-            qparity, qsupport = monomial_masks(basis, j)
-            product = IA.bareinterval(ac) * IA.bareinterval(bc)
-            term = if !iszero((support | qsupport) & fixed)
-                IA.bareinterval(zero_bound)
-            elseif iszero(parity ⊻ qparity)
-                IA.bareinterval(
-                    Float64, min(0.0, IA.inf(product)),
-                    max(0.0, IA.sup(product))
-                )
-            else
-                magnitude = IA.mag(product)
-                IA.bareinterval(Float64, -magnitude, magnitude)
-            end
-            result += term
-            decoration = min(
-                decoration, IA.decoration(ac), IA.decoration(bc),
-                IA.decoration(odd_bound), IA.decoration(product), IA.decoration(result)
-            )
-        end
+@inline function accumulate_unit_product(
+        state::Tuple{IA.BareInterval{Float64}, IA.Decoration}, ac, bc, factor
+    )
+    result, decoration = state
+    product = IA.bareinterval(ac) * IA.bareinterval(bc)
+    term = if IA.isthinzero(factor)
+        IA.bareinterval(factor)
+    elseif iszero(IA.inf(factor))
+        IA.bareinterval(Float64, min(0.0, IA.inf(product)), max(0.0, IA.sup(product)))
+    else
+        magnitude = IA.mag(product)
+        IA.bareinterval(Float64, -magnitude, magnitude)
     end
-    return IA.interval(Float64, result, decoration)
+    result += term
+    decoration = min(
+        decoration, IA.decoration(ac), IA.decoration(bc), IA.decoration(factor),
+        IA.decoration(product), IA.decoration(result)
+    )
+    return result, decoration
 end
+accumulate_unit_product(result::Interval, ac, bc, factor) = result + (ac * bc) * factor
 
 # Integer powers, rather than repeated interval products, preserve even powers.
 # The matrix caches all powers needed by either a range or a discarded product.
@@ -89,7 +73,7 @@ function monomial_bound(coefficients, exponents, powers, ::Type{I}) where {I <: 
     end
     return result
 end
-function polynomial_bound(p, powers, ::Type{I}) where {I <: Interval}
+function polynomial_bound(p::TaylorPolynomial, powers, ::Type{I}) where {I <: Interval}
     b = DA.valid(p).basis
     return monomial_bound(@view(p.coeffs[1:p.len]), b.exponents, powers, I)
 end
@@ -136,16 +120,22 @@ end
 function discarded_unit_bound(p, q, order, bounds, ::Type{I}) where {I <: Interval}
     if I === Interval{Float64} &&
             finite_guaranteed_coefficients(p) && finite_guaranteed_coefficients(q)
-        return discarded_unit_kernel(p, q, order, bounds)
+        state = (zero(IA.BareInterval{Float64}), IA.com)
+        result, decoration = discarded_unit_kernel(p, q, order, bounds, state)
+        return IA.interval(Float64, result, decoration)
     end
     return decorated_discarded_unit_bound(p, q, order, bounds, I)
 end
 function decorated_discarded_unit_bound(
         p, q, order, bounds, ::Type{I}
     ) where {I <: Interval}
+    return discarded_unit_kernel(p, q, order, bounds, zero(I))
+end
+
+# Both accumulators traverse the same ordered products in the original basis.
+function discarded_unit_kernel(p, q, order, bounds, result)
     basis = p.algebra.basis
     fixed, zero_bound, even_bound, odd_bound = bounds
-    result = zero(I)
     @inbounds for i in 1:p.len
         ac = p.coeffs[i]
         DA.coefficient_iszero(ac) && continue
@@ -164,7 +154,7 @@ function decorated_discarded_unit_bound(
             else
                 odd_bound
             end
-            result += (ac * bc) * factor
+            result = accumulate_unit_product(result, ac, bc, factor)
         end
     end
     return result

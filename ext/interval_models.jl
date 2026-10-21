@@ -70,12 +70,58 @@ function DA.taylor_models(box; order::Integer, names = nothing, table_bytes::Int
     DA.initialize!(order, length(box); names, table_bytes)
     return coordinate_models(box, order)
 end
+function model_scalar(::Type{I}, value::Real) where {I <: Interval}
+    value isa TaylorPolynomial && throw(
+        ArgumentError(
+            "Supply an explicit absolute remainder when constructing a model " *
+                "from a polynomial"
+        )
+    )
+    return checked_interval(DA.coefficient_convert(I, value); guaranteed = true)
+end
 function TaylorModel(value::Real, reference::TaylorModel{I}) where {I <: Interval}
     model_context(reference)
-    value isa TaylorPolynomial && throw(ArgumentError("Supply an explicit absolute remainder when constructing a model from a polynomial"))
-    c = checked_interval(DA.coefficient_convert(I, value); guaranteed = true)
+    c = model_scalar(I, value)
     p = TaylorPolynomial{I}(DA.model_valid(reference), deepcopy(c))
     return model_result(p, zero(I), reference._coordinates, reference._order)
+end
+
+# A constant has no variable dependence, but its range still carries every
+# coordinate's decoration, including unused fixed axes.
+function constant_bound(c::I, coordinates) where {I <: Interval}
+    result = zero(I)
+    for axis in coordinates.normalized
+        result *= IA.pown(asinterval(I, axis), 0)
+    end
+    return result + checked_interval(asinterval(I, c))
+end
+
+function model_scalar_sum(
+        op, a::TaylorModel{I}, value::Real, reverse = false
+    ) where {I <: Interval}
+    model_context(a)
+    c = model_scalar(I, value)
+    z = zero(I)
+    sign = reverse && op === (-) ? -one(I) : one(I)
+    p = DA.scaled(a._polynomial, sign; filter = false)
+    # Match polynomial addition's endpoint precision and own BigFloat zeros.
+    map!(coefficient -> coefficient + z, p.coeffs, p.coeffs)
+    p.coeffs[1] = op === (-) && !reverse ? p.coeffs[1] - c : p.coeffs[1] + c
+    DA.finish!(p, p.len)
+    r = reverse ? op(z, a._remainder) : op(a._remainder, z)
+    enclosure = if a._enclosure === nothing
+        nothing
+    else
+        range, scalar = model_bound(a), constant_bound(c, a._coordinates)
+        reverse ? op(scalar, range) : op(range, scalar)
+    end
+    return model_result(p, r, a._coordinates, a._order, enclosure)
+end
+for op in (:+, :-)
+    @eval begin
+        Base.$op(a::TaylorModel, b::Real) = model_scalar_sum($op, a, b)
+        Base.$op(a::Real, b::TaylorModel) = model_scalar_sum($op, b, a, true)
+    end
 end
 function TaylorModel(p::TaylorPolynomial, r::Real, reference::TaylorModel{I}) where {I <: Interval}
     model_context(reference)
@@ -117,22 +163,31 @@ function intersect_range(a, bound)
     return a._enclosure === nothing ? bound :
         IA.intersect_interval(bound, a._enclosure; dec = :auto)
 end
+polynomial_bound(a::TaylorModel, powers, I) = polynomial_bound(a._polynomial, powers, I)
+polynomial_bound(a::DA.CompiledTaylorModel, powers, I) =
+    monomial_bound(a._coefficients, a._exponents, powers, I)
+
+# Live models and owned snapshots share range arithmetic; only coefficient
+# access differs. Public queries copy the result at their ownership boundary.
+model_bound(a, powers, ::Type{I}) where {I <: Interval} =
+    intersect_range(a, polynomial_bound(a, powers, I) + a._remainder)
 function model_bound(
-        a::TaylorModel{I}, normalized = a._coordinates.normalized
+        a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}},
+        normalized = a._coordinates.normalized
     ) where {I <: Interval}
     powers = power_cache(normalized, DA.degree(a), I)
-    return intersect_range(a, polynomial_bound(a._polynomial, powers, I) + a._remainder)
+    return model_bound(a, powers, I)
 end
-function DA.enclose(a::TaylorModel)
+function DA.enclose(a::Union{TaylorModel, DA.CompiledTaylorModel})
     validated_rounding()
-    DA.model_valid(a)
+    a isa TaylorModel && DA.model_valid(a)
     return deepcopy(model_bound(a))
 end
-function DA.enclose(a::TaylorModel, physical_subbox)
+function DA.enclose(a::Union{TaylorModel, DA.CompiledTaylorModel}, physical_subbox)
     normalized = normalized_box(a, physical_subbox)
     return deepcopy(model_bound(a, normalized))
 end
-function DA.evaluate(a::TaylorModel, physical_point)
+function DA.evaluate(a::Union{TaylorModel, DA.CompiledTaylorModel}, physical_point)
     normalized = normalized_box(a, physical_point; point = true)
     return deepcopy(model_bound(a, normalized))
 end
@@ -175,7 +230,7 @@ function Base.:*(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
     DA.multiply!(retained, p, q, a._order)
     return model_result(retained, r, a._coordinates, a._order, enclosure)
 end
-for op in (:+, :-, :*, :/)
+for op in (:*, :/)
     @eval begin
         Base.$op(a::TaylorModel, b::Real) = $op(a, TaylorModel(b, a))
         Base.$op(a::Real, b::TaylorModel) = $op(TaylorModel(a, b), b)
@@ -397,33 +452,13 @@ function compile_models(models::AbstractVector{TaylorModel{I}}) where {I <: Inte
 end
 DA.compile(a::TaylorModel{I}) where {I <: Interval} = only(compile_models([a]))
 
-function snapshot_bound(a::DA.CompiledTaylorModel{I}, normalized) where {I <: Interval}
-    powers = power_cache(normalized, DA.degree(a), I)
-    return deepcopy(
-        intersect_range(
-            a, monomial_bound(a._coefficients, a._exponents, powers, I) + a._remainder
-        )
-    )
-end
 function snapshot_bounds(
         models::AbstractVector{<:DA.CompiledTaylorModel{I}}, box
     ) where {I <: Interval}
     normalized = normalized_box(first(models), box)
     powers = power_cache(normalized, maximum(DA.degree, models), I)
-    return [
-        deepcopy(
-            intersect_range(
-                m, monomial_bound(m._coefficients, m._exponents, powers, I) + m._remainder
-            )
-        ) for m in models
-    ]
+    return [deepcopy(model_bound(m, powers, I)) for m in models]
 end
-function DA.enclose(a::DA.CompiledTaylorModel)
-    validated_rounding()
-    return snapshot_bound(a, a._coordinates.normalized)
-end
-DA.enclose(a::DA.CompiledTaylorModel, box) = snapshot_bound(a, normalized_box(a, box))
-DA.evaluate(a::DA.CompiledTaylorModel, point) = snapshot_bound(a, normalized_box(a, point; point = true))
 
 # Polynomial functions enclose coefficient arithmetic only. They do not acquire
 # a Taylor-model remainder. For interval coefficients sqrt avoids interval order

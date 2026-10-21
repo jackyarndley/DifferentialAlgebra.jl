@@ -904,6 +904,70 @@ end
     end
 end
 
+function check_scalar_sum(a, value, op, reverse)
+    scalar = TaylorModel(value, a)
+    expected = reverse ? op(scalar, a) : op(a, scalar)
+    actual = reverse ? op(value, a) : op(a, value)
+    p, q = actual._polynomial, expected._polynomial
+    @test p.len == q.len
+    @test all(DA.coefficient_isequal(p.coeffs[k], q.coeffs[k]) for k in 1:p.len)
+    @test DA.coefficient_isequal(remainder(actual), remainder(expected))
+    @test DA.coefficient_isequal(enclose(actual), enclose(expected))
+    @test p.coeffs !== a._polynomial.coeffs
+    if actual._enclosure === nothing || expected._enclosure === nothing
+        @test actual._enclosure === expected._enclosure
+    else
+        @test DA.coefficient_isequal(actual._enclosure, expected._enclosure)
+    end
+    if DA.coefficient_type(p) === IB
+        for k in 1:p.len, endpoint in (IA.inf, IA.sup)
+            @test precision(endpoint(p.coeffs[k])) == precision(endpoint(q.coeffs[k]))
+            if k <= a._polynomial.len
+                @test endpoint(p.coeffs[k]) !== endpoint(a._polynomial.coeffs[k])
+            end
+        end
+    end
+    return nothing
+end
+
+@testset "Scalar sums preserve model bounds, metadata and ownership" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, _ = taylor_models(
+            [
+                IA.interval(T, -1 // 4, 1 // 4),
+                IA.setdecoration(IA.interval(T, 2), IA.def),
+            ];
+            order = 3, table_bytes = budget
+        )
+        models = (
+            1 + x, exp(x), TaylorModel(1, x),
+            TaylorModel(polynomial(x), IA.interval(T, -1 // 100, 1 // 100), x),
+        )
+        values = (
+            0, 1 // 3, IA.interval(T, -1 // 8, 1 // 4),
+            IA.setdecoration(IA.interval(T, 0), IA.def), IA.exact(0.1),
+        )
+        for a in models, value in values, op in (+, -), reverse in (false, true)
+            check_scalar_sum(a, value, op, reverse)
+        end
+        @test_throws ArgumentError x + polynomial(x)
+        @test_throws ArgumentError polynomial(x) - x
+    end
+    for (stored, working) in ((128, 512), (512, 128))
+        x = setprecision(stored) do
+            only(taylor_models([IA.interval(BigFloat, -1 // 4, 1 // 4)]; order = 3))
+        end
+        a = setprecision(stored) do
+            exp(x)
+        end
+        setprecision(working) do
+            for op in (+, -), reverse in (false, true)
+                check_scalar_sum(a, 1 // 3, op, reverse)
+            end
+        end
+    end
+end
+
 @testset "Model scalar operands require an explicit guarantee" begin
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
         x, = taylor_models([IA.interval(T, -1, 1)]; order = 3, table_bytes = budget)
