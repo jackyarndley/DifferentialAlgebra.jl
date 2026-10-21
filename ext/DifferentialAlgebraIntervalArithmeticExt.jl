@@ -132,6 +132,7 @@ for op in (:+, :-, :*, :/)
     end
 end
 
+include("interval_kernels.jl")
 include("interval_models.jl")
 include("interval_ads.jl")
 include("interval_polygon_ads.jl")

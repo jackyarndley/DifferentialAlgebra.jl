@@ -12,6 +12,7 @@ julia --startup-file=no --project=benchmark benchmark/numerical_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/cleanup.jl
 julia --startup-file=no --project=benchmark benchmark/unified_ads.jl
 julia --startup-file=no --project=benchmark benchmark/interval_models.jl
+julia --startup-file=no --project=benchmark benchmark/interval_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/polygon_ads.jl
 julia --startup-file=no --project=benchmark benchmark/continuous_ads.jl
 ```
@@ -55,6 +56,7 @@ Current Julia 1.13.2 outputs (the header identifies the measured revision):
 | Calculus, time series and solver buffers | [Measurements](measurements/cleanup.txt) |
 | Shared ADS driver | [Measurements](measurements/unified_ads.txt) |
 | Interval models | [Measurements](measurements/interval_models.txt) |
+| Interval kernel comparison | [Measurements](measurements/interval_kernels.txt) |
 | Polygon ADS | [Measurements](measurements/polygon_ads.txt) |
 | Continuous ADS | [Measurements](measurements/continuous_ads.txt) |
 
@@ -62,3 +64,12 @@ The scripts retain separate algebra setup and numerical diagnostics. Run them in
 fresh processes: preconstructing a shared suite across initializations would leave
 earlier polynomial fixtures invalid. Performance comparisons use a controlled local
 machine; portable CI checks numerical contracts and formatting.
+
+The interval kernel experiment compares normalized-coordinate powers with direct
+`IntervalArithmetic.pown`, and discarded products with the decorated fallback.
+It also measures dense model multiplication and the uncertainty expression under
+both multiplication-table budgets. Pass `--profile` to collect CPU samples and
+allocation stacks. Run paired revisions sequentially using the same script; the
+reference revision can omit the new private discarded-product comparison.
+Full-precision bounds, decorations and guarantee flags accompany each workload.
+See [kernel results](interval_kernels.md) for the measured scope and comparison.

@@ -27,7 +27,7 @@ function power_cache(box, order, ::Type{I}) where {I <: Interval}
         x = asinterval(I, box[v])
         powers[v, 1] = IA.pown(x, 0)
         for k in 1:order
-            powers[v, k + 1] = IA.pown(x, k)
+            powers[v, k + 1] = coordinate_power(x, k)
         end
     end
     return powers
@@ -245,6 +245,15 @@ end
 end
 
 function discarded_unit_bound(p, q, order, bounds, ::Type{I}) where {I <: Interval}
+    if I === Interval{Float64} &&
+            finite_guaranteed_coefficients(p) && finite_guaranteed_coefficients(q)
+        return discarded_unit_kernel(p, q, order, bounds)
+    end
+    return decorated_discarded_unit_bound(p, q, order, bounds, I)
+end
+function decorated_discarded_unit_bound(
+        p, q, order, bounds, ::Type{I}
+    ) where {I <: Interval}
     basis = p.algebra.basis
     fixed, zero_bound, even_bound, odd_bound = bounds
     result = zero(I)

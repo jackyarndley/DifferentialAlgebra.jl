@@ -85,6 +85,9 @@ end
 @safetestset "interval models" begin
     include("interval_models.jl")
 end
+@safetestset "interval kernels" begin
+    include("interval_kernels.jl")
+end
 @safetestset "validated ads" begin
     include("validated_ads.jl")
 end
