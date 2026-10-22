@@ -623,23 +623,60 @@ function large_besselk_series(n, a, c0::T) where {T <: AbstractFloat}
         end
         return nothing
     end
-    quadrature_order = max(15, cld(precision(T), 8))
     limits = (-peak * width, zero(T), T(Inf))
-    approximate, _ = QuadGK.quadgk!(
-        integrand!, zeros(T, count), limits...;
-        order = quadrature_order, rtol = sqrt(eps(T))
-    )
-    # Relative component weights also resolve orders whose derivatives are much
-    # smaller than the value or neighboring derivatives.
-    scales = map(c -> iszero(c) ? one(T) : abs(c), approximate)
-    relative_norm(v) = maximum(i -> abs(v[i]) / scales[i], eachindex(v))
+    coefficients = bessel_moments(integrand!, T, count, limits)
+    result = series(normalized_argument(a, x), coefficients; filter = false)
+    return scaled(result, c0)
+end
+
+function bessel_moments(integrand!, ::Type{T}, count, limits; norm = nothing) where {T}
+    quadrature_order = max(15, cld(precision(T), 8))
+    if norm === nothing
+        approximate, _ = QuadGK.quadgk!(
+            integrand!, zeros(T, count), limits...;
+            order = quadrature_order, rtol = sqrt(eps(T))
+        )
+        # Positive K moments can span very different scales.
+        scales = map(c -> iszero(c) ? one(T) : abs(c), approximate)
+        norm = v -> maximum(i -> abs(v[i]) / scales[i], eachindex(v))
+    end
     coefficients, error = QuadGK.quadgk!(
         integrand!, zeros(T, count), limits...;
-        order = quadrature_order, rtol = 8eps(T), norm = relative_norm
+        order = quadrature_order, rtol = 8eps(T), norm
     )
-    error <= 64eps(T) * relative_norm(coefficients) ||
-        throw(TaylorError("Scaled Bessel K derivative quadrature did not converge"))
+    error <= 64eps(T) * norm(coefficients) ||
+        throw(TaylorError("Scaled Bessel derivative quadrature did not converge"))
     coefficients ./= first(coefficients)
+    return coefficients
+end
+
+# DLMF 10.32.3: differentiating e^-x I_n(x) inserts (cos(theta)-1)^k.
+# u=theta*sqrt(x) resolves the peak, including at huge centers. A breakpoint
+# beyond the highest moment's peak keeps a long, negligible tail from hiding it.
+# Normalizing the moments cancels the common Jacobian factor 1/sqrt(x).
+function scaled_besseli_series(n, a, c0::T) where {T <: AbstractFloat}
+    x = coefficient_convert(T, constant_term(a))
+    root = sqrt(abs(x))
+    count = working_order(a.algebra) + 1
+    function integrand!(values, u)
+        theta = u / root
+        decay = 2(root * sin(theta / 2))^2
+        if !isfinite(decay)
+            fill!(values, zero(T))
+            return nothing
+        end
+        values[1] = exp(-decay) * cos(T(n) * theta)
+        for k in 1:(count - 1)
+            values[k + 1] = -decay * values[k] / k
+        end
+        return nothing
+    end
+    upper = T(π) * root
+    boundary = 2sqrt(T(count + precision(T)))
+    limits = boundary < upper ? (zero(T), boundary, upper) : (zero(T), upper)
+    # I moments can cancel through zero. An absolute norm avoids forcing
+    # relative accuracy on those components and accumulating roundoff by refinement.
+    coefficients = bessel_moments(integrand!, T, count, limits; norm = v -> maximum(abs, v))
     result = series(normalized_argument(a, x), coefficients; filter = false)
     return scaled(result, c0)
 end
@@ -656,6 +693,9 @@ function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where 
         throw(TaylorError("Bessel expansion is singular at zero"))
     c0 = domain_call(x -> scalar_bessel(fn, n, x), x)
     a.len == 1 && return TaylorPolynomial{typeof(float(c0))}(valid(a), c0)
+    fn === SpecialFunctions.besselix && x isa AbstractFloat && isfinite(x) &&
+        abs(x) >= 2 && abs(n) <= max(2, sqrt(abs(x))) &&
+        return scaled_besseli_series(n, a, c0)
     if fn in (SpecialFunctions.besselj, SpecialFunctions.besseli, SpecialFunctions.besselix)
         return regular_bessel_series(fn, n, a, c0, s)
     end

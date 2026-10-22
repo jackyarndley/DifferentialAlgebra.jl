@@ -113,6 +113,72 @@ end
     end
 end
 
+@testset "Scaled Bessel I coefficients at moderate and large centers" begin
+    references = setprecision(1024) do
+        Dict(
+            (center, n) => begin
+                c = BigFloat(center)
+                unscaled = [origin_bessel_coefficient(n, c, k, true) for k in 0:30]
+                [
+                    exp(-c) * sum(
+                        (-1)^(k - j) * unscaled[j + 1] / factorial(big(k - j))
+                            for j in 0:k
+                    ) for k in 0:30
+                ]
+            end for center in (2, 15, 50) for n in (0, 2)
+        )
+    end
+    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+        x, = variables(T, 1; order = 30, table_bytes = budget)
+        for center in (2, 15, 50), n in (0, 2), sign in (-1, 1)
+            @testset "$T, budget=$budget, center=$(sign * center), n=$n" begin
+                result = besselix(n, sign * T(center) + x)
+                expected = references[(center, n)]
+                @test coefficient_type(result) === T
+                for k in 0:30
+                    oracle = T(sign^k * expected[k + 1])
+                    floor = T === Float32 ? nextfloat(zero(T)) : zero(T)
+                    # I_0 bounds the absolute integral before cos(n*theta)
+                    # cancellation; preserve a precision-scaled absolute budget.
+                    magnitude = abs(T(references[(center, 0)][k + 1]))
+                    atol = max(floor, 100eps(T) * magnitude)
+                    @test coefficient(result, [k]) ≈ oracle rtol = 1000eps(T) atol = atol
+                end
+                value = setprecision(1024) do
+                    c = BigFloat(center + 1 // 10)
+                    exp(-c) * origin_bessel_coefficient(n, c, 0, true)
+                end
+                # The integral gives |f^(31)| <= 2^31, independently of the
+                # coefficient implementation, so include its Taylor remainder.
+                tail = T((big(1) // 5)^31 / factorial(big(31)))
+                @test result([T(sign) / 10]) ≈ T(value) rtol = 1000eps(T) atol = tail
+            end
+        end
+    end
+    for bits in (128, 384), budget in (0, 32 * 1024^2)
+        setprecision(bits) do
+            x, = variables(BigFloat, 1; order = 12, table_bytes = budget)
+            center = BigFloat(2)^1024
+            for sign in (-1, 1)
+                p = besselix(1, sign * center * (1 + x))
+                # The 1/x correction is below both working precisions. The
+                # leading large-x term has exact binomial coefficients.
+                expected = setprecision(768) do
+                    seed = sign / sqrt(2BigFloat(π) * BigFloat(center))
+                    [
+                        seed * prod(-big(1) // 2 - j for j in 0:(k - 1); init = 1) /
+                            factorial(big(k)) for k in 0:12
+                    ]
+                end
+                for k in 0:12
+                    actual = coefficient(p, [k])
+                    @test actual ≈ BigFloat(expected[k + 1]) rtol = 1000eps(BigFloat)
+                end
+            end
+        end
+    end
+end
+
 @testset "Gamma-family poles" begin
     for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
         x, = variables(T, 1; order = 3, table_bytes = budget)
