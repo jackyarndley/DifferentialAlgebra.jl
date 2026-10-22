@@ -20,6 +20,20 @@ contract_same(a::Interval, b::Interval) = sameinterval(a, b)
 contract_same(a::Real, b::Real) = a == b
 contract_same(a::AbstractVector, b::AbstractVector) = all(contract_same.(a, b))
 
+@testset "GuardedTail ignores unused automatic-frame probe degrees" begin
+    f(v) = exp(v[1])
+    square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+    options = (; order = 1, guard_order = 1, atol = 1, check_points = false, table_bytes = 0)
+    fits = (
+        adaptive_map(f, [-1, -1], [1, 1]; options...),
+        adaptive_map(f, square; directions = :axes, options...),
+        adaptive_map(f, square; options...),
+    )
+    # Degree-two exp coefficients give a tail 1/2 and extrapolated degree 3 of 1/4.
+    estimates = [only(fit.patches).error_estimate[1] for fit in fits]
+    @test estimates ≈ fill(3 / 4, 3) rtol = 8eps()
+end
+
 @testset "Satisfied outputs do not steer refinement" begin
     cases = (
         (;

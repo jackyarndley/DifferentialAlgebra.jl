@@ -78,7 +78,7 @@ function ads_next_norm(norms; fallback = zero(eltype(norms)), first_degree = 1)
 end
 
 function ads_error(p, order, ::GuardedTail)
-    norms = degree_norms(p, 0, 1)
+    norms = @view degree_norms(p, 0, 1)[1:(working_order(p.algebra) + 1)]
     tail = sum(@view norms[(order + 2):end])
     return iszero(tail) ? tail : tail + ads_next_norm(norms)
 end
