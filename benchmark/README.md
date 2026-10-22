@@ -9,6 +9,7 @@ julia --startup-file=no --project=benchmark -e 'using Pkg; Pkg.develop(path=".")
 julia --startup-file=no --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 julia --startup-file=no --project=benchmark benchmark/compound_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/numerical_kernels.jl
+julia --startup-file=no --project=benchmark benchmark/review_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/cleanup.jl
 julia --startup-file=no --project=benchmark benchmark/unified_ads.jl
 julia --startup-file=no --project=benchmark benchmark/interval_models.jl
@@ -47,12 +48,13 @@ Keep only the latest output per script in `measurements/`, with its revision in 
 header. Historical logs remain in Git history. Release changes and API migration
 instructions live in [NEWS](../NEWS.md) and the [migration guide](../docs/src/migration.md).
 
-Current outputs (headers identify the measured revision and Julia version):
+Latest recorded outputs (headers identify the measured revision and Julia version):
 
 | Script | Output |
 |:--|:--|
 | Compound kernels | [Measurements](measurements/compound_kernels.txt) |
 | Numerical kernels | [Measurements](measurements/numerical_kernels.txt) |
+| Policies, analytic kernels, model bounds and geometry | [Measurements](measurements/review_kernels.txt) |
 | Calculus, time series and solver buffers | [Measurements](measurements/cleanup.txt) |
 | Shared ADS driver | [Measurements](measurements/unified_ads.txt) |
 | Interval models | [Measurements](measurements/interval_models.txt) |
@@ -73,9 +75,14 @@ both multiplication-table budgets. Pass `--profile` to collect CPU samples and
 allocation stacks. Run paired revisions sequentially using the same script; the
 reference revision can omit the new private discarded-product comparison.
 Full-precision bounds, decorations and guarantee flags accompany each workload.
-See [kernel results](interval_kernels.md) for the measured scope and comparison.
+Keep paired comparisons, accuracy tradeoffs and validation results in the PR
+description; the measurement files contain one complete run per script.
 
 The interval cleanup script measures scalar addition/subtraction, model construction,
 and live/snapshot range queries. Pass `--bigfloat` to include 256-bit endpoints.
-Every case prints bounds and metadata for comparison between revisions. See
-[cleanup results](interval_cleanup.md) for the paired measurements.
+Every case prints bounds and metadata for comparison between revisions.
+
+`review_kernels.jl` covers tiny arithmetic, both table budgets, hypotenuses,
+scaled Bessel functions, certificate shifts, Duffing expansion/integration,
+eigenpairs and ordinary box/polygon construction. The Duffing cases report
+accepted steps and an independent energy check alongside runtime and storage.

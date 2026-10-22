@@ -1,111 +1,25 @@
-Interval kernel comparison
-Driver revision: c81d2fb6128c7d2f50e6750285f9c1813a7dfb63
-Kernel revision: daec28a; baseline: cec303d (numerically identical to f00e583)
-Host: Windows; Intel Core i7-12700; logical CPU 2; AboveNormal process priority
-Sequential fresh processes after validation; one Julia thread.
-Trials request 1000 samples and a 1.0-second budget through measurement.jl.
-
-before / Julia 113
-(julia = v"1.13.2", revision = "cec303dd8c267721139e91685e7da94f457606d9", cpu = "alderlake", threads = 1, packages = ["DifferentialAlgebra=0.2.0", "BenchmarkTools=1.8.0", "IntervalArithmetic=1.0.12"])
+(julia = v"1.13.2", revision = "a797168515a2bd08ad820a13d5a280d44bd7a23d", cpu = "alderlake", threads = 1, packages = ["DifferentialAlgebra=0.2.0", "BenchmarkTools=1.8.0", "IntervalArithmetic=1.0.12"])
 
 Multiplication table budget: 0
-Dense model product: (seconds = 0.0003184, bytes = 14807, allocations = 186, evals = 1, first_seconds = 0.0038585, compilation = 0.0035007)
-Normalized powers, reference: (seconds = 6.0e-6, bytes = 12656, allocations = 182, evals = 7, first_seconds = 0.0247367, compilation = 0.0247018)
-Normalized powers, kernel: (seconds = 6.083333333333333e-6, bytes = 12656, allocations = 182, evals = 6, first_seconds = 0.0035826, compilation = 0.0035514)
-Dense polynomial range: (seconds = 1.69e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0089292, compilation = 0.0088739)
-Discarded products: (seconds = 0.0002858, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0097383, compilation = 0.0092847)
+Dense model product: (seconds = 0.0002201, bytes = 3287, allocations = 6, evals = 1, first_seconds = 0.0046624, compilation = 0.0043718)
+Normalized powers, reference: (seconds = 3.4875e-6, bytes = 12656, allocations = 182, evals = 8, first_seconds = 0.0170246, compilation = 0.01698)
+Normalized powers, kernel: (seconds = 2.3236514522821577e-7, bytes = 1136, allocations = 2, evals = 482, first_seconds = 0.0025701, compilation = 0.0025556)
+Discarded products, decorated reference: (seconds = 0.0002223, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0037005, compilation = 0.0034283)
+Dense polynomial range: (seconds = 1.07e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0053559, compilation = 0.0053243)
+Discarded products: (seconds = 0.0001729, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0062986, compilation = 0.0060867)
 Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
 Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 8.12e-5, bytes = 113705, allocations = 1120, evals = 1, first_seconds = 0.0061737, compilation = 0.0058712)
+Uncertainty expression: (seconds = 4.11e-5, bytes = 53913, allocations = 217, evals = 1, first_seconds = 0.0034681, compilation = 0.00331)
 Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
 
 Multiplication table budget: 33554432
-Dense model product: (seconds = 0.0002686, bytes = 14807, allocations = 186, evals = 1, first_seconds = 0.0003893, compilation = 0.0)
-Normalized powers, reference: (seconds = 3.75e-6, bytes = 12656, allocations = 182, evals = 8, first_seconds = 9.3e-6, compilation = 0.0)
-Normalized powers, kernel: (seconds = 4.85e-6, bytes = 12656, allocations = 182, evals = 8, first_seconds = 7.6e-6, compilation = 0.0)
-Dense polynomial range: (seconds = 1.67e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 3.89e-5, compilation = 0.0)
-Discarded products: (seconds = 0.0002946, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0006116, compilation = 0.0)
+Dense model product: (seconds = 0.0002182, bytes = 3287, allocations = 6, evals = 1, first_seconds = 0.0002546, compilation = 0.0)
+Normalized powers, reference: (seconds = 3.3625e-6, bytes = 12656, allocations = 182, evals = 8, first_seconds = 1.22e-5, compilation = 0.0)
+Normalized powers, kernel: (seconds = 2.2894211576846308e-7, bytes = 1136, allocations = 2, evals = 501, first_seconds = 2.5e-6, compilation = 0.0)
+Discarded products, decorated reference: (seconds = 0.0002185, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0002542, compilation = 0.0)
+Dense polynomial range: (seconds = 1.07e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 1.7e-5, compilation = 0.0)
+Discarded products: (seconds = 0.0001734, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0001988, compilation = 0.0)
 Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
 Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 6.71e-5, bytes = 113705, allocations = 1120, evals = 1, first_seconds = 0.0001253, compilation = 0.0)
+Uncertainty expression: (seconds = 4.0e-5, bytes = 53897, allocations = 217, evals = 1, first_seconds = 7.47e-5, compilation = 0.0)
 Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
-after / Julia 113
-(julia = v"1.13.2", revision = "c81d2fb6128c7d2f50e6750285f9c1813a7dfb63", cpu = "alderlake", threads = 1, packages = ["DifferentialAlgebra=0.2.0", "BenchmarkTools=1.8.0", "IntervalArithmetic=1.0.12"])
-
-Multiplication table budget: 0
-Dense model product: (seconds = 0.0002698, bytes = 3287, allocations = 6, evals = 1, first_seconds = 0.0066989, compilation = 0.0062863)
-Normalized powers, reference: (seconds = 5.0e-6, bytes = 12656, allocations = 182, evals = 7, first_seconds = 0.0484142, compilation = 0.0483001)
-Normalized powers, kernel: (seconds = 2.9962406015037597e-7, bytes = 1136, allocations = 2, evals = 266, first_seconds = 0.0072661, compilation = 0.0072207)
-Discarded products, decorated reference: (seconds = 0.0002306, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0062477, compilation = 0.0056972)
-Dense polynomial range: (seconds = 1.2e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0061441, compilation = 0.0061081)
-Discarded products: (seconds = 0.0001617, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0037051, compilation = 0.0034785)
-Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
-Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 6.27e-5, bytes = 60697, allocations = 292, evals = 1, first_seconds = 0.0074918, compilation = 0.0037928)
-Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
-Multiplication table budget: 33554432
-Dense model product: (seconds = 0.0002451, bytes = 3287, allocations = 6, evals = 1, first_seconds = 0.0004513, compilation = 0.0)
-Normalized powers, reference: (seconds = 4.1714285714285715e-6, bytes = 12656, allocations = 182, evals = 7, first_seconds = 3.12e-5, compilation = 0.0)
-Normalized powers, kernel: (seconds = 2.559659090909091e-7, bytes = 1136, allocations = 2, evals = 352, first_seconds = 2.0e-6, compilation = 0.0)
-Discarded products, decorated reference: (seconds = 0.0002802, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0002849, compilation = 0.0)
-Dense polynomial range: (seconds = 1.44e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 2.12e-5, compilation = 0.0)
-Discarded products: (seconds = 0.000211, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.000291, compilation = 0.0)
-Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
-Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 5.14e-5, bytes = 60713, allocations = 292, evals = 1, first_seconds = 0.0001268, compilation = 0.0)
-Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
-before / Julia 110
-(julia = v"1.10.12", revision = "cec303dd8c267721139e91685e7da94f457606d9", cpu = "alderlake", threads = 1, packages = ["DifferentialAlgebra=0.2.0", "BenchmarkTools=1.8.0", "IntervalArithmetic=1.0.12"])
-
-Multiplication table budget: 0
-Dense model product: (seconds = 0.0004536, bytes = 17696, allocations = 363, evals = 1, first_seconds = 0.7754255, compilation = missing)
-Normalized powers, reference: (seconds = 8.433333333333334e-6, bytes = 15488, allocations = 361, evals = 6, first_seconds = 0.0259907, compilation = missing)
-Normalized powers, kernel: (seconds = 4.528571428571428e-6, bytes = 15488, allocations = 361, evals = 7, first_seconds = 0.0036471, compilation = missing)
-Dense polynomial range: (seconds = 1.12e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0056067, compilation = missing)
-Discarded products: (seconds = 0.0002442, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0065532, compilation = missing)
-Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
-Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 7.31e-5, bytes = 127504, allocations = 1865, evals = 1, first_seconds = 0.6377205, compilation = missing)
-Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
-Multiplication table budget: 33554432
-Dense model product: (seconds = 0.0002894, bytes = 17696, allocations = 363, evals = 1, first_seconds = 0.0003497, compilation = missing)
-Normalized powers, reference: (seconds = 4.642857142857143e-6, bytes = 15488, allocations = 361, evals = 7, first_seconds = 6.1e-6, compilation = missing)
-Normalized powers, kernel: (seconds = 4.671428571428572e-6, bytes = 15488, allocations = 361, evals = 7, first_seconds = 7.1e-6, compilation = missing)
-Dense polynomial range: (seconds = 1.12e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 1.56e-5, compilation = missing)
-Discarded products: (seconds = 0.0002925, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0002699, compilation = missing)
-Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
-Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 9.26e-5, bytes = 127504, allocations = 1865, evals = 1, first_seconds = 0.0001222, compilation = missing)
-Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
-after / Julia 110
-(julia = v"1.10.12", revision = "c81d2fb6128c7d2f50e6750285f9c1813a7dfb63", cpu = "alderlake", threads = 1, packages = ["DifferentialAlgebra=0.2.0", "BenchmarkTools=1.8.0", "IntervalArithmetic=1.0.12"])
-
-Multiplication table budget: 0
-Dense model product: (seconds = 0.0003952, bytes = 3296, allocations = 3, evals = 1, first_seconds = 0.5736012, compilation = missing)
-Normalized powers, reference: (seconds = 7.0e-6, bytes = 15488, allocations = 361, evals = 4, first_seconds = 0.0233669, compilation = missing)
-Normalized powers, kernel: (seconds = 3.6862745098039214e-7, bytes = 1088, allocations = 1, evals = 204, first_seconds = 0.0049222, compilation = missing)
-Discarded products, decorated reference: (seconds = 0.0003892, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0070463, compilation = missing)
-Dense polynomial range: (seconds = 1.54e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0146879, compilation = missing)
-Discarded products: (seconds = 0.0002381, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0096909, compilation = missing)
-Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
-Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 5.15e-5, bytes = 61264, allocations = 209, evals = 1, first_seconds = 0.6461311, compilation = missing)
-Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
-Multiplication table budget: 33554432
-Dense model product: (seconds = 0.000251, bytes = 3296, allocations = 3, evals = 1, first_seconds = 0.0002855, compilation = missing)
-Normalized powers, reference: (seconds = 4.457142857142857e-6, bytes = 15488, allocations = 361, evals = 7, first_seconds = 1.23e-5, compilation = missing)
-Normalized powers, kernel: (seconds = 2.450363196125908e-7, bytes = 1088, allocations = 1, evals = 413, first_seconds = 2.3e-6, compilation = missing)
-Discarded products, decorated reference: (seconds = 0.0002422, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0002652, compilation = missing)
-Dense polynomial range: (seconds = 1.14e-5, bytes = 0, allocations = 0, evals = 1, first_seconds = 1.46e-5, compilation = missing)
-Discarded products: (seconds = 0.0002123, bytes = 0, allocations = 0, evals = 1, first_seconds = 0.0002391, compilation = missing)
-Dense model range: (lower = -0.03994341000000895, upper = 0.04006991000000903, decoration = com, guaranteed = true)
-Dense product remainder: (lower = -0.039070910000008945, upper = 0.03920291000000902, decoration = com, guaranteed = true)
-Uncertainty expression: (seconds = 5.22e-5, bytes = 61264, allocations = 209, evals = 1, first_seconds = 0.0001116, compilation = missing)
-Uncertainty range / remainder: ((lower = 1.662616441187617, upper = 1.7238016945161287, decoration = com, guaranteed = true), (lower = -3.8360266706674716e-7, upper = 4.083095687001098e-7, decoration = com, guaranteed = true))
-
