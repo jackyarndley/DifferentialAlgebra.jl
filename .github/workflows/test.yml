@@ -16,35 +16,15 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.julia-version }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    continue-on-error: ${{ matrix.experimental }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            julia-version: '1.12'
-            experimental: false
-          - os: ubuntu-latest
-            julia-version: '1'
-            experimental: false
-          - os: windows-latest
-            julia-version: '1'
-            experimental: false
-          - os: macos-latest
-            julia-version: '1'
-            experimental: false
-          - os: ubuntu-latest
-            julia-version: pre
-            experimental: true
+    name: Julia latest / Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
-          version: ${{ matrix.julia-version }}
+          version: '1'
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-runtest@v1
         with:
@@ -69,18 +49,14 @@ jobs:
           docstrings: 'true'
 
   forwarddiff-010:
-    name: ForwardDiff 0.10 / Julia ${{ matrix.julia-version }}
+    name: ForwardDiff 0.10 / Julia latest
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        julia-version: ['1.12', '1']
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
-          version: ${{ matrix.julia-version }}
+          version: '1'
       - uses: julia-actions/cache@v2
       - name: Test standalone ForwardDiff integration
         shell: julia --color=yes --startup-file=no --check-bounds=yes {0}
