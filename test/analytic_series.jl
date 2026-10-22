@@ -410,6 +410,30 @@ end
         @test iszero(hypot(zero(x), zero(x)))
         @test_throws DifferentialAlgebra.TaylorError hypot(x, zero(x))
         @test_throws DifferentialAlgebra.TaylorError hypot(x, x)
+        x, = variables(1; order = 2, table_bytes = budget)
+        scale = 1.0e-170
+        for result in (hypot(scale + x, scale + x / 2), hypot(scale + x / 2, scale + x))
+            @test isfinite(result)
+            @test constant_term(result) ≈ sqrt(2) * scale
+            @test coefficient(result, [1]) ≈ 3 / (2sqrt(2)) rtol = 5.0e-14
+            # h''(0)/2 = (a'b-ab')²/(2hypot(a,b)³), evaluated without tiny squares.
+            @test coefficient(result, [2]) ≈ inv(16sqrt(2) * scale) rtol = 5.0e-14
+        end
+    end
+end
+
+@testset "NaN constants propagate through analytic function families" begin
+    for T in (Float32, Float64, BigFloat)
+        variables(T, 1; order = 3)
+        p = TaylorPolynomial{T}(T(NaN))
+        for fn in (
+                exp, log, sqrt, sin, cos, gamma, loggamma, digamma,
+                x -> besselj(0, x), x -> besselix(2, x),
+            )
+            result = fn(p)
+            @test coefficient_type(result) === T
+            @test isnan(constant_term(result))
+        end
     end
 end
 

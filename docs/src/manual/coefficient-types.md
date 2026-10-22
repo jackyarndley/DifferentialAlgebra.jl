@@ -73,6 +73,7 @@ An analytic expansion also requires a regular center, such as a nonzero
 constant for a reciprocal. Numerical precision and range are properties of the
 chosen scalar type. An undefined real analytic expansion raises `TaylorError`,
 including gamma poles, negative real logarithms, and singular time-series centers.
+NaN constants propagate through polynomial elementary and special functions.
 Invalid orders and other API parameters raise `ArgumentError`. A zero scalar base
 raised to a polynomial or time series is identically zero near a positive exponent;
 a varying exponent centered at zero is rejected. Negative scalar bases require a

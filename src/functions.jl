@@ -58,7 +58,7 @@ end
 function domain_call(f, x)
     return try
         value = f(x)
-        value isa Real && isnan(value) &&
+        value isa Real && isnan(value) && !isnan(x) &&
             throw(TaylorError("The real expansion is undefined at $x"))
         value
     catch err
@@ -282,6 +282,7 @@ Base.inv(a::TaylorPolynomial) = quotient(one(coefficient_type(a)), a)
 function square_root(a::TaylorPolynomial, c0; filter::Bool = true)
     ctx = valid(a); basis = ctx.basis
     a.len == 1 && return finish!(TaylorPolynomial{typeof(c0)}([c0], 1, ctx), 1; filter)
+    isempty(basis.products) && return tablefree_square_root(a, c0; filter)
     n = basis.ends[working_order(ctx) + 1]
     result = allocate_undef(ctx, typeof(c0), n)
     result.coeffs[1] = c0
@@ -297,6 +298,33 @@ function square_root(a::TaylorPolynomial, c0; filter::Bool = true)
             value -= i == j ? term : term + term
         end
         result.coeffs[k] = value / denominator
+    end
+    return finish!(result, n; filter)
+end
+
+# The same triangular square-root recurrence, ranking complementary exponents
+# directly when a multiplication table is unavailable. Used for tiny hypot centers,
+# where normalizing before the root would overflow representable derivatives.
+function tablefree_square_root(a::TaylorPolynomial, c0; filter::Bool = true)
+    ctx = valid(a); basis = ctx.basis
+    n = basis.ends[working_order(ctx) + 1]
+    result = allocate_undef(ctx, typeof(c0), n)
+    result.coeffs[1] = c0
+    powers = zeros(Int, basis.variables)
+    @inbounds for k in 2:n
+        value = coefficient_at(a, k)
+        for i in 2:(k - 1)
+            basis.degrees[i] > basis.degrees[k] ÷ 2 && break
+            for v in eachindex(powers)
+                powers[v] = basis.exponents[v, k] - Int(basis.exponents[v, i])
+            end
+            any(<(0), powers) && continue
+            j = rank(basis, powers, basis.degrees[k] - basis.degrees[i])
+            i > j && continue
+            term = result.coeffs[i] * result.coeffs[j]
+            value -= i == j ? term : term + term
+        end
+        result.coeffs[k] = value / (c0 + c0)
     end
     return finish!(result, n; filter)
 end
@@ -356,16 +384,8 @@ function cycle_coefficients(values, n)
     return coefficients
 end
 function trig_coefficients(s0, c0, n)
-    T = typeof(s0)
-    s, c = Vector{T}(undef, n + 1), Vector{T}(undef, n + 1)
     sine, cosine = (s0, c0, -s0, -c0), (c0, -s0, -c0, s0)
-    factor = one(s0)
-    @inbounds for k in 0:n
-        index = mod(k, 4) + 1
-        s[k + 1], c[k + 1] = sine[index] * factor, cosine[index] * factor
-        factor /= degree_factor(factor, k + 1)
-    end
-    return s, c
+    return cycle_coefficients(sine, n), cycle_coefficients(cosine, n)
 end
 function trig_series_pair(a::TaylorPolynomial)
     s0, c0 = sincos(constant_term(a))
@@ -477,13 +497,21 @@ function dominant_hypot(a::TaylorPolynomial, b::TaylorPolynomial, a0, b0)
         throw(TaylorError("hypot is not analytic at the origin"))
     end
     iszero(b) && return scaled(a, sign(a0) * one(hypot(a0, b0)))
-    # The dominant coordinate stays outside the root: dividing both inputs by
-    # a tiny center can overflow their squared slopes before rescaling them.
-    ratio = quotient(b, a; filter = false)
-    squares = product(ratio, ratio; filter = false)
-    squares.coeffs[1] += one(coefficient_type(squares))
-    factor = root_series(squares, 2; filter = false)
-    return scaled(product(a, factor; filter = false), sign(a0))
+    scale = abs(a0)
+    tiny = scale isa AbstractFloat && scale < sqrt(floatmin(typeof(scale))) &&
+        max(coefficient_norm(a, 0), coefficient_norm(b, 0)) >
+        scale * sqrt(floatmax(typeof(scale)))
+    left, right = tiny ? (a, b) :
+        (scaled(a, inv(scale); filter = false), scaled(b, inv(scale); filter = false))
+    left, right = product(left, left; filter = false), product(right, right; filter = false)
+    R = promote_type(coefficient_type(left), coefficient_type(right))
+    squares = weighted_sum!(
+        allocate_undef(a.algebra, R, max(left.len, right.len)),
+        left, one(R), right, one(R); filter = false
+    )
+    # The scalar hypot preserves a tiny constant whose square underflows.
+    return tiny ? square_root(squares, hypot(a0, b0)) :
+        scaled(root_series(squares, 2; filter = false), scale)
 end
 Base.hypot(a::TaylorPolynomial, b::Real) = hypot(a, scalar_argument(a, b))
 Base.hypot(a::Real, b::TaylorPolynomial) = hypot(scalar_argument(b, a), b)
@@ -529,7 +557,10 @@ function SpecialFunctions.loggamma(a::TaylorPolynomial)
 end
 function SpecialFunctions.gamma(a::TaylorPolynomial)
     value, sign = domain_call(SpecialFunctions.logabsgamma, gamma_argument(a))
-    return scaled(exponential(gamma_series(a, value; filter = false); filter = false), sign)
+    return scaled(
+        exponential(gamma_series(a, value; filter = false); filter = false),
+        isnan(value) ? one(sign) : sign
+    )
 end
 function polygamma_series(a::TaylorPolynomial, n::Integer)
     n >= 0 || throw(ArgumentError("Invalid polygamma order"))

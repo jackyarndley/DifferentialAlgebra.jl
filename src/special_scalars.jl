@@ -47,10 +47,10 @@ function scalar_psi(n::Integer, x::BigFloat)
     throw(TaylorError("Polygamma sum did not converge"))
 end
 
-scalar_bessel(fn, n::Integer, x::Real) = fn(n, x)
+scalar_bessel(fn, n::Integer, x::Real) = isnan(x) ? float(x) : fn(n, x)
 # AMOS promotes Float32 arguments. Round scalar seeds back to their requested
 # coefficient precision rather than promoting the entire polynomial to Float64.
-scalar_bessel(fn, n::Integer, x::Float32) = Float32(fn(n, x))
+scalar_bessel(fn, n::Integer, x::Float32) = isnan(x) ? x : Float32(fn(n, x))
 function scalar_bessel(fn, n::Integer, x::BigFloat)
     fn in (SpecialFunctions.besselj, SpecialFunctions.bessely) && return fn(n, x)
     n = abs(n)
