@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            julia-version: '1.10'
+            julia-version: '1.12'
             experimental: false
           - os: ubuntu-latest
             julia-version: '1'
@@ -75,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ['1.10', '1']
+        julia-version: ['1.12', '1']
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3

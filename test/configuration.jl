@@ -40,9 +40,9 @@ end
 
 
 include("support/processes.jl")
-@testset "Task-local temporary algebras and numerical policies" begin
-    script = """
-    using DifferentialAlgebra, Test, Logging, LinearAlgebra, SpecialFunctions
+@testset "Inherited temporary algebras and shared numerical policies" begin
+    script = raw"""
+    using DifferentialAlgebra, Test, Logging, LinearAlgebra, SpecialFunctions, Distributed
     using IntervalArithmetic
     const DA = DifferentialAlgebra
     @assert Threads.nthreads() == 4
@@ -50,6 +50,7 @@ include("support/processes.jl")
     function paused(f, verify)
         entered, release = Channel{Nothing}(1), Channel{Nothing}(1)
         worker = Threads.@spawn f(() -> (put!(entered, nothing); take!(release)))
+        bind(entered, worker)
         take!(entered)
         try
             verify()
@@ -76,8 +77,8 @@ include("support/processes.jl")
         end
     end
     paused(() -> begin
-        @test truncation_order() == 4
-        @test coefficient(x^4, [4]) == 1
+        @test truncation_order() == 2
+        @test coefficient(x^4, [4]) == 0
     end) do hold
         with_order(2) do
             hold()
@@ -85,23 +86,37 @@ include("support/processes.jl")
         end
     end
     paused(() -> begin
-        @test coefficient_tolerance() == 0
-        @test coefficient(small + 0, [1]) == 1e-4
+        @test coefficient_tolerance() == 0.01
+        @test coefficient(small + 0, [1]) == 0
     end) do hold
         set_coefficient_tolerance!(0.01)
         hold()
         @assert coefficient_tolerance() == 0.01
     end
+    set_coefficient_tolerance!(0)
 
-    # New tasks start with the global basis's full order and zero tolerance.
+    # Policies belong to the algebra, including tasks used by parallel loops.
     set_truncation_order!(2)
     set_coefficient_tolerance!(0.001)
     @test fetch(Threads.@spawn begin
-        @assert truncation_order() == 4 && coefficient_tolerance() == 0
-        @assert coefficient(quartic + 0, [4]) == 1
-        @assert coefficient(small + 0, [1]) == 1e-4
+        @assert truncation_order() == 2 && coefficient_tolerance() == 0.001
+        @assert coefficient(quartic + 0, [4]) == 0
+        @assert coefficient(small + 0, [1]) == 0
         true
     end)
+    orders = zeros(Int, 4)
+    Threads.@threads for i in eachindex(orders)
+        orders[i] = degree((1 + x)^3)
+    end
+    @test orders == fill(2, 4)
+    @test fetch(@async truncation_order()) == 2
+    @test take!(Channel{Int}(1) do channel
+        put!(channel, truncation_order())
+    end) == 2
+    @test asyncmap(_ -> truncation_order(), 1:4) == fill(2, 4)
+    @test with_order(1) do
+        fetch(Threads.@spawn degree((1 + x)^3)) == 1
+    end
     @test truncation_order() == 2 && coefficient_tolerance() == 0.001
     @test_throws ErrorException with_order(1) do
         set_coefficient_tolerance!(0.002)
@@ -122,8 +137,7 @@ include("support/processes.jl")
         tolerance = BigFloat("1e-400")
         set_coefficient_tolerance!(tolerance)
         @test coefficient(tiny + 0, [1]) == 0
-        @test fetch(Threads.@spawn coefficient(tiny + 0, [1])) ==
-            coefficient(tiny, [1])
+        @test fetch(Threads.@spawn coefficient(tiny + 0, [1])) == 0
         @test coefficient_tolerance() == tolerance
     end
     set_coefficient_tolerance!(0)
@@ -131,13 +145,17 @@ include("support/processes.jl")
     jobs = [Threads.@spawn begin
         order = mod(index, 4) + 1
         tolerance = iseven(index) ? 0.001 : 0.0
-        with_order(order) do
-            set_coefficient_tolerance!(tolerance)
-            for _ in 1:100
-                q = quartic + small
-                @assert coefficient(q, [4]) == (order == 4 ? 1 : 0)
-                @assert coefficient(q, [1]) == (tolerance == 0 ? 1e-4 : 0)
-                yield()
+        DA.with_algebra(4, 1) do _
+            u = variable(1)
+            high, low = u^4, 1e-4u
+            with_order(order) do
+                set_coefficient_tolerance!(tolerance)
+                for _ in 1:100
+                    q = high + low
+                    @assert coefficient(q, [4]) == (order == 4 ? 1 : 0)
+                    @assert coefficient(q, [1]) == (tolerance == 0 ? 1e-4 : 0)
+                    yield()
+                end
             end
         end
         true
@@ -150,9 +168,10 @@ include("support/processes.jl")
         c = 2one(u)
         mgf = exp(2u + v + u^2 / 2 + 2v^2)
         @test fetch(Threads.@spawn begin
-            # These objects belong to the temporary two-variable context,
-            # while this task's factories still use the one-variable default.
-            @assert nvariables() == 1
+            # Factories in the child inherit the temporary context too.
+            @assert nvariables() == 2
+            @assert variable(1).algebra === u.algebra
+            @assert (u + one(TaylorPolynomial{Float64})).algebra === u.algebra
             constants = (zero(u), one(u), sin(c), cos(c), sinh(c),
                 SpecialFunctions.besselk(1, c), zero(u)^0.5)
             @assert all(p -> p.algebra === u.algebra, constants)
@@ -217,6 +236,26 @@ include("support/processes.jl")
         @test value isa Interval ? in_interval(9//16, value) : value ≈ 9//16
         @test nvariables() == 1 && variable(1).algebra === root
     end
+
+    # Each worker configures its own process-wide default. Subsequent remote
+    # calls run in new tasks and must retain that process's numerical policy.
+    workers = addprocs(1; exeflags = `--startup-file=no --project=$(Base.active_project())`)
+    try
+        @everywhere workers begin
+            using DifferentialAlgebra
+            variables(1; order = 4)
+            set_truncation_order!(2)
+            set_coefficient_tolerance!(0.001)
+        end
+        @test remotecall_fetch(truncation_order, only(workers)) == 2
+        @test remotecall_fetch(coefficient_tolerance, only(workers)) == 0.001
+        @test remotecall_fetch(only(workers)) do
+            p = 1 + 1e-4variable(1) + variable(1)^3
+            degree(p) == 0
+        end
+    finally
+        rmprocs(workers)
+    end
     """
-    @test fresh_julia(script; threads = 4, timeout = 240)
+    @test fresh_julia(script; threads = 4, timeout = 600)
 end

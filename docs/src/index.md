@@ -10,7 +10,7 @@ a parameter of `TaylorPolynomial{T}`; see [Coefficient types](manual/coefficient
 
 ## Installation
 
-Julia 1.10 or later is required.
+Julia 1.12 or later is required.
 
 ```julia
 using Pkg

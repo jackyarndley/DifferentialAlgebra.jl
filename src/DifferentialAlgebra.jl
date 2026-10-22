@@ -4,6 +4,7 @@ import Random
 using LinearAlgebra: LinearAlgebra, I, lu
 import SpecialFunctions
 import QuadGK
+import Base.ScopedValues
 
 export TaylorPolynomial, Monomial
 export variables, variable, coefficient, constant_term, differentiate, integrate

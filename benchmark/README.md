@@ -18,8 +18,8 @@ julia --startup-file=no --project=benchmark benchmark/polygon_ads.jl
 julia --startup-file=no --project=benchmark benchmark/continuous_ads.jl
 ```
 
-Use separate environments for Julia 1.10 and latest stable. The setup uses
-`Pkg.develop`, including on Julia 1.10. Shared compatibility entries follow the
+Use separate environments for Julia 1.12 and latest stable. The setup uses
+`Pkg.develop`. Shared compatibility entries follow the
 package's integration bounds; see [Contributing](../docs/src/contributing.md).
 
 All scripts use `measurement.jl`. Each log starts with the loaded package's full
@@ -37,7 +37,6 @@ Existing buffer workloads overwrite their output on every call.
 First-call compilation is measured before tuning the warmed loop. Package loading
 and harness compilation are excluded. Later workloads reuse earlier specializations,
 so compilation rows describe their script order rather than isolated function costs.
-Julia 1.10 reports first-call elapsed time and `missing` for the compilation field.
 
 Run paired revisions sequentially on the same machine with matching dependencies
 and the same script/harness source. Compare allocations and numerical results as

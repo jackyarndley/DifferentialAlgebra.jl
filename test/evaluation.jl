@@ -17,7 +17,7 @@ using .IntervalTestSupport: IA, interval_contains
                     (; complete, incomplete, dimensions = nvariables(), order = max_order())
                 end
             )
-            @test result.dimensions == 1 && result.order == 2
+            @test result.dimensions == 2 && result.order == 5
             @test all(p -> p.algebra === x.algebra, result.complete)
             @test result.incomplete.algebra === x.algebra
             @test isequal(result.complete, [x / 2 - y^2 / 2, y])

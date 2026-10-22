@@ -8,7 +8,7 @@ From a repository checkout:
 julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 ```
 
-Tests run with bounds checking on Linux with Julia `1.10` and `1` (latest stable),
+Tests run with bounds checking on Linux with Julia `1.12` and `1` (latest stable),
 and on Windows and macOS with latest stable. A non-blocking Linux job exercises
 Julia prereleases. Runic runs independently of the numerical tests. Examples
 have a separate dependency environment.
@@ -32,9 +32,9 @@ so the integration environments retain that bound. IntervalArithmetic stays on
 1.0.12 or later 1.0 patches because the validated extension checks its internal
 rounding configuration;
 review that check before allowing a new minor release. Benchmark setup uses
-`Pkg.develop(path=".")`, which also works on Julia 1.10.
+`Pkg.develop(path=".")` on all supported Julia versions.
 Separate CI jobs run the polygon and derivative tests with ForwardDiff 0.10.36
-on Julia 1.10 and latest stable, without the SciML or interval integrations.
+on Julia 1.12 and latest stable, without the SciML or interval integrations.
 
 The test suite uses Julia code and inline inputs. Function-coefficient tests
 combine scalar derivatives from ForwardDiff with an independent multinomial

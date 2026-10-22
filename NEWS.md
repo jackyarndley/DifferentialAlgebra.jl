@@ -5,9 +5,12 @@
 This release removes legacy APIs and tightens numerical and ownership contracts.
 See the [migration guide](docs/src/migration.md) for replacement calls and defaults.
 
-- Temporary construction algebras, working orders and coefficient tolerances are
-  task-local. Independent ADS builds may overlap read-only polynomial calculations.
-  Global initialization still invalidates polynomials of the old default algebra.
+Julia 1.12 or later is required.
+
+- Temporary construction algebras are scoped and inherited by child tasks.
+  Working orders and coefficient tolerances belong to their owning algebra.
+  Configure them before parallel calculations; independent ADS builds retain
+  private settings. Global initialization still invalidates the old default.
 - Scalar conversion rejects nonconstant polynomials. Structural `isequal` and
   `hash` include stored coefficients; ordinary comparisons retain their documented
   constant-part semantics. Unsigned subtraction and reciprocal expansions preserve
@@ -34,9 +37,9 @@ See the [migration guide](docs/src/migration.md) for replacement calls and defau
   solver interfaces while preserving buffer ownership and coefficient precision.
 - Tests isolate subjects with SafeTestsets, capture fresh-process failures, and
   exercise independent scalar/combinatorial oracles and both multiplication paths.
-  CI covers Julia 1.10, current stable on Linux/Windows/macOS, and prereleases.
+  CI covers Julia 1.12, current stable on Linux/Windows/macOS, and prereleases.
 
-Julia 1.10 and optional integrations remain supported. SciML integration environments
+Optional integrations remain supported. SciML integration environments
 require OrdinaryDiffEqCore 4.18, DiffEqBase 7.21.2 and SciMLBase 3.53 or later compatible
 releases. Standalone ForwardDiff supports 0.10.36 and 1. IntervalArithmetic is limited
 to compatible 1.0 patches from 1.0.12 while its rounding configuration is checked.

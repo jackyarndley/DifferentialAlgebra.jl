@@ -9,7 +9,7 @@ operations use that type's arithmetic and mathematical functions.
 
 ## Installation
 
-Requires Julia 1.10 or later. Install directly from GitHub:
+Requires Julia 1.12 or later. Install directly from GitHub:
 
 ```julia
 using Pkg

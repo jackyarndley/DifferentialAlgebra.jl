@@ -1,60 +1,26 @@
 mutable struct Algebra
     basis::MonomialBasis
     names::Vector{String}
-    active::Bool
+    cutoff::Int
+    epsilon::Float64
+    big_epsilon::Union{Nothing, BigFloat}
+    @atomic active::Bool
 end
 const CURRENT_ALGEBRA = Ref{Union{Nothing, Algebra}}(nothing)
 const ALGEBRA_LOCK = ReentrantLock() # Serializes algebra initialization.
 
-# Temporary contexts are strong scope bindings. Policies for the shared global
-# default use weak references so an idle task cannot retain obsolete tables.
-mutable struct AlgebraState
-    const owner::Union{Algebra, WeakRef}
-    cutoff::Int
-    epsilon::Float64
-    big_epsilon::Union{Nothing, BigFloat}
-    const parent::Union{Nothing, AlgebraState}
-end
-const ALGEBRA_STATE_KEY = gensym(:DifferentialAlgebraState)
-@inline function algebra_state()
-    state = get(task_local_storage(), ALGEBRA_STATE_KEY, nothing)
-    return state::Union{Nothing, AlgebraState}
-end
-@inline function state_algebra(state::AlgebraState)
-    owner = state.owner
-    return owner isa Algebra ? owner : owner.value::Union{Nothing, Algebra}
-end
+# Only temporary factories need a scope binding. Native scoped values preserve
+# the binding across child tasks and logging scopes.
+const TEMPORARY_ALGEBRA =
+    ScopedValues.ScopedValue{Union{Nothing, Base.RefValue{Algebra}}}(nothing)
 @inline function current_algebra()
-    state = algebra_state()
-    return state !== nothing && state.owner isa Algebra ? state.owner : CURRENT_ALGEBRA[]
+    binding = TEMPORARY_ALGEBRA[]
+    return binding === nothing ? CURRENT_ALGEBRA[] : binding[]
 end
-@inline function algebra_settings(ctx::Algebra)
-    state = algebra_state()
-    while state !== nothing
-        state_algebra(state) === ctx && return state
-        state = state.parent
-    end
-    return nothing
-end
-@inline function working_order(ctx::Algebra)
-    state = algebra_settings(ctx)
-    return state === nothing ? ctx.basis.order : state.cutoff
-end
-@inline function float_tolerance(ctx::Algebra)
-    state = algebra_settings(ctx)
-    return state === nothing ? 0.0 : state.epsilon
-end
-@inline function big_tolerance(ctx::Algebra)
-    state = algebra_settings(ctx)
-    return state === nothing ? nothing : state.big_epsilon
-end
-function current_settings(ctx::Algebra)
-    state = algebra_state()
-    state !== nothing && state_algebra(state) === ctx && return state
-    state = AlgebraState(WeakRef(ctx), ctx.basis.order, 0.0, nothing, nothing)
-    task_local_storage(ALGEBRA_STATE_KEY, state)
-    return state
-end
+@inline algebra_active(ctx::Algebra) = @atomic :acquire ctx.active
+@inline working_order(ctx::Algebra) = ctx.cutoff
+@inline float_tolerance(ctx::Algebra) = ctx.epsilon
+@inline big_tolerance(ctx::Algebra) = ctx.big_epsilon
 
 # A real multivariate Taylor polynomial with coefficients of type T.
 """
@@ -92,7 +58,8 @@ Base.showerror(io::IO, e::TaylorError) = print(io, "DifferentialAlgebra: ", e.me
     return ctx
 end
 @inline function valid(a::TaylorPolynomial)
-    a.algebra.active || throw(ArgumentError("Polynomial belongs to a previous initialization"))
+    algebra_active(a.algebra) ||
+        throw(ArgumentError("Polynomial belongs to a previous initialization"))
     return a.algebra
 end
 @inline function compatible(a::TaylorPolynomial, b::TaylorPolynomial)
@@ -105,7 +72,8 @@ end
     initialize!(order, n; names = nothing, table_bytes = 32 * 1024^2)
 
 Initialize the global default algebra with maximum degree `order` and `n` variables.
-Inside a temporary construction scope, reinitialize only that task's algebra.
+Inside a temporary construction scope, replace that scope's algebra. Child tasks
+inherit the temporary binding.
 Existing polynomials of the replaced algebra become invalid. Both dimensions
 must be positive.
 Use [`variables`](@ref) to initialize and construct the variables in one call.
@@ -118,25 +86,18 @@ function initialize!(
         no::Integer, nv::Integer; names = nothing,
         table_bytes::Integer = 32 * 1024^2
     )
-    state = algebra_state()
-    if state !== nothing && state.owner isa Algebra
-        old = state.owner
+    binding = TEMPORARY_ALGEBRA[]
+    if binding !== nothing
+        old = binding[]
         ctx = make_algebra(no, nv, old; names, table_bytes)
-        old.active = false
-        task_local_storage(
-            ALGEBRA_STATE_KEY,
-            AlgebraState(ctx, ctx.basis.order, 0.0, nothing, state.parent)
-        )
+        @atomic :release old.active = false
+        binding[] = ctx
     else
         lock(ALGEBRA_LOCK) do
             old = CURRENT_ALGEBRA[]
             ctx = make_algebra(no, nv, old; names, table_bytes)
-            old !== nothing && (old.active = false)
+            old !== nothing && (@atomic :release old.active = false)
             CURRENT_ALGEBRA[] = ctx
-            task_local_storage(
-                ALGEBRA_STATE_KEY,
-                AlgebraState(WeakRef(ctx), ctx.basis.order, 0.0, nothing, nothing)
-            )
         end
     end
     return nothing
@@ -157,7 +118,7 @@ function make_algebra(
         old.basis.variables == nv && old.basis.table_bytes == table_bytes
     basis = reusable ? old.basis :
         MonomialBasis(Int(no), Int(nv); table_bytes = Int(table_bytes))
-    return Algebra(basis, labels, true)
+    return Algebra(basis, labels, basis.order, 0.0, nothing, true)
 end
 
 function variable_labels(names, n::Int)
@@ -180,21 +141,19 @@ from the actual stored `degree`. Taylor models report their fixed retained order
 """
 max_order() = ready().basis.order
 # Internal initialization query for loading regressions.
-isinitialized() = current_algebra() !== nothing && current_algebra().active
+isinitialized() = current_algebra() !== nothing && algebra_active(current_algebra())
 
 # Temporary maps own their compiled coefficients. Restore the caller's algebra,
 # including the uninitialized state, even if the callback fails or reinitializes.
 function with_algebra(f::F, order, n; kwargs...) where {F}
     ctx = make_algebra(order, n, current_algebra(); kwargs...)
-    state = AlgebraState(ctx, ctx.basis.order, 0.0, nothing, algebra_state())
-    return task_local_storage(ALGEBRA_STATE_KEY, state) do
+    binding = Ref(ctx)
+    return ScopedValues.with(TEMPORARY_ALGEBRA => binding) do
         try
             return f(ctx)
         finally
-            current = algebra_state()
-            current !== nothing && current.owner isa Algebra &&
-                (current.owner.active = false)
-            ctx.active = false
+            @atomic :release binding[].active = false
+            @atomic :release ctx.active = false
         end
     end
 end
@@ -212,45 +171,44 @@ nmonomials() = last(ready().basis.ends)
 """
     truncation_order()
 
-The current task's working order, bounded by the algebra's `max_order()`.
+The current algebra's working order, bounded by its `max_order()`.
 """
 truncation_order() = working_order(ready())
 """
     coefficient_tolerance()
 
-The current task's absolute threshold for discarding small floating coefficients.
+The current algebra's absolute threshold for discarding small floating coefficients.
 Returns `Float64`, or the preserved `BigFloat` value when one was explicitly set.
 """
 function coefficient_tolerance()
-    state = algebra_settings(ready())
-    return state === nothing ? 0.0 : something(state.big_epsilon, state.epsilon)
+    ctx = ready()
+    return something(ctx.big_epsilon, ctx.epsilon)
 end
 """
     set_truncation_order!(order = max_order())
 
-Set this task's working total degree and return the previous order. The minimum working
-order is one; zero selects one. Prefer `with_order` for temporary changes.
+Set the current algebra's working total degree and return the previous order.
+The minimum working order is one; zero selects one. Prefer `with_order` for
+temporary changes.
 """
 function set_truncation_order!(n::Integer = max_order())
     ctx = ready()
     0 <= n <= ctx.basis.order || throw(ArgumentError("Invalid truncation order"))
-    state = current_settings(ctx)
-    old = state.cutoff
-    state.cutoff = max(1, Int(n)) # Working orders are positive.
+    old = ctx.cutoff
+    ctx.cutoff = max(1, Int(n)) # Working orders are positive.
     return old
 end
 """
     set_coefficient_tolerance!(tolerance)
 
-Set this task's finite, nonnegative filtering threshold and return its previous
-value. Exact real coefficient types retain all nonzero coefficients.
+Set the current algebra's finite, nonnegative filtering threshold and return its
+previous value. Exact real coefficient types retain all nonzero coefficients.
 """
 function set_coefficient_tolerance!(value::Real)
     isfinite(value) && value >= 0 || throw(ArgumentError("Epsilon must be finite and nonnegative"))
     ctx = ready(); old = coefficient_tolerance()
-    state = current_settings(ctx)
-    state.epsilon = Float64(value)
-    state.big_epsilon = value isa BigFloat ? copy(value) : nothing
+    ctx.epsilon = Float64(value)
+    ctx.big_epsilon = value isa BigFloat ? copy(value) : nothing
     return old
 end
 
@@ -258,21 +216,22 @@ end
     with_order(f, order)
 
 Run `f()` with a temporary truncation order, restoring the previous order even
-if `f` throws. Use `with_order(order) do ... end`. Order and filtering settings
-are task-local. Newly spawned tasks use full order and zero tolerance unless
-they configure their own settings; temporary construction scopes are not inherited.
+if `f` throws. Use `with_order(order) do ... end`. Settings belong to the owning
+algebra and are shared by its tasks. Configure them before launching parallel
+calculations and await child tasks before leaving `with_order`. Independent ADS
+builders have private algebras; their child tasks inherit the temporary binding.
 Arithmetic results, including scalar addition, unary signs and integer powers,
 discard terms above the working order. Copying, coefficient conversion and
 inspection preserve the stored polynomial; changing the order alone does not
 alter existing storage. Discarding terms is not a certified error estimate.
 """
 function with_order(f::F, order::Integer) where {F}
-    state = current_settings(ready())
+    ctx = ready()
     previous = set_truncation_order!(order)
     try
         return f()
     finally
-        state.cutoff = previous
+        ctx.cutoff = previous
     end
 end
 
@@ -300,15 +259,11 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 @inline keep(c::BigFloat, epsilon::Float64, precise) =
     !(abs(c) <= something(precise, epsilon))
 @inline function keep(c::Real, ctx::Algebra)
-    state = algebra_settings(ctx)
-    return state === nothing ? keep(c, 0.0) :
-        keep(c, state.epsilon, state.big_epsilon)
+    return keep(c, ctx.epsilon, ctx.big_epsilon)
 end
 @inline function finish!(a::TaylorPolynomial, n::Int = length(a.coeffs); filter::Bool = true)
     if filter
-        state = algebra_settings(a.algebra)
-        epsilon = state === nothing ? 0.0 : state.epsilon
-        precise = state === nothing ? nothing : state.big_epsilon
+        epsilon, precise = a.algebra.epsilon, a.algebra.big_epsilon
         if epsilon != 0 || precise !== nothing
             @inbounds for i in 1:n
                 keep(a.coeffs[i], epsilon, precise) ||

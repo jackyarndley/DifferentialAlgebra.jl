@@ -11,12 +11,16 @@ Initialize the global default before concurrent calculations. Reinitializing it
 or mutating shared polynomials must not overlap readers. Operations may share
 read-only inputs, while each task owns its outputs.
 
-Working orders and coefficient tolerances belong to each task. A new task starts
-at the owning basis's maximum order and zero tolerance; configure workers
-explicitly when needed. Temporary ADS construction algebras are also task-local
-and are not inherited by spawned tasks. Other tasks continue to use the global
-default for variable/type-based factories. Object-based operations use their
-owning basis. Julia logging scopes do not affect these bindings.
+Working orders and coefficient tolerances belong to the owning algebra. Child
+tasks and threaded loops share that policy. Configure it before parallel work;
+do not change it while other tasks calculate with that algebra. Await all child
+tasks inside `with_order` before it restores the order. Distributed workers have
+independent global algebras: initialize and configure each worker explicitly.
+
+ADS builders use private temporary algebras. Child tasks inherit their builder's
+binding, including variable/type-based factories. Independent tasks continue to
+use the global default. Object-based operations always use their owning algebra.
+Julia's native scoped values supply this binding. Logging scopes do not change it.
 
 A polynomial owns mutable coefficient storage. Assignment shares that object;
 `copy(p)` creates independent storage. A compiled map owns its coefficients, so
@@ -30,7 +34,7 @@ When creating mutable work buffers, a comprehension such as
 
 ## Truncation and filtering
 
-`DifferentialAlgebra.set_truncation_order!(order)` changes the current task's
+`DifferentialAlgebra.set_truncation_order!(order)` changes the current algebra's
 working order without changing the maximum order chosen at initialization. It
 returns the previous working order.
 `with_order(order) do ... end` restores the previous order even when the calculation throws.
@@ -42,7 +46,7 @@ instead record their retained order and reject arithmetic at a different working
 order; enclosure and evaluation retain all their stored terms and remainder.
 
 `DifferentialAlgebra.set_coefficient_tolerance!(tolerance)` selects the current
-task's threshold for discarding small floating-point coefficients. The default
+algebra's threshold for discarding small floating-point coefficients. The default
 threshold is zero. An explicit BigFloat threshold retains its precision;
 `coefficient_tolerance()` returns that value, or Float64 for other settings.
 Filtering and truncation are

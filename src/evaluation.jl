@@ -160,7 +160,7 @@ end
 
 function composition_algebra(map::CompiledMap)
     ctx = map.algebra.value
-    ctx isa Algebra && ctx.active ||
+    ctx isa Algebra && algebra_active(ctx) ||
         throw(ArgumentError("Compiled map belongs to a previous initialization"))
     return ctx
 end

@@ -2,12 +2,14 @@
 
 ## 0.2.0 (unreleased)
 
-- Working orders and filtering tolerances are task-local. Configure workers
-  explicitly: new tasks start with full order and zero tolerance and do not
-  inherit temporary ADS contexts. Independent ADS builds may overlap read-only
-  calculations. Global `initialize!` still invalidates the old default's
-  polynomials; inside a temporary construction it replaces only that task's
-  algebra. Object-based helpers retain their owning basis.
+- Julia 1.12 or later is required; update older Julia installations before upgrading.
+
+- Working orders and filtering tolerances belong to the owning algebra and reach
+  child tasks and threaded loops. Configure settings before parallel calculations;
+  await child tasks inside `with_order`. Configure Distributed workers explicitly.
+  ADS construction uses private algebras whose bindings are inherited by child
+  tasks. Global `initialize!` still invalidates the old default's polynomials;
+  inside a temporary construction it replaces only that scope's algebra.
 
 - Certified ADS retries analytic domain failures on child cells. A failure that
   remains at a splitting limit raises an `ErrorException` with its cause, including
@@ -22,7 +24,7 @@
 
 - Compound analytic operations, integer powers (including negative literals),
   and polynomial exponentiation filter coefficients only after completing the
-  result. The current task's tolerance and truncation order are unchanged.
+  result. The algebra's tolerance and truncation order are unchanged.
 - Interval coefficient norms require correct interval rounding and return
   outward-rounded enclosures, including for
   intervals containing zero, and preserve coefficient metadata. Ordinary-number
@@ -70,7 +72,7 @@
   vector of copied coefficients, including when given a view or range.
 - `central_moments(mgf, order)` requires constant coefficient one and rejects orders
   above the working cutoff. Use `with_order` explicitly when needed; inspection
-  never changes the task's cutoff. Raw moments still inspect all stored orders.
+  never changes the algebra's cutoff. Raw moments still inspect all stored orders.
 
 The internal, test-only `filled` helper is removed. Documented coefficient
 inspection, construction, and norm helpers remain available in `DifferentialAlgebra`.

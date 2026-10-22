@@ -131,8 +131,9 @@ end
 function Base.muladd(alpha::Real, a::TaylorPolynomial, b::TaylorPolynomial)
     ctx = compatible(a, b)
     T = promote_type(typeof(alpha), coefficient_type(a), coefficient_type(b))
-    n = min(max(a.len, b.len), ctx.basis.ends[working_order(ctx) + 1])
-    return weighted_sum!(allocate_undef(ctx, T, n), a, alpha, b, one(T))
+    order = working_order(ctx)
+    n = min(max(a.len, b.len), ctx.basis.ends[order + 1])
+    return weighted_sum!(allocate_undef(ctx, T, n), a, alpha, b, one(T); order)
 end
 Base.muladd(a::TaylorPolynomial, alpha::Real, b::TaylorPolynomial) = muladd(alpha, a, b)
 Base.muladd(a::TaylorPolynomial, b::TaylorPolynomial, c::TaylorPolynomial) =
@@ -153,9 +154,12 @@ for (op, sign) in ((:+, 1), (:-, -1))
         ctx = compatible(a, b)
         R = promote_type(T, S)
         $sign < 0 && (R = negative_coefficient_type(R))
-        n = min(max(a.len, b.len), ctx.basis.ends[working_order(ctx) + 1])
+        order = working_order(ctx)
+        n = min(max(a.len, b.len), ctx.basis.ends[order + 1])
         out = allocate_undef(ctx, R, n)
-        return weighted_sum!(out, a, one(R), b, degree_factor(one(R), $sign) * one(R))
+        return weighted_sum!(
+            out, a, one(R), b, degree_factor(one(R), $sign) * one(R); order
+        )
     end
 end
 function scale!(
@@ -174,11 +178,12 @@ function scale!(
 end
 function scaled(a::TaylorPolynomial{T}, b::Real; filter::Bool = true) where {T <: Real}
     ctx = valid(a)
+    order = working_order(ctx)
     out = allocate_undef(
         ctx, promote_type(T, typeof(b)),
-        min(a.len, ctx.basis.ends[working_order(ctx) + 1])
+        min(a.len, ctx.basis.ends[order + 1])
     )
-    return scale!(out, a, b; filter)
+    return scale!(out, a, b; order, filter)
 end
 Base.:*(a::TaylorPolynomial, b::Real) = scaled(a, b)
 Base.:*(a::Real, b::TaylorPolynomial) = b * a

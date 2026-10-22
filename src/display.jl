@@ -28,7 +28,7 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
 end
 
 function Base.show(io::IO, p::TaylorPolynomial)
-    if !p.algebra.active
+    if !algebra_active(p.algebra)
         print(io, "TaylorPolynomial(inactive)")
         return nothing
     end
@@ -59,7 +59,7 @@ function Base.show(io::IO, z::Complex{<:TaylorPolynomial})
 end
 
 function Base.show(io::IO, ::MIME"text/plain", p::TaylorPolynomial)
-    p.algebra.active || return show(io, p)
+    algebra_active(p.algebra) || return show(io, p)
     n = p.algebra.basis.variables
     print(
         io, typeof(p), " polynomial in ", n, n == 1 ? " variable" : " variables",
