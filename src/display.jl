@@ -1,5 +1,8 @@
 # Human-readable expressions. Display is deliberately independent of file formats.
 # Use scalar show methods so coefficient precision and custom types are preserved.
+compact_variable_name(name) = length(name) == 1 ||
+    (isletter(first(name)) && all(c -> '₀' <= c <= '₉', Iterators.drop(name, 1)))
+
 function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     negative = coefficient < zero(coefficient)
     if first
@@ -11,7 +14,7 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     magnitude = negative ? -(coefficient isa Integer ? big(coefficient) : coefficient) : coefficient
     show(io, magnitude)
     any(!iszero, exponents) && print(io, ' ')
-    separator = any(name -> length(name) > 1, names)
+    separator = !all(compact_variable_name, names)
     factor = false
     for (i, power) in enumerate(exponents)
         iszero(power) && continue

@@ -6,9 +6,9 @@ using Test, DifferentialAlgebra
     @test sprint(show, TaylorPolynomial(-2)) == "-2.0"
     @test sprint(show, x) == "1.0 x₁"
     @test sprint(show, -y) == "-1.0 x₂"
-    @test sprint(show, x * y) == "1.0 x₁*x₂"
+    @test sprint(show, x * y) == "1.0 x₁x₂"
     @test sprint(show, 2 + 3x - y^2) == "2.0 + 3.0 x₁ - 1.0 x₂²"
-    @test sprint(show, -2x + x * y - y^2) == "-2.0 x₁ + 1.0 x₁*x₂ - 1.0 x₂²"
+    @test sprint(show, -2x + x * y - y^2) == "-2.0 x₁ + 1.0 x₁x₂ - 1.0 x₂²"
     @test sprint(show, TaylorPolynomial(Inf)) == "Inf"
     @test sprint(show, TaylorPolynomial(-Inf)) == "-Inf"
     @test sprint(show, TaylorPolynomial(NaN)) == "NaN"
@@ -59,7 +59,7 @@ end
     @test string(evaluate(CompiledMap([q + r^2]), [q, r])[1]) == "1.0 q₁ + 1.0 δr²"
 
     x = variables(12; order = 2)
-    @test string(x[10] * x[12]) == "1.0 x₁₀*x₁₂"
+    @test string(x[10] * x[12]) == "1.0 x₁₀x₁₂"
     @test string(x[12]^2) == "1.0 x₁₂²"
 end
 
