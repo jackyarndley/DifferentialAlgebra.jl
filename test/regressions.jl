@@ -1,5 +1,17 @@
 using Test, DifferentialAlgebra
 
+@testset "Representable curvature at huge hypot centers" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 2, table_bytes = budget)
+        scale = 1.0e170
+        expected = setprecision(256) do
+            c = BigFloat(scale)
+            (c / 2)^2 / (2hypot(c, c)^3)
+        end
+        @test coefficient(hypot(scale + x, scale + x / 2), [2]) ≈ Float64(expected)
+    end
+end
+
 @testset "Mixed precision reusable buffers" begin
     initialize!(1, 1)
     a, b = TaylorPolynomial(16777217.0), TaylorPolynomial(-16777216.0)

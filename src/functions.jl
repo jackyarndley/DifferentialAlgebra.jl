@@ -498,6 +498,9 @@ function dominant_hypot(a::TaylorPolynomial, b::TaylorPolynomial, a0, b0)
     end
     iszero(b) && return scaled(a, sign(a0) * one(hypot(a0, b0)))
     scale = abs(a0)
+    large = scale isa AbstractFloat && scale > sqrt(floatmax(typeof(scale))) &&
+        isfinite(hypot(a0, b0))
+    large && (scale = sqrt(hypot(a0, b0)))
     tiny = scale isa AbstractFloat && scale < sqrt(floatmin(typeof(scale))) &&
         max(coefficient_norm(a, 0), coefficient_norm(b, 0)) >
         scale * sqrt(floatmax(typeof(scale)))
@@ -510,8 +513,12 @@ function dominant_hypot(a::TaylorPolynomial, b::TaylorPolynomial, a0, b0)
         left, one(R), right, one(R); filter = false
     )
     # The scalar hypot preserves a tiny constant whose square underflows.
-    return tiny ? square_root(squares, hypot(a0, b0)) :
-        scaled(root_series(squares, 2; filter = false), scale)
+    tiny && return square_root(squares, hypot(a0, b0))
+    # A second normalization would underflow small, representable derivatives
+    # at huge centers. Balanced scaling keeps both squares and derivatives finite.
+    root = large ? square_root(squares, hypot(a0, b0) / scale; filter = false) :
+        root_series(squares, 2; filter = false)
+    return scaled(root, scale)
 end
 Base.hypot(a::TaylorPolynomial, b::Real) = hypot(a, scalar_argument(a, b))
 Base.hypot(a::Real, b::TaylorPolynomial) = hypot(scalar_argument(b, a), b)
