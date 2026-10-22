@@ -88,6 +88,14 @@ for (f, op) in ((:+, :TimeAdd), (:-, :TimeSubtract), (:*, :TimeMultiply), (:/, :
         Base.$f(a::Real, b::TimeNode) = $f(time_constant(b, a), b)
     end
 end
+for (A, B, C) in (
+        (TimeNode, TimeNode, TimeNode), (TimeNode, TimeNode, Real),
+        (TimeNode, Real, TimeNode), (Real, TimeNode, TimeNode),
+        (TimeNode, Real, Real), (Real, TimeNode, Real), (Real, Real, TimeNode),
+    )
+    # Record the existing operations without promoting a node away from its tape.
+    @eval Base.muladd(a::$A, b::$B, c::$C) = a * b + c
+end
 Base.inv(a::TimeNode) = one(a) / a
 function Base.:^(a::TimeNode, n::Integer)
     n < 0 && return inv(a)^(-(n + 1)) / a

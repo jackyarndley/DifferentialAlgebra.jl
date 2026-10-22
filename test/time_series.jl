@@ -222,6 +222,24 @@ end
     @test δ(0.3) == 0.3 # No algebra changes, even on failure.
 end
 
+@testset "Recorded multiply-adds" begin
+    forcing(u, p, t) = [
+        muladd(t, t, t), muladd(t, t, 2), muladd(t, 2, t), muladd(2, t, t),
+        muladd(t, 2, 2), muladd(2, t, 2), muladd(2, 2, t),
+    ]
+    # Integrate each polynomial forcing directly, independently of the time tape.
+    expected = (
+        [0, 0, 1 // 2, 1 // 3, 0], [0, 2, 0, 1 // 3, 0],
+        [0, 0, 3 // 2, 0, 0], [0, 0, 3 // 2, 0, 0],
+        [0, 2, 1, 0, 0], [0, 2, 1, 0, 0], [0, 4, 1 // 2, 0, 0],
+    )
+    for T in (Float64, Rational{BigInt})
+        solution = taylor_expand(forcing, zeros(T, 7), zero(T); order = 4)
+        @test all(s -> coefficient_type(s) == T, solution)
+        @test all(s.coefficients == T.(c) for (s, c) in zip(solution, expected))
+    end
+end
+
 @testset "Tangent series and recorded integrals" begin
     s = TimeSeries([0.0, 1.0, zeros(6)...])
     for (f, signs) in ((tan, ones(8)), (tanh, [(-1)^((k - 1) ÷ 2) for k in 1:8]))
