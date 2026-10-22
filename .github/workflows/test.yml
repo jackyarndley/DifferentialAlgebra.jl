@@ -26,12 +26,35 @@ jobs:
         with:
           version: '1'
       - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          check_bounds: 'yes'
-          coverage: 'false'
+      - name: Prepare test dependencies with normal compilation
+        shell: julia --startup-file=no --project=test --check-bounds=yes -O0 {0}
+        run: |
+          using Pkg
+          Pkg.instantiate()
+          Pkg.precompile()
+      - name: Run numerical and integration tests
+        shell: julia --startup-file=no --project=test --check-bounds=yes --compile=min -O0 {0}
+        run: |
+          @time include(joinpath(pwd(), "test", "runtests.jl"))
         env:
           JULIA_NUM_THREADS: '4'
+
+  quality:
+    name: Aqua / Julia latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Check package and extension hygiene
+        shell: julia --startup-file=no --project=test {0}
+        run: |
+          using Pkg
+          Pkg.instantiate()
+          include(joinpath(pwd(), "test", "quality.jl"))
 
   format:
     name: Runic
@@ -73,16 +96,9 @@ jobs:
               PackageSpec(name = "LinearAlgebra"), PackageSpec(name = "Test"),
               PackageSpec(name = "SafeTestsets"),
           ])
+          Pkg.add(PackageSpec(name = "GenericLinearAlgebra"))
           using SafeTestsets: @safetestset
-          @safetestset "Public API" begin
-              include(joinpath(pwd(), "test", "public_api.jl"))
-          end
-          @safetestset "Time series" begin
-              include(joinpath(pwd(), "test", "time_series.jl"))
-          end
-          @safetestset "Mixed ForwardDiff arithmetic" begin
-              include(joinpath(pwd(), "test", "forwarddiff.jl"))
-          end
-          @safetestset "ForwardDiff ADS" begin
-              include(joinpath(pwd(), "test", "forwarddiff_ads.jl"))
+          include(joinpath(pwd(), "test", "support", "fixtures.jl"))
+          @safetestset "ForwardDiff integration" begin
+              include(joinpath(pwd(), "test", "interop.jl"))
           end
