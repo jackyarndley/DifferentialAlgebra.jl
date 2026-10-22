@@ -84,8 +84,10 @@ than the decimal real `1/10`. Use `interval(1//10)` or `I"0.1"` to enclose that
 decimal real. Already-rounded ordinary coefficients cannot recover earlier
 rounding or truncation errors.
 
-`enclose(p, box)` applies those stored-value semantics to the coefficients of
-an existing polynomial. Model scalar construction and arithmetic follow the
+`enclose(p, box)` and `TaylorModel(p, R, reference)` apply those stored-value
+semantics to the coefficients of an existing polynomial. This construction
+asserts an absolute remainder `R`; it does not reconstruct the polynomial's
+rounding history. Model scalar construction and arithmetic follow the
 coefficient conversion hooks: exact integers, rationals and internal degree
 factors use explicit interval construction; an implicit floating operand is NG
 and is rejected. Declare a floating constant explicitly with `interval(0.1)`
@@ -140,6 +142,8 @@ Elementary results also store an independent interval image of the whole input
 enclosure. Range queries intersect `P + R` with this certificate; for example,
 sine and cosine stay within `[-1,1]`, and exponential and square root stay
 nonnegative. Arithmetic propagates these value bounds with outward rounding.
+Coordinate certificates bound the entire affine normalized cover, including any
+extra points introduced by outward rounding of its center and radius.
 They do not reduce the absolute remainder, certify derivatives, or change ADS
 fit-error estimates. Copies and compiled snapshots own the certificates,
 including BigFloat endpoints. Explicit scalar and `TaylorModel(p, R, reference)`
@@ -200,6 +204,10 @@ Taylor's theorem adds the absolute interval
 
 The entire segment from `s` to each possible input lies in `X`. Derivatives use
 interval exponential or sine/cosine cycles divided by enclosed factorials.
+If a computed remainder is wider than the whole interval image, or an
+intermediate polynomial operation overflows, the elementary operation returns
+a constant midpoint model with that image's absolute remainder. The normalized
+box invariant still holds; certified ADS can refine this coarse bound.
 `sincos(model)` shares the input bound, expansion point, displacement and scalar
 coefficient generation; its two outputs own independent polynomial storage.
 

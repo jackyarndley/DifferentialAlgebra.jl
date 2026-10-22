@@ -141,6 +141,9 @@ fit([1//2, 1//4])               # Interval at a physical point
 Finite ordinary endpoint vectors can also be passed to `adaptive_map` with
 this estimator. See the
 [interval manual](interval-models.md#Certified-domain-splitting) for its proof.
+With `IntervalBound`, a callback's `DomainError` triggers subdivision, including
+one deliberately thrown by user code. Use another exception type for errors
+that should propagate immediately.
 
 ## Split directions
 

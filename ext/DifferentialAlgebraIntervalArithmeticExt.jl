@@ -53,7 +53,8 @@ asinterval(::Type{<:Interval}, x) = throw(
 DA.coefficient_iszero(c::Interval) = IA.isthinzero(c) && IA.isguaranteed(c) && IA.decoration(c) == IA.com
 DA.coefficient_isone(c::Interval) = IA.isthin(c) && IA.inf(c) == 1 &&
     IA.isguaranteed(c) && IA.decoration(c) == IA.com
-DA.coefficient_isinteger(c::Interval) = IA.isthin(c) && isinteger(IA.inf(c))
+DA.coefficient_isinteger(c::Interval) = IA.isthin(c) && isinteger(IA.inf(c)) &&
+    IA.isguaranteed(c) && IA.decoration(c) == IA.com
 DA.coefficient_isequal(a::Interval, b::Interval) =
     IA.isequal_interval(a, b) && IA.decoration(a) == IA.decoration(b) &&
     IA.isguaranteed(a) == IA.isguaranteed(b)

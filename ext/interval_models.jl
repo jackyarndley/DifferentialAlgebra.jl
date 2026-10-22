@@ -20,13 +20,20 @@ function DA.enclose(p::TaylorPolynomial, box)
     return polynomial_bound(p, power_cache(box, DA.degree(p), I), I)
 end
 
+function model_interval(x::Interval)
+    !IA.isnai(x) && !IA.isempty_interval(x) && !IA.isbounded(x) && throw(
+        OverflowError("Taylor-model arithmetic overflow; use BigFloat interval endpoints")
+    )
+    return checked_interval(x; guaranteed = true)
+end
+
 function model_result(
         p::TaylorPolynomial{I}, r::I, coordinates, order,
         enclosure::Union{Nothing, I} = nothing
     ) where {I <: Interval}
-    checked_interval(r; guaranteed = true)
+    model_interval(r)
     for k in 1:p.len
-        checked_interval(p.coeffs[k]; guaranteed = true)
+        model_interval(p.coeffs[k])
     end
     if enclosure !== nothing
         !IA.isnai(enclosure) && !IA.isempty_interval(enclosure) &&
@@ -59,7 +66,12 @@ function coordinate_models(box, order)
         ) for (x, r) in zip(physical, radii)
     ]
     coordinates = DA.ModelCoordinates(physical, centers, radii, normalized, Ref(nothing))
-    return [model_result(centers[i] + radii[i] * DA.variable(i, I), zero(I), coordinates, Int(order)) for i in eachindex(physical)]
+    return [
+        model_result(
+            centers[i] + radii[i] * DA.variable(i, I), zero(I), coordinates,
+            Int(order), constant_bound(centers[i] + radii[i] * normalized[i], coordinates)
+        ) for i in eachindex(physical)
+    ]
 end
 function DA.taylor_models(box; order::Integer, names = nothing, table_bytes::Integer = 32 * 1024^2)
     validated_rounding()
@@ -71,6 +83,12 @@ function DA.taylor_models(box; order::Integer, names = nothing, table_bytes::Int
     return coordinate_models(box, order)
 end
 function model_scalar(::Type{I}, value::Real) where {I <: Interval}
+    value isa AbstractFloat && throw(
+        ArgumentError(
+            "Floating constant $value in Taylor-model arithmetic: use an exact " *
+                "rational, interval($value) or IntervalArithmetic.exact($value)"
+        )
+    )
     value isa TaylorPolynomial && throw(
         ArgumentError(
             "Supply an explicit absolute remainder when constructing a model " *
@@ -112,7 +130,7 @@ function model_scalar_sum(
     enclosure = if a._enclosure === nothing
         nothing
     else
-        range, scalar = model_bound(a), constant_bound(c, a._coordinates)
+        range, scalar = a._enclosure, constant_bound(c, a._coordinates)
         reverse ? op(scalar, range) : op(range, scalar)
     end
     return model_result(p, r, a._coordinates, a._order, enclosure)
@@ -129,7 +147,9 @@ function TaylorModel(p::TaylorPolynomial, r::Real, reference::TaylorModel{I}) wh
     DA.degree(p) <= reference._order || throw(ArgumentError("Polynomial exceeds the retained model order; no implicit truncation is allowed"))
     coeffs = [deepcopy(checked_interval(asinterval(I, p.coeffs[k]); guaranteed = true)) for k in 1:p.len]
     owned = TaylorPolynomial{I}(coeffs, p.len, p.algebra)
-    return model_result(owned, deepcopy(checked_interval(DA.coefficient_convert(I, r); guaranteed = true)), reference._coordinates, reference._order)
+    return model_result(
+        owned, deepcopy(model_scalar(I, r)), reference._coordinates, reference._order
+    )
 end
 
 function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box; point = false) where {I <: Interval}
@@ -163,6 +183,7 @@ function intersect_range(a, bound)
     return a._enclosure === nothing ? bound :
         IA.intersect_interval(bound, a._enclosure; dec = :auto)
 end
+certificate_bound(a) = a._enclosure === nothing ? model_bound(a) : a._enclosure
 polynomial_bound(a::TaylorModel, powers, I) = polynomial_bound(a._polynomial, powers, I)
 polynomial_bound(a::DA.CompiledTaylorModel, powers, I) =
     monomial_bound(a._coefficients, a._exponents, powers, I)
@@ -205,7 +226,7 @@ for op in (:+, :-)
     @eval function Base.$op(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
         compatible_models(a, b)
         enclosure = a._enclosure === nothing && b._enclosure === nothing ? nothing :
-            $op(model_bound(a), model_bound(b))
+            $op(certificate_bound(a), certificate_bound(b))
         return model_result(
             $op(a._polynomial, b._polynomial), $op(a._remainder, b._remainder),
             a._coordinates, a._order, enclosure
@@ -223,8 +244,9 @@ function Base.:*(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
     enclosure = if a._enclosure === nothing && b._enclosure === nothing
         nothing
     else
-        ra = intersect_range(a, rp + a._remainder)
-        a === b ? IA.pown(ra, 2) : ra * intersect_range(b, rq + b._remainder)
+        ra = a._enclosure === nothing ? rp + a._remainder : a._enclosure
+        rb = b._enclosure === nothing ? rq + b._remainder : b._enclosure
+        a === b ? IA.pown(ra, 2) : ra * rb
     end
     retained = DA.allocate(ctx, I, ctx.basis.ends[a._order + 1])
     DA.multiply!(retained, p, q, a._order)
@@ -298,7 +320,9 @@ function sqrt_remainder(x::I, center::I, coefficients) where {I <: Interval}
 end
 
 # Compose in u=(a-c)/c, avoiding large or tiny powers of c in coefficients.
-function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Interval}
+function relative_model(
+        fn, a::TaylorModel{I}, x::I, center::I, image::I
+    ) where {I <: Interval}
     T = IA.numtype(I)
     n = a._order
     coefficients = Vector{I}(undef, n + 1)
@@ -337,7 +361,7 @@ function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Inte
         if IA.isbounded(bound) && IA.decoration(bound) >= IA.def
             bound
         else
-            # A rounded x/c may include zero for an extremely wide positive x.
+            # The denominator can be subnormal and the bound can overflow.
             # Evaluate a separate finite residual instead of using that bound.
             approximation = coefficients[end]
             for k in n:-1:2
@@ -352,7 +376,7 @@ function relative_model(fn, a::TaylorModel{I}, x::I, center::I) where {I <: Inte
         sqrt_remainder(x, center, coefficients)
     end
     return model_result(
-        result._polynomial, result._remainder + tail, a._coordinates, n, fn(x)
+        result._polynomial, result._remainder + tail, a._coordinates, n, image
     )
 end
 
@@ -369,17 +393,10 @@ function model_center(fn, x::I) where {I <: Interval}
     return center
 end
 
-function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
-    model_context(a)
-    x = checked_interval(DA.enclose(a); guaranteed = true)
-    fn === sqrt && IA.isthinzero(x) && return zero(a)
-    if fn === inv && IA.in_interval(0, x)
-        throw(DomainError(x, "The reciprocal input enclosure must exclude zero"))
-    elseif fn in (log, sqrt) && IA.inf(x) <= 0
-        throw(DomainError(x, "This expansion requires a strictly positive whole enclosure"))
-    end
-    center = model_center(fn, x)
-    fn in (inv, log, sqrt) && return relative_model(fn, a, x, center)
+function elementary_series(
+        fn, a::TaylorModel{I}, x::I, center::I, image::I
+    ) where {I <: Interval}
+    fn in (inv, log, sqrt) && return relative_model(fn, a, x, center, image)
     h = a - center
     n = a._order
     coefficients = if fn === exp
@@ -399,8 +416,37 @@ function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
     # h^(n+1) here is an interval power of the whole input displacement.
     tail = model_derivative(fn, x, n + 1) * IA.pown(x - center, n + 1)
     return model_result(
-        result._polynomial, result._remainder + tail, a._coordinates, n, fn(x)
+        result._polynomial, result._remainder + tail, a._coordinates, n, image
     )
+end
+
+function constant_image_model(a::TaylorModel{I}, image::I) where {I <: Interval}
+    center = IA.setdecoration(
+        IA.interval(IA.numtype(I), IA.mid(image)), IA.decoration(image)
+    )
+    p = TaylorPolynomial{I}(DA.model_valid(a), center)
+    return model_result(p, image - center, a._coordinates, a._order, image)
+end
+shorten_model(a, image) = IA.diam(a._remainder) > IA.diam(image) ?
+    constant_image_model(a, image) : a
+
+function elementary_model(fn, a::TaylorModel)
+    model_context(a)
+    x = checked_interval(DA.enclose(a); guaranteed = true)
+    fn === sqrt && IA.isthinzero(x) && return zero(a)
+    if fn === inv && IA.in_interval(0, x)
+        throw(DomainError(x, "The reciprocal input enclosure must exclude zero"))
+    elseif fn in (log, sqrt) && IA.inf(x) <= 0
+        throw(DomainError(x, "This expansion requires a strictly positive whole enclosure"))
+    end
+    image = model_interval(fn(x))
+    result = try
+        elementary_series(fn, a, x, model_center(fn, x), image)
+    catch err
+        err isa OverflowError || rethrow()
+        return constant_image_model(a, image)
+    end
+    return shorten_model(result, image)
 end
 for fn in (:inv, :exp, :log, :sin, :cos, :sqrt)
     @eval Base.$fn(a::TaylorModel) = elementary_model($fn, a)
@@ -410,13 +456,22 @@ end
 function Base.sincos(a::TaylorModel{I}) where {I <: Interval}
     model_context(a)
     x = checked_interval(DA.enclose(a); guaranteed = true)
+    sx, cx = sincos(x)
+    sine, cosine = try
+        sincos_models(a, x, sx, cx)
+    catch err
+        err isa OverflowError || rethrow()
+        return constant_image_model(a, sx), constant_image_model(a, cx)
+    end
+    return shorten_model(sine, sx), shorten_model(cosine, cx)
+end
+function sincos_models(a::TaylorModel{I}, x::I, sx::I, cx::I) where {I <: Interval}
     center = model_center(sin, x)
     h = a - center
     n = a._order
     s0, c0 = sincos(center)
     s, c = DA.trig_coefficients(s0, c0, n)
     sine, cosine = model_horner(a, h, s), model_horner(a, h, c)
-    sx, cx = sincos(x)
     sine_cycle, cosine_cycle = (sx, cx, -sx, -cx), (cx, -sx, -cx, sx)
     index = mod(n + 1, 4) + 1
     power = IA.pown(x - center, n + 1)

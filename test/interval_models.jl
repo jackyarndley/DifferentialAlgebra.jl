@@ -8,6 +8,14 @@ using .IntervalTestSupport: IA, DA, IF, IB, subset, interval_contains, sameinter
 include("support/interval_products.jl")
 include("support/model_series.jl")
 
+# Kernel oracle: retain the complete Taylor series before the public coarse-image
+# fallback. This keeps coefficient and absolute-tail checks independent of it.
+function unshortened_model_series(fn, a)
+    extension = Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt)
+    x = enclose(a)
+    return extension.elementary_series(fn, a, x, extension.model_center(fn, x), fn(x))
+end
+
 @testset "Optional extension and loading" begin
     @test Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt) !== nothing
     for script in (
@@ -173,6 +181,11 @@ end
         @test !isinteger(TaylorPolynomial{I}(IA.interval(T, 1, 2)))
         nonguaranteed_one = TaylorPolynomial{I}(convert(I, 1.0))
         @test !isone(nonguaranteed_one)
+        @test !isinteger(nonguaranteed_one)
+        for decoration in (IA.def, IA.trv)
+            value = IA.setdecoration(IA.interval(T, 2), decoration)
+            @test !isinteger(TaylorPolynomial{I}(value))
+        end
         @test isequal(nonguaranteed_one, copy(nonguaranteed_one))
         @test !isequal(nonguaranteed_one, one(x))
         @test !isequal(one(x), 1)
@@ -423,6 +436,40 @@ end
     end
 end
 
+@testset "Coordinate certificates preserve the full normalized cover" begin
+    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+        box = [IA.interval(T, 1 // 2, 3), IA.interval(T, 1 // 10, 2)]
+        x, y = taylor_models(box; order = 3, table_bytes = budget)
+        product = x * y
+        @test IA.inf(enclose(product)) > 0
+        @test interval_contains(enclose(product), 1 // 20)
+        @test interval_contains(enclose(product), 6)
+        root = sqrt(product)
+        for xi in (-1, 0, 1), eta in (-1, 0, 1)
+            normalized = [IA.interval(T, xi), IA.interval(T, eta)]
+            expected = setprecision(768) do
+                c, r = x._coordinates.center, x._coordinates.radius
+                u = BigFloat(IA.inf(c[1])) + BigFloat(IA.inf(r[1])) * xi
+                v = BigFloat(IA.inf(c[2])) + BigFloat(IA.inf(r[2])) * eta
+                sqrt(u * v)
+            end
+            # Check P+R directly, independently of the range certificate.
+            raw = enclose(polynomial(root), normalized) + remainder(root)
+            @test interval_contains(raw, expected)
+            @test interval_contains(enclose(root), expected)
+        end
+        # Rounded centers can make the normalized cover exceed the physical box.
+        a, = taylor_models([IA.interval(T, 1 // 10, 3 // 10)]; order = 3)
+        for side in (-1, 1)
+            endpoint = setprecision(768) do
+                c, r = a._coordinates.center[1], a._coordinates.radius[1]
+                BigFloat(IA.inf(c)) + side * BigFloat(IA.inf(r))
+            end
+            @test interval_contains(enclose(a), endpoint)
+        end
+    end
+end
+
 @testset "Taylor-theorem remainders and full-enclosure domain checks" begin
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
         h = IA.interval(T, -1 // 4, 1 // 4)
@@ -437,7 +484,9 @@ end
         # Exact retained coefficients and analytic whole-range oracles.
         # These functions are monotone on h, except cos whose maximum is at 0.
         @test sameinterval(coefficient(polynomial(sin(x)), [1]), IA.interval(T, 1 // 4))
-        @test sameinterval(constant_term(polynomial(cos(x))), one(Interval{T}))
+        @test sameinterval(
+            constant_term(polynomial(unshortened_model_series(cos, x))), one(Interval{T})
+        )
         for (fn, argument) in ((sin, x), (cos, x), (log, 1 + x), (sqrt, 1 + x))
             physical = fn in (sin, cos) ? h : one(Interval{T}) + h
             @test subset(fn(physical), enclose(fn(argument)))
@@ -472,6 +521,43 @@ end
         end
         @test_throws DomainError sqrt(wide * wide)
         @test_throws DomainError inv(TaylorModel(polynomial(wide) + 3, IA.interval(T, -2, 0), wide))
+    end
+end
+
+@testset "Wide compositions retain a finite absolute remainder" begin
+    cases = (
+        (x -> cos(cos(cos(x))), (-10, 10)),
+        (x -> log(log(log(x))), (16, 10^10)),
+    )
+    for T in (Float64, BigFloat), (fn, endpoints) in cases, order in (7, 12)
+        box = [IA.setdecoration(IA.interval(T, endpoints...), IA.def)]
+        x, = taylor_models(box; order, table_bytes = 0)
+        m = fn(x)
+        @test IA.isbounded(remainder(m)) && IA.isbounded(enclose(m))
+        @test IA.isguaranteed(enclose(m)) && IA.decoration(enclose(m)) == IA.def
+        @test max_order(m) == order
+        for xi in (-1, 0, 1)
+            expected = setprecision(768) do
+                c, r = x._coordinates.center[1], x._coordinates.radius[1]
+                fn(BigFloat(IA.inf(c)) + xi * BigFloat(IA.inf(r)))
+            end
+            raw = enclose(polynomial(m), [IA.interval(T, xi)]) + remainder(m)
+            @test interval_contains(raw, expected)
+            @test interval_contains(enclose(m), expected)
+        end
+    end
+    for (fn, endpoints) in cases
+        fit = adaptive_map(
+            v -> fn(v[1]), [IA.interval(endpoints...)]; estimator = IntervalBound(),
+            order = 12, atol = 1 // 100, max_depth = 2, strict = false
+        )
+        @test all(p -> all(IA.isbounded, p.error_bounds), fit.patches)
+        for point in endpoints
+            expected = setprecision(768) do
+                fn(BigFloat(point))
+            end
+            @test interval_contains(fit([point]), expected)
+        end
     end
 end
 
@@ -602,7 +688,7 @@ end
     end
 end
 
-@testset "Normalized reciprocal, logarithm and square-root remainders" begin
+@testset "Kernel: normalized reciprocal, logarithm and square-root remainders" begin
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
         previous_sqrt_width = zero(T)
         for order in (2, 5)
@@ -614,7 +700,9 @@ end
             before = polynomial(a)
             center = 17 // 16
             for f in (inv, log, sqrt)
-                m = f(a)
+                m = unshortened_model_series(f, a)
+                public_result = f(a)
+                @test subset(enclose(public_result), f(enclose(a)))
                 retained = polynomial(m)
                 series = scalar_model_series(f, center, order)
                 for i in 0:order, j in 0:(order - i)
@@ -633,6 +721,9 @@ end
                     @test interval_contains(
                         evaluate(m, [3 // 2 + u // 2, 7 // 16 + 7v // 16]),
                         value
+                    )
+                    @test interval_contains(
+                        evaluate(public_result, [3 // 2 + u // 2, 7 // 16 + 7v // 16]), value
                     )
                 end
                 @test guaranteed_coefficients(retained)
@@ -663,7 +754,9 @@ end
                 )
                 for (f, sign) in ((inv, 1), (inv, -1), (log, 1), (sqrt, 1))
                     a = sign * x
-                    m = f(a)
+                    m = unshortened_model_series(f, a)
+                    public_result = f(a)
+                    @test subset(enclose(public_result), f(enclose(a)))
                     retained = polynomial(m)
                     center, radius = sign * T(3 // 2) * scale, sign * scale / 2
                     series = scalar_model_series(f, center, 3)
@@ -681,6 +774,10 @@ end
                         @test interval_contains(remainder(m), residual)
                         @test interval_contains(
                             evaluate(m, [T(3 // 2) * scale + scale * T(u) / 2]),
+                            value
+                        )
+                        @test interval_contains(
+                            evaluate(public_result, [T(3 // 2) * scale + scale * T(u) / 2]),
                             value
                         )
                     end
@@ -723,7 +820,7 @@ end
             end
         end
         # The true reciprocal range cannot have finite Float64 bounds.
-        @test_throws ArgumentError inv(a)
+        @test_throws OverflowError inv(a)
     end
 end
 
@@ -972,11 +1069,11 @@ end
     for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
         x, = taylor_models([IA.interval(T, -1, 1)]; order = 3, table_bytes = budget)
         for value in (0.1f0, 0.1, BigFloat("0.1"), 0.0, 1.0)
-            @test_throws ArgumentError TaylorModel(value, x)
-            @test_throws ArgumentError TaylorModel(polynomial(x), value, x)
+            @test_throws r"Floating constant.*use.*interval" TaylorModel(value, x)
+            @test_throws r"Floating constant.*use.*interval" TaylorModel(polynomial(x), value, x)
             for op in (+, -, *, /)
-                @test_throws ArgumentError op(x, value)
-                @test_throws ArgumentError op(value, x)
+                @test_throws r"Floating constant.*use.*interval" op(x, value)
+                @test_throws r"Floating constant.*use.*interval" op(value, x)
             end
         end
         for value in (1, 1 // 10, IA.interval(T, 0.1), IA.exact(0.1))
@@ -1001,4 +1098,6 @@ end
         @test fit.converged && length(fit.patches) == 1
         @test interval_contains(fit([1]), Rational{BigInt}(0.1))
     end
+    x, = taylor_models([IA.interval(1, 2)]; order = 3)
+    @test_throws r"overflow.*BigFloat" x * IA.interval(1.0e308) * IA.interval(1.0e308)
 end
