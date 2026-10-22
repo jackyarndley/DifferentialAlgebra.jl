@@ -50,6 +50,12 @@ function Base.setindex!(buffer::TimeDerivativeBuffer, value, i::Int)
     buffer.data[i] = node
     return value
 end
+function Base.fill!(buffer::TimeDerivativeBuffer, value)
+    for i in eachindex(buffer)
+        buffer[i] = value
+    end
+    return buffer
+end
 time_rhs_buffer(u::AbstractVector) = zero.(u)
 time_rhs_buffer(u::AbstractVector{<:TimeNode}) = TimeDerivativeBuffer(zero.(u))
 

@@ -257,8 +257,9 @@ extension. Supports in-place and out-of-place analytic vector ODEs, numeric or
 [`TaylorPolynomial`](@ref) states, forward/backward integration, `saveat`, dense
 Taylor interpolation and callbacks. Time order is independent of uncertainty
 order. Choose `order ≥ 3`; the state dimension stays fixed during a solve.
-Interval coefficients are unsupported by this ODE algorithm and are rejected at
-initialization; it does not certify time-integration errors.
+Use polynomial initial states for uncertain polynomial parameters. Interval
+states and parameters are rejected at initialization; this algorithm does not
+certify time-integration errors.
 
 The step controller uses the last two retained time coefficients, scaled by
 `abstol` and `reltol`. Polynomial errors use the sum of absolute uncertainty

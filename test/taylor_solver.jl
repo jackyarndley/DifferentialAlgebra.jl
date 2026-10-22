@@ -5,6 +5,32 @@ using SciMLBase: successful_retcode
 import DiffEqBase
 using IntervalArithmetic: Interval, interval
 
+include("support/time_rhs.jl")
+
+@testset "In-place zero filling and parameter validation" begin
+    for strategy in (:fill, :broadcast)
+        initial = [0.0, 1.0]
+        solution = solve(
+            ODEProblem(zeroed_oscillator!, initial, (0.0, 1.0), strategy),
+            TaylorMethod(12); adaptive = false, dt = 0.1
+        )
+        @test successful_retcode(solution)
+        @test last(solution.u) ≈ [sin(1.0), cos(1.0)] rtol = 1.0e-13
+        @test initial == [0, 1]
+    end
+    x, = variables(1; order = 2)
+    for rhs in (parameter_growth, parameter_growth!)
+        for p in (1 + x, [1 + x], (; rate = 1 + x))
+            problem = ODEProblem(rhs, [1.0], (0.0, 1.0), p)
+            @test_throws r"Use polynomial initial states" init(problem, TaylorMethod(12))
+        end
+        for p in (interval(1), [interval(1)], (; rate = interval(1)))
+            problem = ODEProblem(rhs, [1.0], (0.0, 1.0), p)
+            @test_throws r"interval parameters" init(problem, TaylorMethod(12))
+        end
+    end
+end
+
 @testset "SciML Taylor integration" begin
     oscillator(u, p, t) = [u[2], -u[1]]
     function oscillator!(du, u, p, t)

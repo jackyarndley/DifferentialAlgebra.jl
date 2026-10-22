@@ -258,3 +258,16 @@ end
         )
     end
 end
+include("support/time_rhs.jl")
+
+@testset "Recorded derivative buffers accept scalar zero filling" begin
+    for T in (Float32, Float64, BigFloat), strategy in (:fill, :broadcast)
+        series = taylor_expand(
+            recorded_oscillator, T[0, 1], zero(T); order = 12, parameters = strategy
+        )
+        step = one(T) / 10
+        @test [s(step) for s in series] ≈ [sin(step), cos(step)] rtol = 16eps(T) atol =
+            2step^13 / T(factorial(13))
+        @test all(s -> coefficient_type(s) === T, series)
+    end
+end

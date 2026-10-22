@@ -37,6 +37,24 @@ ODECore.full_cache(cache::TaylorMutableCache) = (cache.tmp,)
 ODECore.get_fsalfirstlast(::TaylorMutableCache, u) = (zero(u), zero(u))
 ODECore.get_tmp_cache(integrator, ::TaylorAlgorithm, cache::TaylorCache) = (cache.tmp,)
 
+# Validate common parameter containers before an in-place RHS stores a polynomial
+# or unsupported interval coefficient in a numeric derivative buffer.
+check_parameters(p, polynomial_state) = nothing
+function check_parameters(p::Real, polynomial_state)
+    DifferentialAlgebra.taylor_solver_coefficient(typeof(p)) ||
+        throw(ArgumentError("TaylorMethod does not support interval parameters"))
+    p isa TaylorPolynomial && !polynomial_state && throw(
+        ArgumentError(
+            "Use polynomial initial states when the ODE has uncertain polynomial parameters"
+        )
+    )
+    return nothing
+end
+function check_parameters(p::Union{AbstractArray, Tuple, NamedTuple}, polynomial_state)
+    foreach(value -> check_parameters(value, polynomial_state), p)
+    return nothing
+end
+
 function ODECore.alg_cache(
         alg::TaylorAlgorithm, u, rate_prototype,
         uEltypeNoUnits, uBottomEltypeNoUnits, tTypeNoUnits, uprev, uprev2,
@@ -45,6 +63,7 @@ function ODECore.alg_cache(
     u isa Vector{<:Real} || throw(ArgumentError("TaylorMethod requires a real state vector"))
     all(value -> DifferentialAlgebra.taylor_solver_coefficient(typeof(value)), u) ||
         throw(ArgumentError("TaylorMethod does not support interval coefficients"))
+    check_parameters(p, eltype(u) <: TaylorPolynomial)
     rhs = if IIP
         (u, p, t) -> begin
             du = DifferentialAlgebra.time_rhs_buffer(u)
