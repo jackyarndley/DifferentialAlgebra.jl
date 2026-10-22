@@ -9,6 +9,23 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 exact_derivative(f, x, n) = n == 0 ? f(x) : ForwardDiff.derivative(t -> exact_derivative(f, t, n - 1), x)
 const RContinuity = Rational{BigInt}
 
+@testset "Irrational boundary routing agrees across ordinary geometries" begin
+    f(v) = v[1]^2
+    for upper in (Float64(π), nextfloat(Float64(π)))
+        box = adaptive_map(f, [0, -1], [upper, 1]; order = 2)
+        polygon = ConvexPolygon([(0, -1), (upper, -1), (upper, 1), (0, 1)])
+        oriented = adaptive_map(f, polygon; directions = [1 1; -1 1], order = 2)
+        for fit in (box, oriented), query in (fit, continuous_map(f, fit))
+            if upper < BigFloat(π)
+                @test_throws DomainError query(Real[π, 0])
+            else
+                @test query(Real[π, 0]) ≈ Float64(π)^2 rtol = 16eps()
+            end
+            @test query([BigFloat(upper), 0]) ≈ upper^2 rtol = 16eps()
+        end
+    end
+end
+
 @testset "Irrational physical coordinates" begin
     f(v) = v[1]^2 + v[2] / 2
     box = adaptive_map(f, [-4, -4], [4, 4]; order = 2)

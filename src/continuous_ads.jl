@@ -275,7 +275,7 @@ function continuous_map(
 end
 
 continuity_primal(x::Union{Integer, Rational, AbstractFloat}) = x
-continuity_primal(x::AbstractIrrational) = float(x)
+continuity_primal(x::AbstractIrrational) = ads_coordinate(x)
 continuity_primal(x) = throw(ArgumentError("Provide scalar physical coordinates; use enclose for intervals and load ForwardDiff for dual queries"))
 function continuity_point(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == nvariables(a) || throw(DimensionMismatch("Provide exactly one physical coordinate per variable"))

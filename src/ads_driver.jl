@@ -298,7 +298,9 @@ function ads_build!(problem, geometry, ctx, options, first_candidate, nodes, pen
 end
 
 ads_leaf(::DomainNode{T}, patch) where {T} = DomainNode(0, zero(T), 0, 0, patch)
-ads_node_value(node::DomainNode, point) = point[node.axis]
+ads_coordinate(x) = x
+ads_coordinate(x::AbstractIrrational) = BigFloat(x)
+ads_node_value(node::DomainNode, point) = ads_coordinate(point[node.axis])
 ads_query_bounds(node::DomainNode, query) = (query[1][node.axis], query[2][node.axis])
 ads_point_left(node, point) = ads_node_value(node, point) <= node.midpoint
 function ads_point_patch(nodes, point)

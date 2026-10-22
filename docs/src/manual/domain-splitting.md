@@ -205,8 +205,9 @@ changes, and public geometry accessors own their data.
 Ordinary polygon evaluation preserves promoted coordinate types, including
 `BigFloat` and ForwardDiff dual numbers. Containment and patch selection use the
 primal coordinates; polynomial evaluation retains their partials. Irrational
-coordinates such as `π` use their floating values for containment, consistently
-with ordinary box and continuous maps.
+coordinates such as `π` use `BigFloat` at the current precision for containment
+and routing, consistently with ordinary box and continuous maps. Pass an explicit
+`BigFloat` coordinate when its precision matters at a domain boundary.
 
 These methods return `PiecewisePolygonMap`. They support 2D positive-area convex
 domains, scalar/vector outputs and refinement from an existing polygon map.

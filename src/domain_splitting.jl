@@ -353,7 +353,11 @@ ads_ratio(error, tolerance) = iszero(tolerance) ? (iszero(error) ? zero(error) :
 function ads_patch(map::PiecewiseTaylorMap, point)
     Base.require_one_based_indexing(point)
     length(point) == nvariables(map) || throw(DimensionMismatch("Provide one coordinate per domain dimension"))
-    all(i -> !(point[i] isa TaylorPolynomial) && map.lower[i] <= point[i] <= map.upper[i], eachindex(point)) ||
+    all(
+        i -> !(point[i] isa TaylorPolynomial) &&
+            map.lower[i] <= ads_coordinate(point[i]) <= map.upper[i],
+        eachindex(point)
+    ) ||
         throw(DomainError(point, "Point lies outside the map domain"))
     return ads_patches(map)[ads_point_patch(map.nodes, point)]
 end
