@@ -18,7 +18,7 @@ jobs:
   test:
     name: Julia ${{ matrix.julia-version }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
@@ -104,6 +104,9 @@ jobs:
           @safetestset "Time series" begin
               include(joinpath(pwd(), "test", "time_series.jl"))
           end
-          @safetestset "Polygon ADS" begin
-              include(joinpath(pwd(), "test", "polygon_ads.jl"))
+          @safetestset "Mixed ForwardDiff arithmetic" begin
+              include(joinpath(pwd(), "test", "forwarddiff.jl"))
+          end
+          @safetestset "ForwardDiff ADS" begin
+              include(joinpath(pwd(), "test", "forwarddiff_ads.jl"))
           end

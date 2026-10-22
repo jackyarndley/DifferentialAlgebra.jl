@@ -32,16 +32,11 @@ include("support/time_rhs.jl")
 end
 
 @testset "SciML Taylor integration" begin
-    oscillator(u, p, t) = [u[2], -u[1]]
-    function oscillator!(du, u, p, t)
-        du[1], du[2] = u[2], -u[1]
-        return nothing
-    end
     @test_throws ArgumentError TaylorMethod(2)
     @test_throws MethodError TaylorMethod(20.0)
     @test string(TaylorMethod()) == "TaylorMethod(20)"
     @test string(TaylorMethod(18)) == "TaylorMethod(18)"
-    for f in (oscillator, oscillator!)
+    for f in (oscillator_state, oscillator_state!)
         problem = ODEProblem(f, [0.0, 1.0], (0.0, 2π))
         solution = solve(problem, TaylorMethod(18); abstol = 1.0e-12, reltol = 1.0e-12)
         @test successful_retcode(solution)
@@ -83,7 +78,7 @@ end
     condition(u, t, integrator) = t - 0.5
     affect!(integrator) = (integrator.u[1] *= 2)
     callback = ContinuousCallback(condition, affect!; save_positions = (true, true))
-    problem = ODEProblem((u, p, t) -> u, [1.0], (0.0, 1.0))
+    problem = ODEProblem(exponential_growth, [1.0], (0.0, 1.0))
     solution = solve(problem, TaylorMethod(16); abstol = 1.0e-12, reltol = 1.0e-12, callback)
     @test last(solution.u)[1] ≈ 2exp(1.0) rtol = 2.0e-11
     @test solution(0.2)[1] ≈ exp(0.2) rtol = 2.0e-11
@@ -107,7 +102,7 @@ end
     for T in (Float32, BigFloat)
         tolerance = T === Float32 ? T(1.0e-6) : T(1.0e-40)
         precise = solve(
-            ODEProblem((u, p, t) -> u, T[1], (zero(T), one(T))), TaylorMethod(20);
+            ODEProblem(exponential_growth, T[1], (zero(T), one(T))), TaylorMethod(20);
             abstol = tolerance, reltol = tolerance
         )
         @test last(precise.u) isa Vector{T}
@@ -116,13 +111,15 @@ end
 
     δ, = variables((:δ,); order = 2)
     initial = [1 + δ + δ^2]
-    map_problem = ODEProblem((u, p, t) -> u, initial, (0.0, 1.0))
+    map_problem = ODEProblem(exponential_growth, initial, (0.0, 1.0))
     map_solution = solve(map_problem, TaylorMethod(16); abstol = 1.0e-12, reltol = 1.0e-12)
     @test coefficient_norm(last(map_solution.u)[1] - exp(1.0) * initial[1]) < 2.0e-11
     @test coefficient_norm(map_solution(0.3)[1] - exp(0.3) * initial[1]) < 2.0e-11
     @test coefficient_norm(initial[1] - (1 + δ + δ^2)) == 0
     @test max_order() == 2
-    @test_throws ArgumentError solve(ODEProblem((u, p, t) -> [p * u[1]], [1.0], (0.0, 1.0), 1 + δ), TaylorMethod(12))
+    @test_throws ArgumentError solve(
+        ODEProblem(parameter_growth, [1.0], (0.0, 1.0), 1 + δ), TaylorMethod(12)
+    )
 end
 
 @testset "Public dense interpolation derivatives" begin
@@ -147,7 +144,7 @@ end
 @testset "TaylorMethod rejects interval coefficient states clearly" begin
     x, = variables(Interval{Float64}, 1; order = 2)
     for initial in ([1 + x], [interval(1)])
-        problem = ODEProblem((u, p, t) -> u, initial, (0.0, 1.0))
+        problem = ODEProblem(exponential_growth, initial, (0.0, 1.0))
         @test_throws ArgumentError init(problem, TaylorMethod(8))
     end
 end
@@ -182,7 +179,7 @@ end
 end
 
 @testset "In-place callbacks preserve aliased state storage" begin
-    growth!(du, u, p, t) = (du[1] = u[1]; nothing)
+    growth! = exponential_growth!
     initial = [1.0]
     callback = ContinuousCallback(
         (u, t, integrator) -> t - 0.15,
@@ -201,7 +198,7 @@ end
 end
 
 @testset "In-place coefficient types and polynomial ownership" begin
-    growth!(du, u, p, t) = (du[1] = u[1]; nothing)
+    growth! = exponential_growth!
     for T in (Float32, BigFloat)
         initial = T[1]
         endpoint = T(3) / 10

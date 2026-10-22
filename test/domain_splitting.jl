@@ -275,11 +275,10 @@ end
 end
 
 @testset "Tail estimators exclude affine variation" begin
-    for estimator in (LastTerms(), ExtrapolatedTail()), order in (1, 2),
-            budget in (0, 32 * 1024^2)
+    for estimator in (LastTerms(), ExtrapolatedTail()), order in (1, 2)
         f(v) = 3v[1] + 1
         box = adaptive_map(
-            f, [-1.0], [1.0]; order, estimator, table_bytes = budget,
+            f, [-1.0], [1.0]; order, estimator,
             atol = 1.0e-6
         )
         @test box.converged && length(box.patches) == 1
@@ -287,7 +286,7 @@ end
         @test box([0.25]) == 1.75
         polygon = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
         fit = adaptive_map(
-            f, polygon; order, estimator, table_bytes = budget,
+            f, polygon; order, estimator,
             directions = :axes, atol = 1.0e-6
         )
         @test fit.converged && length(fit.patches) == 1

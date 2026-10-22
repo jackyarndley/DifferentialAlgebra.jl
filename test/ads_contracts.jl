@@ -47,13 +47,13 @@ end
             atol = [3 // 5, 9 // 10],
         ),
     )
-    for case in cases, polygon in (false, true), budget in (0, 32 * 1024^2)
+    for case in cases, polygon in (false, true)
         (; f, estimator, order, guard_order, atol) = case
         fit = adaptive_map(
             f, [-1, -1], [1, 1]; estimator, order, guard_order, atol,
             check_points = false, strict = false, max_patches = 2,
             splitter = polygon ? :oriented : :tail,
-            directions = polygon ? :axes : nothing, table_bytes = budget
+            directions = polygon ? :axes : nothing
         )
         # Only y exceeds tolerance. Halving y makes both children pass;
         # spending this two-patch budget on x leaves the y error unchanged.
@@ -67,12 +67,12 @@ end
 end
 
 @testset "A represented low-degree polynomial needs no extrapolated splits" begin
-    for polygon in (false, true), budget in (0, 32 * 1024^2)
+    for polygon in (false, true)
         fit = adaptive_map(
             v -> v[1] + v[1]^2, [-1, -1], [1, 1]; order = 5,
             estimator = ExtrapolatedTail(), atol = 1 // 1000,
             splitter = polygon ? :oriented : :tail,
-            directions = polygon ? :axes : nothing, table_bytes = budget
+            directions = polygon ? :axes : nothing
         )
         @test fit.converged && length(fit.patches) == 1
         @test fit([1 // 4, 0]) == 5 // 16
@@ -80,7 +80,7 @@ end
 end
 
 @testset "Snapshot collections use owned vector storage" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         f(v) = [v[1]^2 + v[2]^2, v[1]]
         for kind in (:ordinary, :validated, :polygon)
             estimator = kind === :ordinary ? LastTerms() : IntervalBound()
@@ -88,7 +88,6 @@ end
                 f, T[-1, -1], T[1, 1]; estimator, order = 1, atol,
                 splitter = kind === :polygon ? :oriented : :width,
                 directions = kind === :polygon ? :axes : nothing,
-                table_bytes = budget
             )
             fits = [build(atol) for atol in (1 // 2, 1 // 8)]
             @test typeof(fits[1]) === typeof(fits[2])
@@ -115,7 +114,7 @@ end
                     bounds[1] = interval(T, 999)
                     @test IA.sup(raw.error_bounds[1]) < 999
                 end
-                smooth = continuous_map(f, fit; table_bytes = budget)
+                smooth = continuous_map(f, fit)
                 @test isconcretetype(fieldtype(typeof(smooth), :_patches))
                 @test smooth._patches isa Vector
                 saved = smooth([1 // 8, -1 // 4])
@@ -123,7 +122,7 @@ end
             end
         end
         box = [interval(T, -1, 1), interval(T, 2)]
-        x, y = taylor_models(box; order = 2, table_bytes = budget)
+        x, y = taylor_models(box; order = 2)
         for name in (:box, :center, :radius, :normalized)
             @test isconcretetype(fieldtype(typeof(x._coordinates), name))
             @test getproperty(x._coordinates, name) isa Vector{Interval{T}}
@@ -138,51 +137,50 @@ end
 @testset "Refinement inherits owned construction options" begin
     square = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
     for estimator in (GuardedTail(), LastTerms(), IntervalBound()),
-            polygon in (false, true), budget in (0, 32 * 1024^2)
+            polygon in (false, true)
         guard = estimator isa GuardedTail ? 3 : 0
         names, atol = ["q", "r"], [1 // 8, 1 // 16]
-        observed = Tuple{Int, Int, Tuple{String, String}}[]
+        observed = Tuple{Int, Bool}[]
+        numeric_calls = Ref(0)
         function f(v)
             p = v[1] isa TaylorPolynomial ? v[1] :
-                v[1] isa TaylorModel ? getfield(v[1], :_polynomial) : nothing
+                v[1] isa TaylorModel ? polynomial(v[1]) : nothing
             if p !== nothing
-                push!(
-                    observed, (
-                        truncation_order(), p.algebra.basis.table_bytes,
-                        Tuple(p.algebra.names),
-                    )
-                )
+                push!(observed, (truncation_order(), occursin("q", string(p))))
+            else
+                numeric_calls[] += 1
             end
-            return [v[1]^2 + v[2], v[2]]
+            return [exp(v[1]) + v[2], v[2]]
         end
         options = (;
             estimator, order = 2, atol, rtol = 0, guard_order = guard,
             max_depth = 0, max_patches = 17, check_points = false,
-            strict = false, splitter = :width, names, table_bytes = budget,
+            strict = false, splitter = :width, names,
         )
         source = polygon ? adaptive_map(f, square; directions = :axes, options...) :
             adaptive_map(f, [-1, -1], [1, 1]; options...)
         atol[1], names[1] = 99, "changed"
         owned = copy(source)
+        # Ownership requires distinct mutable storage, even though it is private.
         @test owned._options.atol !== source._options.atol
         @test owned._options.names !== source._options.names
         empty!(observed)
         refined = adaptive_map(f, owned)
         @test !isempty(observed)
-        @test all(==((2 + guard, budget, ("q", "r"))), observed)
-        @test refined._options.atol == [1 // 8, 1 // 16]
-        @test refined._options.max_depth == 0 && refined._options.max_patches == 17
-        @test !refined._options.strict && !refined._options.check_points
-        @test refined._options.splitter == :width && iszero(refined._options.rtol)
+        @test all(==((2 + guard, true)), observed)
+        @test numeric_calls[] == 0
+        @test !refined.converged
+        @test only(refined.patches).status == :max_depth
         @test length(refined.patches) == length(source.patches) == 1
         actual = refined([1 // 4, -1 // 2])
-        @test all(contract_value.(actual, [-7 // 16, -1 // 2]))
+        @test all(contract_value.(actual, [25 // 32, -1 // 2]))
         revised = adaptive_map(
-            f, refined; atol = [1 // 4, 1 // 8], max_depth = 1, max_patches = 19
+            f, refined; atol = [21 // 100, 1 // 8], max_depth = 1, max_patches = 19
         )
-        @test revised._options.atol == [1 // 4, 1 // 8]
-        @test revised._options.max_depth == 1 && revised._options.max_patches == 19
-        @test refined._options.atol == [1 // 8, 1 // 16]
+        # The root guard tail exceeds 13/60; each child's last retained
+        # quadratic coefficient is at most exp(1/2)/8 < 21/100.
+        @test revised.converged && length(revised.patches) == 2
+        @test !refined.converged && length(refined.patches) == 1
     end
 end
 
@@ -201,17 +199,21 @@ end
 end
 
 @testset "Changing estimators adopts compatible guard defaults" begin
-    f(v) = v[1]^2
+    observed = Int[]
+    f(v) = (push!(observed, truncation_order()); v[1]^2)
     source = adaptive_map(
         f, [-1.0], [1.0]; order = 2, guard_order = 3,
         atol = 1 // 8, max_depth = 0, strict = false
     )
+    empty!(observed)
     retained = adaptive_map(f, source; estimator = LastTerms())
-    @test retained._options.guard_order == 0
+    @test unique(observed) == [2]
+    empty!(observed)
     guarded = adaptive_map(f, retained; estimator = GuardedTail())
-    @test guarded._options.guard_order == 2
+    @test unique(observed) == [4]
+    empty!(observed)
     explicit = adaptive_map(f, retained; estimator = GuardedTail(), guard_order = 1)
-    @test explicit._options.guard_order == 1
+    @test unique(observed) == [3]
 end
 
 @testset "Invalid tolerances reject before callback evaluation" begin
@@ -396,13 +398,13 @@ end
 end
 
 @testset "Interval coefficients discard; models enclose discarded terms" begin
-    for I in (IF, IB), budget in (0, 32 * 1024^2)
+    for I in (IF, IB)
         T = IA.numtype(I)
         box = [interval(T, -1, 1)]
-        p, = variables(I, 1; order = 1, table_bytes = budget)
+        p, = variables(I, 1; order = 1)
         @test iszero(p * p) && degree(p * p) == 0
         @test IA.isthinzero(enclose(p * p, box))
-        x, = taylor_models(box; order = 1, table_bytes = budget)
+        x, = taylor_models(box; order = 1)
         m = x * x
         @test iszero(polynomial(m)) && max_order(m) == 1
         @test sameinterval(remainder(m), interval(T, 0, 1))
@@ -412,11 +414,11 @@ end
 end
 
 @testset "Validated error-driven split directions" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         for f in (v -> [2^40 * v[1], exp(v[2])], v -> 2^20 * v[1] + exp(v[2]))
             fit = adaptive_map(
                 f, T[-1, -1], T[1, 1]; estimator = IntervalBound(), splitter = :tail,
-                order = 3, atol = 1.0e-4, max_depth = 1, strict = false, table_bytes = budget
+                order = 3, atol = 1.0e-4, max_depth = 1, strict = false
             )
             @test first(fit.nodes).axis == 2 && first(fit.nodes).midpoint == 0
             @test all(p -> sameinterval(domain(p)[1], interval(T, -1, 1)), fit.patches)
@@ -498,10 +500,11 @@ end
             order = 3, atol = 1.0e-3, check_points = false
         )
         @test length(fit.patches) > 1
+        patches = fit.patches
         @test all(p -> p.lower !== fit.lower && p.upper !== fit.upper, fit.patches)
         @test all(
-            i == j || fit.patches[i].lower !== fit.patches[j].lower
-                for i in eachindex(fit.patches), j in eachindex(fit.patches)
+            i == j || patches[i].lower !== patches[j].lower
+                for i in eachindex(patches), j in eachindex(patches)
         )
         bounds = [deepcopy((p.lower, p.upper)) for p in fit.patches]
         saved = domain(fit)

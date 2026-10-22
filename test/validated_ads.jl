@@ -5,14 +5,16 @@ include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 
 @testset "Certified box ADS and portable model snapshots" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         z = IA.interval(T, -1, 1)
         caller, = variables(1; order = 4)
         previous = caller^3
         ctx = DA.CURRENT_ALGEBRA[]
         calls = Ref(0)
         f(v) = (calls[] += 1; v[1]^2)
-        a = adaptive_map(f, [z]; order = 1, atol = 1 // 16, table_bytes = budget, estimator = IntervalBound(), splitter = :width)
+        a = adaptive_map(
+            f, [z]; order = 1, atol = 1 // 16, estimator = IntervalBound(), splitter = :width
+        )
         @test DA.CURRENT_ALGEBRA[] === ctx && degree(previous) == 3
         @test a.converged && length(a.patches) == 4 && calls[] == 7
         @test noutputs(a) == 1 && nvariables(a) == 1 && max_order(a) == 1
@@ -47,7 +49,7 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         # Mixed discarded terms are bounded over the full square, not samples.
         mixed = adaptive_map(
             v -> [v[1] * v[2], 3, v[1] - v[1]], [z, z];
-            order = 1, atol = [1 // 4, 1 // 100, 1 // 100], table_bytes = budget
+            order = 1, atol = [1 // 4, 1 // 100, 1 // 100]
             , estimator = IntervalBound(), splitter = :width
         )
         @test mixed.converged && length(mixed.patches) == 4
@@ -145,14 +147,14 @@ end
     # Recomputed products have independent discarded tails at order one.
     # The exact argument is 2+x, but its root-cell enclosure crosses zero.
     f(v) = log(2 + v[1] + v[1] * v[2] - v[1] * v[2])
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         box = [IA.interval(T, -1, 1), IA.interval(T, -1, 1)]
-        inputs = taylor_models(box; order = 1, table_bytes = budget)
+        inputs = taylor_models(box; order = 1)
         @test_throws DomainError f(inputs)
         for callback in (f, v -> [f(v), v[1]])
             fit = adaptive_map(
                 callback, box; estimator = IntervalBound(), order = 1,
-                table_bytes = budget, atol = 1 // 16
+                atol = 1 // 16
             )
             @test fit.converged && length(fit.patches) > 1
             @test all(

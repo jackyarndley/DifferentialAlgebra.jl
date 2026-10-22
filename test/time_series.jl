@@ -1,6 +1,8 @@
 using Test, DifferentialAlgebra
 using ForwardDiff
 
+include("support/time_rhs.jl")
+
 # Exact binomial coefficients give an independent oracle for (1 + t + x)^p.
 time_binomial(p, n) =
     prod(big(p) - j for j in 0:(n - 1); init = big(1) // 1) / factorial(big(n))
@@ -152,7 +154,7 @@ end
     @test solution[2](0.2) ≈ 3.8
     @test initial == [2, 3]
     # Returning references to input series must not affect the recurrence.
-    oscillation = taylor_expand((u, p, t) -> [u[2], -u[1]], [0.0, 1.0], 0.0; order = 20)
+    oscillation = taylor_expand(oscillator_state, [0.0, 1.0], 0.0; order = 20)
     @test oscillation[1](0.5) ≈ sin(0.5) atol = 1.0e-15
     @test oscillation[2](-0.5) ≈ cos(0.5) atol = 1.0e-15
     linear = taylor_expand(
@@ -179,14 +181,14 @@ end
         @test expansion.coefficients ≈ integrate(g(τ)).coefficients rtol = 2.0e-13 atol = 2.0e-14
     end
     for T in (Float32, BigFloat)
-        solution = taylor_expand((u, p, t) -> u, T[1], zero(T); order = 20)
+        solution = taylor_expand(exponential_growth, T[1], zero(T); order = 20)
         @test coefficient_type(only(solution)) == T
         @test only(solution)(T(0.1)) ≈ exp(T(0.1)) rtol = max(T(1.0e-35), 5eps(T))
     end
 
     δ, = variables((:δ,); order = 2)
     initial_map = (1 + δ)^2
-    solution = taylor_expand((u, p, t) -> u, [initial_map], 0.0; order = 20)
+    solution = taylor_expand(exponential_growth, [initial_map], 0.0; order = 20)
     @test truncation_order() == 2 && max_order() == 2
     @test max_order(only(solution)) == 20
     @test coefficient(coefficient(only(solution), 20), [2]) ≈ 1 / factorial(big(20))
@@ -200,10 +202,10 @@ end
 
     # Uncertain parameters must promote numeric initial states, never silently
     # convert the polynomial derivatives to their constant coefficients.
-    solution = taylor_expand((u, p, t) -> [p * u[1]], [1.0], 0.0; order = 5, parameters = 1 + δ)
+    solution = taylor_expand(parameter_growth, [1.0], 0.0; order = 5, parameters = 1 + δ)
     @test coefficient_type(only(solution)) == TaylorPolynomial{Float64}
     @test coefficient_norm(coefficient(only(solution), 2) - (1 + δ)^2 / 2) == 0
-    exact = only(taylor_expand((u, p, t) -> u, Rational{BigInt}[1], 0 // 1; order = 12))
+    exact = only(taylor_expand(exponential_growth, Rational{BigInt}[1], 0 // 1; order = 12))
     @test coefficient(exact, 12) == 1 // factorial(big(12))
 
     f(u, p, t) = u
@@ -258,7 +260,7 @@ end
         )
     end
 end
-include("support/time_rhs.jl")
+
 
 @testset "Recorded derivative buffers accept scalar zero filling" begin
     for T in (Float32, Float64, BigFloat), strategy in (:fill, :broadcast)

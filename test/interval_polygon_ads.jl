@@ -5,13 +5,16 @@ include("support/intervals.jl")
 using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
 
 @testset "IntervalBound selector and certified polygon ADS" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         z = IA.interval(T, -1, 1)
         square = ConvexPolygon([(-one(T), -one(T)), (one(T), -one(T)), (one(T), one(T)), (-one(T), one(T))])
         f(v) = (v[1] + v[2])^2
         caller, = variables(1; order = 4)
         ctx = DA.CURRENT_ALGEBRA[]
-        a = adaptive_map(f, [z, z]; estimator = IntervalBound(), splitter = :oriented, order = 1, atol = 1 // 16, table_bytes = budget)
+        a = adaptive_map(
+            f, [z, z]; estimator = IntervalBound(), splitter = :oriented,
+            order = 1, atol = 1 // 16
+        )
         @test DA.CURRENT_ALGEBRA[] === ctx && degree(caller) == 1
         @test a.converged && a isa PiecewisePolygonMap && length(a.patches) > 1
         @test split_directions(a) == [1 1; -1 1]
@@ -55,18 +58,29 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         @test first(b.patches)._patch.models[1]._coefficients !== first(a.patches)._patch.models[1]._coefficients
         initialize!(2, 3)
         @test sameinterval(enclose(a), before) && sameinterval(enclose(b), before) && sameinterval(enclose(deepcopy(a)), before)
-        refined = adaptive_map(f, a; order = 1, atol = 1 // 64, table_bytes = budget)
+        refined = adaptive_map(f, a; order = 1, atol = 1 // 64)
         @test refined.converged && length(refined.patches) > length(a.patches)
         @test sum(p -> domain_area(domain(p)), refined.patches) == 4
         @test all(p -> IA.sup(abs(only(p.error_bounds))) <= 1 // 64, refined.patches)
-        same = adaptive_map(f, [z, z]; order = 1, atol = 1 // 16, splitter = :oriented, table_bytes = budget, estimator = IntervalBound())
+        same = adaptive_map(
+            f, [z, z]; order = 1, atol = 1 // 16, splitter = :oriented,
+            estimator = IntervalBound()
+        )
         @test sameinterval(enclose(same), before)
-        endpoints = adaptive_map(f, T[-1, -1], T[1, 1]; estimator = IntervalBound(), splitter = :oriented, order = 1, atol = 1 // 16, table_bytes = budget)
+        endpoints = adaptive_map(
+            f, T[-1, -1], T[1, 1]; estimator = IntervalBound(), splitter = :oriented,
+            order = 1, atol = 1 // 16
+        )
         @test sameinterval(enclose(endpoints), before)
-        axis = adaptive_map(f, [z, z]; estimator = IntervalBound(), order = 1, atol = 1 // 16, table_bytes = budget)
+        axis = adaptive_map(
+            f, [z, z]; estimator = IntervalBound(), order = 1, atol = 1 // 16
+        )
         @test axis isa PiecewiseTaylorModel && axis.converged && length(axis.patches) > length(a.patches)
         # A general nonorthogonal frame is inverted exactly, not transposed.
-        affine = adaptive_map(v -> [v[1] / 3 - v[2] / 5, 2 // 3], triangle; estimator = IntervalBound(), order = 1, directions = [1 2; -3 1], table_bytes = budget)
+        affine = adaptive_map(
+            v -> [v[1] / 3 - v[2] / 5, 2 // 3], triangle; estimator = IntervalBound(),
+            order = 1, directions = [1 2; -3 1]
+        )
         @test length(affine.patches) == 1 && affine.converged
         @test interval_contains(affine([1 // 4, 1 // 4])[1], 1 // 30)
         @test interval_contains(affine([0, 0])[2], 2 // 3)
@@ -77,7 +91,7 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         covered = adaptive_map(
             v -> log(3 // 2 - v[1] - v[2]), triangle;
             estimator = IntervalBound(), directions = :axes, order = 3,
-            atol = 1 // 1000, table_bytes = budget
+            atol = 1 // 1000
         )
         @test covered.converged
         @test interval_contains(covered([0, 0]), log(BigFloat(3) / 2))
@@ -86,13 +100,16 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         constant = adaptive_map(v -> 2 // 3, square; estimator = IntervalBound(), order = 1)
         @test length(constant.patches) == 1 && interval_contains(enclose(constant), 2 // 3)
         # Includes a genuinely mixed omitted monomial; oracle |xi1*xi2|<=1.
-        mixed = adaptive_map(v -> v[1] * v[2], square; estimator = IntervalBound(), order = 1, atol = 1, directions = [1 0; 1 1], table_bytes = budget)
+        mixed = adaptive_map(
+            v -> v[1] * v[2], square; estimator = IntervalBound(), order = 1,
+            atol = 1, directions = [1 0; 1 1]
+        )
         @test mixed.converged
         @test interval_contains(mixed([1, -1]), -1) && interval_contains(mixed([1, 1]), 1)
         incoming = adaptive_map(
             v -> TaylorModel(polynomial(v[1]), IA.interval(T, -1 // 8, 1 // 8), v[1]),
             square; estimator = IntervalBound(), order = 1, atol = 1 // 16,
-            directions = :axes, max_depth = 0, strict = false, table_bytes = budget
+            directions = :axes, max_depth = 0, strict = false
         )
         @test !incoming.converged && sameinterval(only(only(incoming.patches).error_bounds), IA.interval(T, -1 // 8, 1 // 8))
         for fn in (inv, log, sqrt)
@@ -115,7 +132,7 @@ using .IntervalTestSupport: IA, DA, subset, interval_contains, sameinterval
         @test_throws ArgumentError adaptive_map(v -> v[1], [z, z]; estimator = IntervalBound(), splitter = :unknown)
         # Six-variable box ADS still uses independent coordinates and the
         # native engine; the new geometry does not redirect this path.
-        six = adaptive_map(v -> sum(v), fill(z, 6); estimator = IntervalBound(), order = 1, table_bytes = budget)
+        six = adaptive_map(v -> sum(v), fill(z, 6); estimator = IntervalBound(), order = 1)
         @test nvariables(six) == 6 && length(six.patches) == 1
         @test interval_contains(six(fill(1 // 3, 6)), 2)
     end
@@ -138,7 +155,7 @@ end
 
 @testset "Certified polygon ADS recovers from failed probes and fits" begin
     f(v) = log(2 + v[1] + v[1] * v[2] - v[1] * v[2])
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         polygon = ConvexPolygon(
             [
                 (T(-1), T(-1)), (T(1), T(-1)),
@@ -147,7 +164,7 @@ end
         )
         fit = adaptive_map(
             f, polygon; estimator = IntervalBound(), order = 1,
-            table_bytes = budget, atol = 1 // 16
+            atol = 1 // 16
         )
         @test fit.converged && length(fit.patches) > 1
         @test sum(p -> domain_area(domain(p)), fit.patches) == domain_area(polygon)
@@ -188,7 +205,7 @@ end
 
 @testset "Filtered interval point routing visits every closed face" begin
     f(v) = v[1]^2 + v[2]^2
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         polygon = ConvexPolygon(
             [
                 (-one(T), -one(T)), (one(T), -one(T)),
@@ -197,11 +214,11 @@ end
         )
         a = adaptive_map(
             f, polygon; estimator = IntervalBound(), directions = :axes,
-            order = 1, atol = 1 // 8, table_bytes = budget
+            order = 1, atol = 1 // 8
         )
         a = adaptive_map(
             f, a; directions = [1 1 // 3; -1 // 3 1],
-            atol = 1 // 16, table_bytes = budget
+            atol = 1 // 16
         )
         for point in vcat(face_points(a), [(1 // 7, 2 // 9), (0, 0)])
             exact = Rational{BigInt}.(point)
@@ -227,7 +244,7 @@ end
 
 
 @testset "Validated automatic frames ignore exact affine variation" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         polygon = ConvexPolygon(
             [
                 (-one(T), -one(T)), (one(T), -one(T)),
@@ -241,7 +258,6 @@ end
                 fit = adaptive_map(
                     f, polygon; order = 3, atol = 1 // 4,
                     estimator = IntervalBound(), max_patches = 512,
-                    table_bytes = budget
                 )
                 @test T.(split_directions(fit)) ≈ T[1 // 2 1; -1 1 // 2] atol = 128eps(T)
                 @test fit.converged

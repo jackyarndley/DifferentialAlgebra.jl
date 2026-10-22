@@ -27,8 +27,8 @@ using ForwardDiff
 end
 
 @testset "Dual scalar arithmetic preserves coefficient derivatives" begin
-    for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
-        x, = variables(T, 1; order = 3, table_bytes = budget)
+    for T in (Float32, Float64, BigFloat)
+        x, = variables(T, 1; order = 3)
         a = ForwardDiff.Dual(T(2), T(3))
         p = T(4) + x
         for (result, values, partials) in (
@@ -86,30 +86,28 @@ end
     @test map([2, 3]) == [31, 5] # Numeric compiled maps own their coefficients.
 
     # An additional floating-point type exercises the generic scalar kernels.
-    for budget in (0, 32 * 1024^2)
-        x, y = variables(Float16, 2; order = 3, table_bytes = budget)
-        p = Float16(2) + x / 2 + y / 4
-        @test p isa TaylorPolynomial{Float16}
-        @test p(Float16[1, 2]) == Float16(3)
-        @test coefficient(p * p, [1, 1]) == Float16(1) / 4
-        @test coefficient(differentiate(p, 1), [0, 0]) == Float16(1) / 2
-        @test coefficient(integrate(x, 1), [2, 0]) == Float16(1) / 2
-        @test exp(x) isa TaylorPolynomial{Float16}
-        @test coefficient(exp(x), [2, 0]) ≈ Float16(1) / 2
+    x, y = variables(Float16, 2; order = 3)
+    p = Float16(2) + x / 2 + y / 4
+    @test p isa TaylorPolynomial{Float16}
+    @test p(Float16[1, 2]) == Float16(3)
+    @test coefficient(p * p, [1, 1]) == Float16(1) / 4
+    @test coefficient(differentiate(p, 1), [0, 0]) == Float16(1) / 2
+    @test coefficient(integrate(x, 1), [2, 0]) == Float16(1) / 2
+    @test exp(x) isa TaylorPolynomial{Float16}
+    @test coefficient(exp(x), [2, 0]) ≈ Float16(1) / 2
 
-        # Exact coefficients are Real but not AbstractFloat.
-        x, y = variables(Rational{BigInt}, 2; order = 4, table_bytes = budget)
-        p = (1 + x + y)^3
-        @test p isa TaylorPolynomial{Rational{BigInt}}
-        @test coefficient(p, [1, 1]) == 6
-        @test p([1 // 3, 1 // 4]) == (1 + 1 // 3 + 1 // 4)^3
-        @test inv(1 - x) isa TaylorPolynomial{Rational{BigInt}}
-        @test coefficient(inv(1 - x), [4, 0]) == 1
-        @test inv(TaylorPolynomial{Rational{BigInt}}(3)) isa TaylorPolynomial{Rational{BigInt}}
-        @test constant_term(inv(TaylorPolynomial{Rational{BigInt}}(3))) == 1 // 3
-        @test DifferentialAlgebra.coefficient_norm(differentiate(integrate(x * y, 1), 1) - x * y) == 0
-        @test CompiledMap([p, x * y])([1 // 3, 1 // 4]) == [p([1 // 3, 1 // 4]), 1 // 12]
-    end
+    # Exact coefficients are Real but not AbstractFloat.
+    x, y = variables(Rational{BigInt}, 2; order = 4)
+    p = (1 + x + y)^3
+    @test p isa TaylorPolynomial{Rational{BigInt}}
+    @test coefficient(p, [1, 1]) == 6
+    @test p([1 // 3, 1 // 4]) == (1 + 1 // 3 + 1 // 4)^3
+    @test inv(1 - x) isa TaylorPolynomial{Rational{BigInt}}
+    @test coefficient(inv(1 - x), [4, 0]) == 1
+    @test inv(TaylorPolynomial{Rational{BigInt}}(3)) isa TaylorPolynomial{Rational{BigInt}}
+    @test constant_term(inv(TaylorPolynomial{Rational{BigInt}}(3))) == 1 // 3
+    @test DifferentialAlgebra.coefficient_norm(differentiate(integrate(x * y, 1), 1) - x * y) == 0
+    @test CompiledMap([p, x * y])([1 // 3, 1 // 4]) == [p([1 // 3, 1 // 4]), 1 // 12]
 
     # Differentiation through the coefficients requires a wider bound than AbstractFloat.
     T = ForwardDiff.Dual{Nothing, Float64, 1}

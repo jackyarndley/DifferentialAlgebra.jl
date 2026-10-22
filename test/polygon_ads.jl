@@ -1,38 +1,7 @@
 using Test, DifferentialAlgebra
 using LinearAlgebra
-using ForwardDiff
 
 include("support/processes.jl")
-
-@testset "Promoted polygon queries and coefficient derivatives" begin
-    polygon = ConvexPolygon([(-4, -4), (4, -4), (4, 4), (-4, 4)])
-    for budget in (0, 32 * 1024^2)
-        f(v) = 2 + v[1]^2 + v[1] * v[2] / 4 - v[2]
-        fit = adaptive_map(
-            f, polygon; directions = [1 1; -1 1], order = 2,
-            table_bytes = budget
-        )
-        for point in ([0.25, -0.5], [0.25, 0.25], [4.0, 4.0])
-            expected = [2point[1] + point[2] / 4, point[1] / 4 - 1]
-            @test ForwardDiff.gradient(fit, point) ≈ expected
-            @test ForwardDiff.hessian(fit, point) ≈ [2 1 / 4; 1 / 4 0]
-        end
-        setprecision(256) do
-            point = [BigFloat(1) / 3, BigFloat(1) / 7]
-            @test fit(point) isa BigFloat
-            @test fit(Tuple(point)) isa BigFloat
-            @test fit(point) ≈ f(point) rtol = 32eps(BigFloat)
-        end
-        @test fit((π, 0)) ≈ f((π, 0))
-        @test fit([π, 0]) ≈ f([π, 0])
-        vector_fit = adaptive_map(
-            v -> [f(v), 3v[1] - v[2]], polygon;
-            directions = :axes, order = 2, table_bytes = budget
-        )
-        @test ForwardDiff.jacobian(vector_fit, [0.25, -0.5]) ≈ [3 / 8 -15 / 16; 3 -1]
-        @test vector_fit(BigFloat[0.25, -0.5]) isa Vector{BigFloat}
-    end
-end
 
 @testset "Exact polygon geometry and ordinary oriented ADS" begin
     DA = DifferentialAlgebra
@@ -65,11 +34,14 @@ end
     @test_throws ArgumentError DA.polygon_frame([1 1; 2 2])
     @test_throws DimensionMismatch DA.polygon_frame([1, 1])
 
-    for budget in (0, 32 * 1024^2), estimator in (GuardedTail(), ExtrapolatedTail(), LastTerms())
+    for estimator in (GuardedTail(), ExtrapolatedTail(), LastTerms())
         caller, = variables(1; order = 4)
         ctx = DA.CURRENT_ALGEBRA[]
         f(v) = (v[1] + v[2])^2
-        a = adaptive_map(f, [-1, -1], [1, 1]; order = 1, atol = 1 // 16, estimator, splitter = :oriented, table_bytes = budget)
+        a = adaptive_map(
+            f, [-1, -1], [1, 1]; order = 1, atol = 1 // 16, estimator, splitter = :oriented
+        )
+        patches = a.patches
         @test DA.CURRENT_ALGEBRA[] === ctx && degree(caller) == 1
         @test a isa PiecewisePolygonMap && a.converged
         @test split_directions(a) == [1 1; -1 1]
@@ -78,7 +50,14 @@ end
         # Coverage and disjoint interiors are checked exactly, independently of
         # function samples. Every pair has at most a shared edge or vertex.
         @test all(p -> all(v -> DA.polygon_contains(square, v), polygon_vertices(domain(p))), a.patches)
-        @test all(i -> all(j -> DA.polygon_intersection(domain(a.patches[i]), domain(a.patches[j])) === nothing, (i + 1):length(a.patches)), eachindex(a.patches))
+        @test all(
+            i -> all(
+                j -> DA.polygon_intersection(
+                    domain(patches[i]), domain(patches[j])
+                ) === nothing,
+                (i + 1):length(patches)
+            ), eachindex(patches)
+        )
         @test all(x -> any(p -> DA.polygon_contains(domain(p), x), a.patches), [(x // 4, y // 4) for x in -4:4 for y in -4:4])
         # Independent analytical error on every parallelogram: the omitted
         # term of z1² is r1²*xi1². This is a uniform bound, not a sampling proof.
@@ -98,7 +77,7 @@ end
         @test b.patches[1]._patch.map !== a.patches[1]._patch.map
         initialize!(2, 3)
         @test a([1 // 2, 1 // 4]) == b([1 // 2, 1 // 4]) == before
-        refined = adaptive_map(f, a; order = 1, atol = 1 // 64, table_bytes = budget)
+        refined = adaptive_map(f, a; order = 1, atol = 1 // 64)
         @test length(refined.patches) >= length(a.patches)
         @test sum(p -> domain_area(domain(p)), refined.patches) == 4
         @test all(p -> any(q -> all(v -> DA.polygon_contains(domain(q), v), polygon_vertices(domain(p))), a.patches), refined.patches)
@@ -165,7 +144,7 @@ using .PolygonQueryTestSupport: exact_patch, exact_evaluate, face_points
 @testset "Filtered polygon routing retains exact decisions across frames" begin
     DA = DifferentialAlgebra
     f(v) = v[1]^2 + v[2]^2
-    for budget in (0, 32 * 1024^2), T in (Float32, Float64, BigFloat)
+    for T in (Float32, Float64, BigFloat)
         polygon = ConvexPolygon(
             [
                 (-one(T), -one(T)), (one(T), -one(T)),
@@ -174,37 +153,45 @@ using .PolygonQueryTestSupport: exact_patch, exact_evaluate, face_points
         )
         original = adaptive_map(
             f, polygon; directions = :axes,
-            order = 1, atol = 1 // 8, table_bytes = budget
+            order = 1, atol = 1 // 8
         )
         fit = adaptive_map(
             f, original; directions = [1 1 // 3; -1 // 3 1],
-            atol = 1 // 16, table_bytes = budget
+            atol = 1 // 16
         )
         refined = adaptive_map(
             f, fit; directions = [1 -1 // 5; 1 // 5 1],
-            atol = 1 // 32, table_bytes = budget
+            atol = 1 // 32
         )
         for a in (original, fit, refined)
             query = DA.polygon_query(a, [0.123, 0.234])
             @test DA.ads_point_patch(a.nodes, query) == exact_patch(a, [0.123, 0.234])
             @test query.exact === nothing
+            inside, outside = [], []
             for face in face_points(a)
                 points = (collect(face), Float64[face...])
-                for point in points
-                    @test DA.ads_point_patch(a.nodes, DA.polygon_query(a, point)) ==
-                        exact_patch(a, point)
-                    @test a(point) ≈ exact_evaluate(a, point)
-                end
+                append!(inside, points)
                 point = Float64[face...]
                 for axis in 1:2, neighbor in (prevfloat, nextfloat)
                     x = copy(point)
                     x[axis] = neighbor(x[axis])
                     if DA.polygon_contains(a._domain, Rational{BigInt}.(x))
-                        @test DA.ads_point_patch(a.nodes, DA.polygon_query(a, x)) ==
-                            exact_patch(a, x)
+                        push!(inside, x)
                     else
-                        @test_throws DomainError a(x)
+                        push!(outside, x)
                     end
+                end
+            end
+            @test all(inside) do point
+                DA.ads_point_patch(a.nodes, DA.polygon_query(a, point)) ==
+                    exact_patch(a, point) && isapprox(a(point), exact_evaluate(a, point))
+            end
+            @test all(outside) do point
+                try
+                    a(point)
+                    false
+                catch err
+                    err isa DomainError
                 end
             end
             b = copy(a)
@@ -218,7 +205,7 @@ using .PolygonQueryTestSupport: exact_patch, exact_evaluate, face_points
         # needs the exact fallback to decide the side of its rounded projection.
         oblique = adaptive_map(
             f, polygon; directions = [1 1 // 3; -1 // 3 1],
-            order = 1, atol = 1 // 8, table_bytes = budget
+            order = 1, atol = 1 // 8
         )
         n = first(oblique.nodes).normal
         point = [n[2] / 7, -n[1] / 7]
@@ -231,36 +218,8 @@ using .PolygonQueryTestSupport: exact_patch, exact_evaluate, face_points
     end
 end
 
-@testset "Filtered routing preserves promoted polynomial and dual evaluation" begin
-    DA = DifferentialAlgebra
-    f(v) = exp(v[1] + 2v[2])
-    polygon = ConvexPolygon([(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)])
-    for budget in (0, 32 * 1024^2)
-        fit = adaptive_map(
-            f, polygon; directions = [1 1 // 3; -1 // 3 1],
-            order = 3, atol = 1 // 16, table_bytes = budget
-        )
-        @test length(fit.patches) > 1
-        for point in ([0.123, 0.234], [-0.321, 0.432])
-            oracle(x) = exact_evaluate(fit, x)
-            @test fit(point) == oracle(point)
-            @test ForwardDiff.gradient(fit, point) ≈ ForwardDiff.gradient(oracle, point)
-            @test ForwardDiff.hessian(fit, point) ≈ ForwardDiff.hessian(oracle, point)
-        end
-        setprecision(512) do
-            point = BigFloat[1 // 7, 2 // 9]
-            oracle(x) = exact_evaluate(fit, x)
-            @test fit(point) isa BigFloat
-            @test fit(point) == oracle(point)
-            @test ForwardDiff.gradient(fit, point) ≈ ForwardDiff.gradient(oracle, point)
-            @test ForwardDiff.hessian(fit, point) ≈ ForwardDiff.hessian(oracle, point)
-        end
-    end
-end
-
-
 @testset "Automatic frames use nonlinear sensitivity" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         polygon = ConvexPolygon(
             [
                 (-one(T), -one(T)), (one(T), -one(T)),
@@ -276,11 +235,11 @@ end
             for estimator in (GuardedTail(), LastTerms(), ExtrapolatedTail())
                 a = adaptive_map(
                     nonlinear, polygon; order = 3, atol = 1 // 4,
-                    estimator, max_patches = 512, table_bytes = budget
+                    estimator, max_patches = 512
                 )
                 b = adaptive_map(
                     shifted, polygon; order = 3, atol = 1 // 4,
-                    estimator, max_patches = 512, table_bytes = budget
+                    estimator, max_patches = 512
                 )
                 @test T.(split_directions(a)) ≈ expected atol = 128eps(T)
                 @test T.(split_directions(b)) ≈ expected atol = 128eps(T)
@@ -289,7 +248,6 @@ end
         end
         affine = adaptive_map(
             v -> 2v[1] + v[2], polygon; order = 1,
-            table_bytes = budget
         )
         @test split_directions(affine) == Matrix{Int}(I, 2, 2)
         # Retaining a larger working basis must not hide the requested order.
@@ -297,14 +255,14 @@ end
         callback(v) = (push!(orders, truncation_order()); v[1] + v[2])
         adaptive_map(
             callback, polygon; order = 1, estimator = LastTerms(),
-            check_points = false, table_bytes = budget
+            check_points = false
         )
         @test orders == [3, 1]
         empty!(orders)
         cubic(v) = (push!(orders, truncation_order()); (v[1] + 2v[2])^3)
         fit = adaptive_map(
             cubic, polygon; order = 2, atol = 1 // 2,
-            check_points = false, table_bytes = budget
+            check_points = false
         )
         @test length(orders) == 2length(fit.patches)
         @test T.(split_directions(fit)) ≈ T[1 // 2 1; -1 1 // 2] atol = 128eps(T)

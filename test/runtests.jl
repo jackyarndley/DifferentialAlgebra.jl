@@ -19,6 +19,9 @@ end
 @safetestset "forwarddiff" begin
     include("forwarddiff.jl")
 end
+@safetestset "forwarddiff ads" begin
+    include("forwarddiff_ads.jl")
+end
 @safetestset "api validation" begin
     include("api_validation.jl")
 end

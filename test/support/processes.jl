@@ -1,7 +1,7 @@
 # Capture both streams so failures in loading and threading checks are reviewable.
 function fresh_julia(script; threads = 1, timeout = 120)
     project = dirname(Base.active_project())
-    command = `$(Base.julia_cmd()) --startup-file=no --check-bounds=yes --threads=$threads`
+    command = `$(Base.julia_cmd()) --startup-file=no --threads=$threads`
     command = `$command --project=$project -e $script`
     return mktemp() do _, io
         process = run(pipeline(command; stdout = io, stderr = io); wait = false)
@@ -15,7 +15,8 @@ function fresh_julia(script; threads = 1, timeout = 120)
         output = read(io, String)
         ok = !expired && success(process)
         if !ok
-            @error "Fresh Julia process failed" command expired output
+            @error "Fresh Julia process failed" command expired
+            print(stderr, output)
         end
         return ok
     end

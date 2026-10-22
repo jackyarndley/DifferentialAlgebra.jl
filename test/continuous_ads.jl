@@ -76,13 +76,16 @@ end
 end
 
 @testset "Owned continuous ADS, geometry and AD" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         f(v) = [v[1]^3 + 2v[2]^3, 2 + v[1] / 3 - v[2] / 5]
         caller, = variables(1; order = 4)
         ctx = DifferentialAlgebra.CURRENT_ALGEBRA[]
         for oriented in (false, true)
-            fit = adaptive_map(f, T[-1, -1], T[1, 1]; order = 2, atol = 1 // 2, splitter = oriented ? :oriented : :tail, table_bytes = budget)
-            s = continuous_map(f, fit; table_bytes = budget)
+            fit = adaptive_map(
+                f, T[-1, -1], T[1, 1]; order = 2, atol = 1 // 2,
+                splitter = oriented ? :oriented : :tail
+            )
+            s = continuous_map(f, fit)
             @test DifferentialAlgebra.CURRENT_ALGEBRA[] === ctx && degree(caller) == 1
             @test s.continuity == :c2 && nvariables(s) == 2 && noutputs(s) == 2 && max_order(s) == 2
             @test all(isfinite, s.error_estimate)
@@ -149,10 +152,12 @@ end
 end
 
 @testset "Certified function bounds for continuous surrogates" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         f(v) = v[1]^2
-        fit = adaptive_map(f, [interval(T, -1, 1)]; estimator = IntervalBound(), order = 1, atol = 1 // 16, table_bytes = budget)
-        s = continuous_map(f, fit; table_bytes = budget)
+        fit = adaptive_map(
+            f, [interval(T, -1, 1)]; estimator = IntervalBound(), order = 1, atol = 1 // 16
+        )
+        s = continuous_map(f, fit)
         # Independent uniform oracle f-P_c=(x-c)² on the overlap interval.
         # The largest radius is 3/8; convex blending preserves [0,9/64].
         @test isequal_interval(only(s.error_bounds), interval(T, 0, 9 // 64))
@@ -179,8 +184,11 @@ end
         initialize!(2, 3)
         @test isequal_interval(enclose(s), before) && isequal_interval(enclose(b), before)
         triangle = ConvexPolygon([(zero(T), zero(T)), (one(T), zero(T)), (zero(T), one(T))])
-        p = adaptive_map(v -> (v[1] + v[2])^2, triangle; estimator = IntervalBound(), directions = [1 1; -1 1], order = 1, atol = 1 // 64, table_bytes = budget)
-        t = continuous_map(v -> (v[1] + v[2])^2, p; table_bytes = budget)
+        p = adaptive_map(
+            v -> (v[1] + v[2])^2, triangle; estimator = IntervalBound(),
+            directions = [1 1; -1 1], order = 1, atol = 1 // 64
+        )
+        t = continuous_map(v -> (v[1] + v[2])^2, p)
         @test in_interval(1 // 4, enclose(t, [1 // 4, 1 // 4]))
         @test issubset_interval(interval(T, 0, 1), enclose(t, triangle))
         @test_throws DomainError t([3 // 4, 3 // 4])
@@ -308,20 +316,20 @@ end
 @testset "Indexed supports agree with independent full scans" begin
     f(v) = v[1]^2 + 2v[2]^2
     polygon = ConvexPolygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])
-    for budget in (0, 32 * 1024^2), oriented in (false, true)
+    for oriented in (false, true)
         fit = if oriented
             adaptive_map(
                 f, polygon; directions = [1 1 // 3; -1 // 3 1],
-                order = 1, atol = 1 // 8, table_bytes = budget
+                order = 1, atol = 1 // 8
             )
         else
             adaptive_map(
                 f, [-1.0, -1.0], [1.0, 1.0];
-                order = 1, atol = 1 // 8, table_bytes = budget
+                order = 1, atol = 1 // 8
             )
         end
         for continuity in (:c0, :c1, :c2)
-            smooth = continuous_map(f, fit; continuity, table_bytes = budget)
+            smooth = continuous_map(f, fit; continuity)
             @test length(smooth._nodes) == 2length(smooth._patches) - 1
             for point in (
                     [0.123, 0.234], [0.0, 0.0], [-1.0, 1.0],
@@ -363,66 +371,63 @@ end
 end
 
 @testset "Exact fallback at faces and beyond Float64 precision" begin
-    for budget in (0, 32 * 1024^2)
-        f(v) = v[1]^3
-        fit = adaptive_map(
-            f, [-1.0], [1.0]; order = 2, atol = 1 // 2,
-            table_bytes = budget
-        )
-        smooth = continuous_map(f, fit; table_bytes = budget)
-        for face in unique(
-                vcat(
-                    [
-                        vcat(p.lower, p.core_lower, p.core_upper, p.upper)
-                            for p in smooth._patches
-                    ]...
-                )
+    f(v) = v[1]^3
+    fit = adaptive_map(
+        f, [-1.0], [1.0]; order = 2, atol = 1 // 2,
+    )
+    smooth = continuous_map(f, fit)
+    for face in unique(
+            vcat(
+                [
+                    vcat(p.lower, p.core_lower, p.core_upper, p.upper)
+                        for p in smooth._patches
+                ]...
             )
-            for x in (prevfloat(Float64(face)), Float64(face), nextfloat(Float64(face)))
-                -1 <= x <= 1 || continue
-                @test blend_weights(smooth, [x]) ≈
-                    last(scan_continuity_weights(smooth, [x]))
-                @test smooth([x]) ≈ scan_continuity(smooth, [x]) atol = 2.0e-15
-            end
-        end
-        fixed = adaptive_map(
-            v -> v[1]^2 + v[2], BigFloat[-1, 1 // 3],
-            BigFloat[1, 1 // 3]; order = 1, atol = 1 // 8, table_bytes = budget
         )
-        fixed_smooth = continuous_map(v -> v[1]^2 + v[2], fixed; table_bytes = budget)
-        point = BigFloat[1 // 7, 1 // 3]
-        @test fixed_smooth(point) ≈ scan_continuity(fixed_smooth, point)
-        @test_throws DomainError fixed_smooth([point[1], nextfloat(point[2])])
-        # Build in one precision, query in another: cached Float64 directions
-        # and tapers must never determine BigFloat or nested-dual arithmetic.
-        polygon = ConvexPolygon([(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)])
-        f2(v) = v[1]^2 + v[2]^2
-        source = adaptive_map(
-            f2, polygon; directions = [1 1 // 3; -1 // 3 1],
-            order = 1, atol = 1 // 8, table_bytes = budget
-        )
-        high = continuous_map(f2, source; table_bytes = budget)
-        setprecision(512) do
-            point = BigFloat[1 // 7, 2 // 9]
-            @test high(point) isa BigFloat
-            @test high(point) ≈ scan_continuity(high, point) atol = 200eps(BigFloat)
-            @test ForwardDiff.gradient(high, point) ≈
-                ForwardDiff.gradient(x -> scan_continuity(high, x), point)
-            @test ForwardDiff.hessian(high, point) ≈
-                ForwardDiff.hessian(x -> scan_continuity(high, x), point)
+        for x in (prevfloat(Float64(face)), Float64(face), nextfloat(Float64(face)))
+            -1 <= x <= 1 || continue
+            @test blend_weights(smooth, [x]) ≈
+                last(scan_continuity_weights(smooth, [x]))
+            @test smooth([x]) ≈ scan_continuity(smooth, [x]) atol = 2.0e-15
         end
+    end
+    fixed = adaptive_map(
+        v -> v[1]^2 + v[2], BigFloat[-1, 1 // 3],
+        BigFloat[1, 1 // 3]; order = 1, atol = 1 // 8
+    )
+    fixed_smooth = continuous_map(v -> v[1]^2 + v[2], fixed)
+    point = BigFloat[1 // 7, 1 // 3]
+    @test fixed_smooth(point) ≈ scan_continuity(fixed_smooth, point)
+    @test_throws DomainError fixed_smooth([point[1], nextfloat(point[2])])
+    # Build in one precision, query in another: cached Float64 directions
+    # and tapers must never determine BigFloat or nested-dual arithmetic.
+    polygon = ConvexPolygon([(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)])
+    f2(v) = v[1]^2 + v[2]^2
+    source = adaptive_map(
+        f2, polygon; directions = [1 1 // 3; -1 // 3 1],
+        order = 1, atol = 1 // 8
+    )
+    high = continuous_map(f2, source)
+    setprecision(512) do
+        point = BigFloat[1 // 7, 2 // 9]
+        @test high(point) isa BigFloat
+        @test high(point) ≈ scan_continuity(high, point) atol = 200eps(BigFloat)
+        @test ForwardDiff.gradient(high, point) ≈
+            ForwardDiff.gradient(x -> scan_continuity(high, x), point)
+        @test ForwardDiff.hessian(high, point) ≈
+            ForwardDiff.hessian(x -> scan_continuity(high, x), point)
     end
 end
 
 @testset "Indexed interval enclosures retain closed support intersections" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         f(v) = v[1]^2
         box = [interval(T, -1, 1)]
         fit = adaptive_map(
             f, box; estimator = IntervalBound(), order = 1,
-            atol = 1 // 64, table_bytes = budget
+            atol = 1 // 64
         )
-        smooth = continuous_map(f, fit; table_bytes = budget)
+        smooth = continuous_map(f, fit)
         queries = [[interval(T, x)] for x in (-1, -1 // 4, 0, 1 // 4, 1)]
         append!(queries, ([interval(T, -1 // 2, 1 // 2)], box))
         for query in queries

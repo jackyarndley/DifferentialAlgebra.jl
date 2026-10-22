@@ -5,9 +5,9 @@ include("support/intervals.jl")
 using .IntervalTestSupport: IA, interval_contains
 
 @testset "Inverse construction uses the input's algebra" begin
-    for T in (Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat, Rational{BigInt})
         root, = variables(1; order = 2)
-        DifferentialAlgebra.with_algebra(5, 2; table_bytes = budget) do _
+        DifferentialAlgebra.with_algebra(5, 2) do _
             x, y = variable(1, T), variable(2, T)
             full, partial = [2x + y^2, y], [2x + x^2]
             result = fetch(
@@ -33,30 +33,26 @@ using .IntervalTestSupport: IA, interval_contains
 end
 
 @testset "Compact polynomial linear transforms" begin
-    for budget in (0, 32 * 1024^2)
-        x = variables(6; order = 10, table_bytes = budget)
-        result = DifferentialAlgebra._linear_transform([2 3; 0 4], [1 + x[1], x[6]])
-        @test iszero(result[1] - (2 + 2x[1] + 3x[6]))
-        @test iszero(result[2] - 4x[6])
-        @test all(p -> length(p.coeffs) <= 7, result)
-    end
+    x = variables(6; order = 10)
+    result = DifferentialAlgebra._linear_transform([2 3; 0 4], [1 + x[1], x[6]])
+    @test iszero(result[1] - (2 + 2x[1] + 3x[6]))
+    @test iszero(result[2] - 4x[6])
+    @test all(p -> length(p.coeffs) <= 7, result)
 end
 
 @testset "Dense evaluation uses the stored basis traversal" begin
-    for budget in (0, 32 * 1024^2)
-        x = variables(6; order = 10, table_bytes = budget)
-        p = (1 + sum(x) / 8)^10
-        point = fill(0.1, 6)
-        @test @inferred(p(point)) ≈ (1 + sum(point) / 8)^10 rtol = 80eps(Float64)
-        @test p(Float64[]) == 1
-        @test p([1.0]) ≈ (1 + 1 / 8)^10
-        @test p([point; 100]) == p(point)
-    end
+    x = variables(6; order = 10)
+    p = (1 + sum(x) / 8)^10
+    point = fill(0.1, 6)
+    @test @inferred(p(point)) ≈ (1 + sum(point) / 8)^10 rtol = 80eps(Float64)
+    @test p(Float64[]) == 1
+    @test p([1.0]) ≈ (1 + 1 / 8)^10
+    @test p([point; 100]) == p(point)
 end
 
 @testset "Direct numeric evaluation" begin
-    for T in (Float32, Float64, BigFloat, Rational{BigInt}), budget in (0, 32 * 1024^2)
-        x, y, z = variables(T, 3; order = 4, table_bytes = budget)
+    for T in (Float32, Float64, BigFloat, Rational{BigInt})
+        x, y, z = variables(T, 3; order = 4)
         p = (1 + x / 2 + y / 4 + z / 8)^4
         for point in (T[], T[1 // 4], T[1 // 4, -1 // 2, 1], T[1, 2, 3, 100])
             padded = vcat(point, zeros(T, 3))
@@ -88,9 +84,9 @@ end
 end
 
 @testset "Direct evaluation preserves interval bounds and metadata" begin
-    for T in (Float64, BigFloat), budget in (0, 32 * 1024^2)
+    for T in (Float64, BigFloat)
         I = Interval{T}
-        x, y = variables(I, 2; order = 3, table_bytes = budget)
+        x, y = variables(I, 2; order = 3)
         p = (1 + x / 2 + y / 4)^3
         box = [IA.interval(T, 1 // 4, 1 // 2), IA.interval(T, -1 // 2, -1 // 4)]
         result = p(box)
