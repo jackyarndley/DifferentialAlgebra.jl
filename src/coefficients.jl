@@ -99,7 +99,10 @@ Return nonzero monomials in increasing total degree, then basis order.
 """
 function monomials(a::TaylorPolynomial)
     b = valid(a).basis
-    return [Monomial(a.coeffs[i], UInt32.(b.exponents[:, i])) for i in 1:a.len if !coefficient_iszero(a.coeffs[i])]
+    return [
+        Monomial(a.coeffs[i], @view(b.exponents[:, i]))
+            for i in 1:a.len if !coefficient_iszero(a.coeffs[i])
+    ]
 end
 """
     monomial(p, index)
@@ -115,7 +118,7 @@ function monomial(a::TaylorPolynomial, pos::Integer)
     for i in 1:a.len
         if !coefficient_iszero(a.coeffs[i])
             found += 1
-            found == pos && return Monomial(a.coeffs[i], UInt32.(b.exponents[:, i]))
+            found == pos && return Monomial(a.coeffs[i], @view(b.exponents[:, i]))
         end
     end
     throw(BoundsError(a, pos))

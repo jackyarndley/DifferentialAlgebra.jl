@@ -38,10 +38,25 @@ end
         original.coefficients[1, 1] = T(100)
         @test owned(T[2, 3]) == T[7, 5]
         variables(T, 2; order = 3, table_bytes = budget)
-        GC.gc(true)
         @test owned(T[2, 3]) == T[7, 5]
         @test_throws r"previous initialization" evaluate(owned, [variable(1, T)])
     end
+end
+
+Base.@noinline function detached_compiled_map()
+    x, y = variables(2; order = 3)
+    map = CompiledMap([1 + x * y, x + y])
+    initialize!(2, 1)
+    return map
+end
+
+@testset "Compiled snapshots release their obsolete algebra" begin
+    map = detached_compiled_map()
+    owner = map.algebra
+    GC.gc(true)
+    @test owner.value === nothing
+    @test map([2, 3]) == [7, 5]
+    @test_throws r"previous initialization" evaluate(map, [variable(1)])
 end
 
 @testset "Converting monomials" begin
