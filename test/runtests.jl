@@ -16,6 +16,9 @@ end
 @safetestset "public api" begin
     include("public_api.jl")
 end
+@safetestset "forwarddiff" begin
+    include("forwarddiff.jl")
+end
 @safetestset "api validation" begin
     include("api_validation.jl")
 end
