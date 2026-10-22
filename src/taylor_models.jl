@@ -90,6 +90,7 @@ remainder(a::TaylorModel) = (model_valid(a); deepcopy(a._remainder))
 Return an independent physical validity domain: a vector of intervals for
 models/validated box ADS, `(lower, upper)` vectors in a named tuple for ordinary
 box ADS, or a `ConvexPolygon` for polygon ADS.
+Continuous maps preserve their core map's domain representation.
 """
 domain(a::TaylorModel) = (model_valid(a); deepcopy(a._coordinates.box))
 coefficient_type(::TaylorModel{T}) where {T} = T

@@ -35,9 +35,6 @@ Julia 1.12 or later is required.
   support trees reduce repeated exact routing and blending work.
 - ODE mutation, dense interpolation and discontinuity handling use the public
   solver interfaces while preserving buffer ownership and coefficient precision.
-- Tests isolate subjects with SafeTestsets, capture fresh-process failures, and
-  exercise independent scalar/combinatorial oracles and both multiplication paths.
-  CI covers Julia 1.12, current stable on Linux/Windows/macOS, and prereleases.
 
 Optional integrations remain supported. SciML integration environments
 require OrdinaryDiffEqCore 4.18, DiffEqBase 7.21.2 and SciMLBase 3.53 or later compatible

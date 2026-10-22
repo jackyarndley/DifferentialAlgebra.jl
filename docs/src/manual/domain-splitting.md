@@ -74,7 +74,14 @@ and upper bounds fix a coordinate. The promoted floating-point type of the
 bounds determines the input coefficient type.
 
 Construction and refinement own their domain endpoints, including BigFloat data.
-`domain(map)` returns independent bounds; treat stored patch data as read-only.
+`domain(map)` returns independent data: `(lower=Vector, upper=Vector)` for ordinary
+box maps, a vector of intervals for certified box maps, and a `ConvexPolygon`
+for polygon maps. A continuous map preserves its core map's domain form.
+
+`map.patches` copies the patch vector in O(number of patches) time. Cache it once
+before repeated indexing, for example `patches = map.patches; patches[i]`.
+The entries remain read-only snapshots; use `copy(snapshot)` for independent
+snapshot storage.
 
 ## Error estimators
 

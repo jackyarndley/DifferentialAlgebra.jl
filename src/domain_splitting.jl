@@ -47,6 +47,7 @@ patch meets the requested error estimate. `lower` and `upper` bound the domain.
 Numeric evaluation remains valid after the global algebra is reinitialized.
 Construction and refinement own the domain endpoints, including BigFloat data;
 `domain(map)` returns independent bounds.
+Accessing `map.patches` copies the vector; cache it once for repeated indexing.
 Shared faces belong to the lower child of a split. Extrapolation is rejected.
 `max_order(map)` is the requested retained order; `degree(map)` is the largest
 actual stored polynomial degree. Refinement inherits its construction options;
