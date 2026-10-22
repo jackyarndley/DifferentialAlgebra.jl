@@ -8,7 +8,7 @@ struct TaylorAlgorithm <: ODECore.OrdinaryDiffEqAdaptiveAlgorithm
     order::Int
 end
 Base.show(io::IO, alg::TaylorAlgorithm) = print(io, "TaylorMethod(", alg.order, ")")
-function DifferentialAlgebra.TaylorMethod(order::Integer = 20)
+function DifferentialAlgebra.TaylorMethod(order::Integer)
     order >= 3 || throw(ArgumentError("TaylorMethod needs a time order of at least three"))
     return TaylorAlgorithm(Int(order))
 end

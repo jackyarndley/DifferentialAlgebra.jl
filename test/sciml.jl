@@ -17,6 +17,6 @@ end
     for value in (Dual(2.0, 1.0), Dual(Dual(2.0, 1.0), Dual(1.0, 0.0)))
         p = TaylorPolynomial{typeof(value)}(value)
         @test @inferred(DiffEqBase.value(p)) === 2.0
-        @test @inferred(DiffEqBase.value(typeof(p))) === typeof(value)
+        @test @inferred(DiffEqBase.value(typeof(p))) === Float64
     end
 end

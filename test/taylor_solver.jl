@@ -38,6 +38,8 @@ end
         return nothing
     end
     @test_throws ArgumentError TaylorMethod(2)
+    @test_throws MethodError TaylorMethod(20.0)
+    @test string(TaylorMethod()) == "TaylorMethod(20)"
     @test string(TaylorMethod(18)) == "TaylorMethod(18)"
     for f in (oscillator, oscillator!)
         problem = ODEProblem(f, [0.0, 1.0], (0.0, 2π))
