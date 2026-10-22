@@ -173,6 +173,52 @@ function scaled_k_coefficient(values, n, k)
     return value / factorial(big(k))
 end
 
+@testset "Scaled Bessel K across moderate centers and retained orders" begin
+    centers = (2, 5, 15, 30, 50, 64, 65)
+    references, endpoints = setprecision(1024) do
+        coefficients = Dict{Tuple{Int, Int}, Vector{BigFloat}}()
+        endpoints = Dict{Tuple{Int, Int}, BigFloat}()
+        for center in centers
+            values = scaled_k_reference(BigFloat(center), 33)
+            endpoint = scaled_k_reference(BigFloat(3center) / 2, 2)
+            for n in (0, 2)
+                coefficients[(center, n)] = [
+                    scaled_k_coefficient(values, n, k) for k in 0:31
+                ]
+                endpoints[(center, n)] = endpoint[n + 1]
+            end
+        end
+        coefficients, endpoints
+    end
+    setprecision(128) do
+        for T in (Float32, Float64, BigFloat), budget in (0, 32 * 1024^2)
+            for order in (12, 30)
+                x, = variables(T, 1; order, table_bytes = budget)
+                for center in centers, n in (0, 2)
+                    result = besselkx(n, T(center) + x)
+                    expected = references[(center, n)]
+                    tolerance = 500eps(T)
+                    # Float32 storage may round the smallest subnormal to zero.
+                    floor = T === Float32 ? nextfloat(zero(T)) : zero(T)
+                    @test all(0:order) do k
+                        isapprox(
+                            coefficient(result, [k]), T(expected[k + 1]);
+                            rtol = tolerance, atol = floor
+                        )
+                    end
+                    step = BigFloat(center) / 2
+                    # Complete monotonicity bounds the remainder at positive
+                    # steps by the first omitted term, independently of the kernel.
+                    tail = abs(expected[order + 2]) * step^(order + 1)
+                    endpoint = endpoints[(center, n)]
+                    @test abs(result(T(step)) - endpoint) <=
+                        tail + tolerance * abs(endpoint)
+                end
+            end
+        end
+    end
+end
+
 @testset "Scaled Bessel K at large centers" begin
     references = setprecision(1024) do
         references = Dict{Tuple{Int, Int}, Vector{BigFloat}}()

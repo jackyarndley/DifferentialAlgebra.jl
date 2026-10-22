@@ -628,7 +628,7 @@ function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where 
     if fn in (SpecialFunctions.besselj, SpecialFunctions.besseli, SpecialFunctions.besselix)
         return regular_bessel_series(fn, n, a, c0, s)
     end
-    fn === SpecialFunctions.besselkx && x isa AbstractFloat && isfinite(x) && x > 64 &&
+    fn === SpecialFunctions.besselkx && x isa AbstractFloat && isfinite(x) && x >= 2 &&
         return large_besselk_series(n, a, c0)
     cutoff = working_order(a.algebra)
     coefficient_iszero(x) && throw(TaylorError("Bessel expansion is singular at zero"))
