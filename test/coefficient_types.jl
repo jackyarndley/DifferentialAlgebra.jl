@@ -184,6 +184,27 @@ end
     @test degree(q) == 1
 end
 
+@testset "Boolean conversion cannot discard polynomial terms" begin
+    x, = variables(1; order = 3)
+    @test Bool(one(x)) === true
+    @test Bool(zero(x)) === false
+    @test_throws InexactError Bool(1 + x)
+    @test_throws InexactError Bool(x)
+    @test_throws InexactError Bool(TaylorPolynomial(2))
+    @test_throws InexactError convert(Bool, 1 + x)
+    bits = falses(1)
+    @test_throws InexactError bits[1] = 1 + x
+    @test !only(bits)
+    values = Bool[true]
+    @test_throws InexactError values[1] = x
+    @test only(values)
+    for constructor in (Integer, Int, Float16, Rational)
+        # Unsupported scalar constructors may reject dispatch outright; any
+        # generic Julia fallback must still reject a nonconstant polynomial.
+        @test_throws Union{MethodError, InexactError} constructor(1 + x)
+    end
+end
+
 @testset "Scalar conversion cannot discard polynomial terms" begin
     x, y = variables(2; order = 3)
     for T in (Float32, Float64, BigFloat)

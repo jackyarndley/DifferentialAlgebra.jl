@@ -44,6 +44,7 @@ end
 Base.Float64(a::TaylorPolynomial) = scalar_value(Float64, a)
 Base.Float32(a::TaylorPolynomial) = scalar_value(Float32, a)
 Base.BigFloat(a::TaylorPolynomial) = scalar_value(BigFloat, a)
+Base.Bool(a::TaylorPolynomial) = scalar_value(Bool, a)
 Base.conj(a::TaylorPolynomial) = copy(a)
 Base.real(a::TaylorPolynomial) = copy(a)
 Base.abs2(a::TaylorPolynomial) = a * a
