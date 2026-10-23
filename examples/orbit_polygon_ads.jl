@@ -6,6 +6,8 @@
 # no numerical Kepler solve or time integrator is being certified.
 using DifferentialAlgebra, IntervalArithmetic, CairoMakie, LinearAlgebra, Random
 
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
+
 # The rotation is Rz(Ω) Rx(i) Rz(ω). Length and speed are normalized by a and
 # sqrt(μ/a). The fixed e=1/5, i=1/2 and Ω=1/3 are exact rational inputs.
 # Lift constants into the input algebra before taking their elementary functions.
@@ -13,15 +15,7 @@ using DifferentialAlgebra, IntervalArithmetic, CairoMakie, LinearAlgebra, Random
 function orbit_state(v)
     E, ω = v
     e, i, Ω = zero(E) + 1 // 5, zero(E) + 1 // 2, zero(E) + 1 // 3
-    s, c = sincos(E)
-    β = sqrt(1 - e^2)
-    radius = 1 - e * c
-    x, y, vx, vy = c - e, β * s, -s / radius, β * c / radius
-    sw, cw = sincos(ω)
-    si, ci = sincos(i)
-    sn, cn = sincos(Ω)
-    rotate(x, y) = [cn * (cw * x - sw * y) - sn * ci * (sw * x + cw * y), sn * (cw * x - sw * y) + cn * ci * (sw * x + cw * y), si * (sw * x + cw * y)]
-    return vcat(rotate(x, y), rotate(vx, vy))
+    return element_state(one(E), e, i, Ω, ω, E, one(E))
 end
 lower, upper = [0.0, -0.5], [1.0, 0.5]
 order, tolerance = 3, 1 // 1000

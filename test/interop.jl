@@ -71,3 +71,26 @@ end
     @test_throws ArgumentError DA.eigenpairs([one(x) x; zero(x) 2one(x)])
     @test_throws DimensionMismatch DA.eigenpairs(ones(2, 3))
 end
+
+@testset "Range-stable dual recurrences and final eigenpair filtering" begin
+    x, = variables(1; order = 2)
+    @test_throws DA.TaylorError ForwardDiff.Dual(0.0, 1.0)^(2 + x)
+    d = ForwardDiff.Dual(1.0e308, 1.0)
+    result = (d + d * x)^0.25
+    linear = coefficient(result, [1])
+    @test ForwardDiff.value(linear) ≈ 2.5e76
+    @test only(ForwardDiff.partials(linear)) ≈ 6.25e-233
+    nested = ForwardDiff.Dual{:outer}(d, one(d))
+    q = coefficient((nested + nested * x)^0.25, [1])
+    @test ForwardDiff.value(only(ForwardDiff.partials(q))) ≈ 6.25e-233
+    A = [2 + 0.018x one(x); one(x) 4 - 0.018x]
+    set_coefficient_tolerance!(0.01)
+    values, _ = DA.eigenpairs(A)
+    @test coefficient.(values, Ref([1])) ≈ [0.018 / sqrt(2), -0.018 / sqrt(2)]
+end
+
+@testset "Rational exponents stay constant with dual coefficients" begin
+    x, = variables(typeof(ForwardDiff.Dual(0.0, 1.0)), 1; order = 2)
+    @test coefficients(x^(2 // 1)) == coefficients(x^2)
+    @test coefficient((1 + x)^(1 // 2), [2]) == ForwardDiff.Dual(-1 / 8, 0.0)
+end

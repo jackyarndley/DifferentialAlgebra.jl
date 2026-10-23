@@ -16,7 +16,7 @@ The larger orbit examples then combine these ideas.
 | [Taylor expansions and truncation](generated/taylor_expansions.md) | Coefficient identities and approximation error versus order |
 | [Rational functions and convergence](generated/rational_functions.md) | Physical displacement coordinates and useful expansion range |
 | [Differentiation and integration](generated/calculus.md) | Gaussian probability checked against `erf` |
-| [Multivariate derivatives and removable singularities](generated/multivariate_calculus.md) | Mixed derivatives, polar integration and regularized expressions |
+| [Multivariate derivatives and removable singularities](generated/multivariate_calculus.md) | Regularized origin series and an analytical gradient/tangent check |
 | [Inverse maps](generated/inverse_maps.md) | Scalar and multivariate inverses with composition residuals |
 | [Polynomial linear algebra](generated/linear_algebra.md) | Local solves compared with numerical solves and conditioning |
 | [Orthogonal polynomials](generated/orthogonal_polynomials.md) | A total-degree Legendre basis checked by its Gram matrix |

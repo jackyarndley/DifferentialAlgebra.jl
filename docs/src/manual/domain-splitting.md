@@ -111,8 +111,11 @@ The default sensitivity probe chooses a fixed frame from nonlinear coefficients;
 
 Each split clips the physical polygon at a projected midpoint. Geometry uses
 exact rationals; expansions cover the bounding parallelogram in that frame.
+Each projection row is normalized to maximum absolute entry one; positive
+rescaling of supplied directions leaves the physical cuts unchanged.
 The callback must be valid on the **entire cover**, including points outside
-the polygon. Interval arithmetic bounds that cover outward. Nonconvex polygons
+the polygon, and the cover must be representable in the source scalar type.
+Interval arithmetic bounds that cover outward. Nonconvex polygons
 and higher-dimensional polyhedra are unsupported; box ADS handles higher
 dimensions and fixed coordinates.
 
@@ -121,7 +124,9 @@ introducing new ones. Public point/subdomain queries enforce the physical
 polygon, and certified queries include every intersecting closed patch.
 Ordinary evaluations retain promoted numeric types, including BigFloat and
 ForwardDiff partials; routing uses primal coordinates. Use explicit BigFloat
-inputs when precision matters near a boundary.
+inputs when precision matters near a boundary. Certified point queries enclose
+exact irrational coordinates outward and admit them only when that enclosure
+lies inside the physical domain.
 
 Compare [partitions and fitting bands](../generated/polygon_ads.md), an
 [inclined orbital ribbon](../generated/orbit_polygon_ads.md), and
@@ -177,13 +182,16 @@ The initial state and each checkpoint must pass. Unsplit patches continue from
 their current state with guard coefficients. Failed patches split and restart
 from the initial time to recover discarded terms. Late splits can therefore
 be expensive. Decreasing times request backward propagation; no checks occur
-between supplied times.
+between supplied times. Retained states own their coefficient storage, so callbacks
+may reuse a scratch vector without overwriting another trajectory.
 
 Passing `(t0, tf)` instead selects `advance(state, span, monitor)`. Call
 `monitor(state, time)` after accepted steps and stop immediately if it returns
 `true`; return `(; state, time)` at the stopping time or endpoint. The
 [orbit-flow tutorial](../generated/ads_flow.md) implements both interfaces with
 Vern9. Online point checks propagate independent numeric states and can be costly.
+Those propagations run inside `monitor`, so simultaneously active `advance` calls
+must have independent integration state.
 
 Every completed patch stores a final-time state, including unresolved patches
 with `strict=false`. Its estimate is the maximum over monitored states. Flow ADS

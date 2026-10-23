@@ -62,8 +62,13 @@ function continuity_query_bounds(a, query)
     query isa Union{Tuple, AbstractVector} && length(query) == DA.nvariables(a) || throw(DimensionMismatch("Provide one coordinate/interval per variable"))
     query isa AbstractVector && Base.require_one_based_indexing(query)
     if all(x -> x isa SupportedScalar, query)
-        z = DA.continuity_point(a, query)
-        return z, z
+        if any(x -> x isa AbstractIrrational, query)
+            domain = first(first(a._patches).certificates)._coordinates.box
+            query = [point_interval(eltype(domain), query[i], domain[i]) for i in eachindex(query)]
+        else
+            z = DA.continuity_point(a, query)
+            return z, z
+        end
     end
     interval_box(query, length(query); guaranteed = true)
     lo, hi = DA.polygon_real.(IA.inf.(query)), DA.polygon_real.(IA.sup.(query))

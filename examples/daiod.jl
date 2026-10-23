@@ -6,7 +6,8 @@
 # Differential-algebra initial orbit determination (DAIOD) expands that solution
 # in the six measured angles. This tutorial follows the velocity-matching
 # formulation of [Armellin2016](@citet): Gauss initialization, two Lambert arcs,
-# and inversion of the velocity-defect map. All orbital helpers are included.
+# and inversion of the velocity-defect map. Kepler dynamics are shared with
+# the other orbit tutorials in `examples/support/kepler.jl`.
 #
 # The resulting map supports nonlinear uncertainty propagation, prediction of
 # another optical observation, and a covariance-based measurement update.
@@ -23,6 +24,9 @@ using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "moments.jl"))
+
 # ## Synthetic data: an inclined Kepler ellipse
 #
 # This analytic orbit generates observations and provides reference states;
@@ -31,10 +35,7 @@ function truth(t; mu = 398600.4418)
     a, e, inclination, M0 = 12000.0, 0.15, deg2rad(50.0), 0.6
     n = sqrt(mu / a^3)
     M = M0 + n * t
-    E = M
-    for _ in 1:12
-        E -= (E - e * sin(E) - M) / (1 - e * cos(E))
-    end
+    E = kepler_root(M, e)
     p, q = [1.0, 0.0, 0.0], [0.0, cos(inclination), sin(inclination)]
     r = a * ((cos(E) - e) * p + sqrt(1 - e^2) * sin(E) * q)
     v = a * n / (1 - e * cos(E)) *
@@ -333,7 +334,7 @@ function daiod(nominal_rho, angles, sites, times, mu, sigma; order = 4)
     defect, _ = velocity_defect(rho, angle_map, sites, times, mu)
     W = linear_part(defect)[:, 7:9]
     @assert cond(W) < 1.0e10
-    scaled = inv(W) * defect
+    scaled = W \ defect
     offsets = constant_term.(scaled)
     inverse = invert(vcat(scaled - offsets, ξ[1:6]))
     implicit = evaluate(inverse, vcat(zero.(ξ[7:9]) - offsets, ξ[1:6]))
@@ -421,20 +422,7 @@ end
 # degree-four polynomials require moments through degree eight: ordinary
 # multiplication in the order-four algebra would silently omit these terms.
 # These are exact moments of the polynomial, not of the full IOD solution.
-normal_moment(powers) = any(isodd, powers) ? 0.0 : prod(k -> prod(1:2:(Int(k) - 1); init = 1.0), powers)
-function normal_statistics(map)
-    mean = [sum(m.coefficient * normal_moment(m.exponents) for m in monomials(p); init = 0.0) for p in map]
-    centered = monomials.(map - mean)
-    covariance = [
-        sum(
-            a.coefficient * b.coefficient * normal_moment(a.exponents + b.exponents)
-                for a in centered[i], b in centered[j]; init = 0.0
-        )
-            for i in eachindex(map), j in eachindex(map)
-    ]
-    return mean, covariance
-end
-state_mean, state_covariance = normal_statistics(orbit.state)
+state_mean, state_covariance = polynomial_statistics(orbit.state, normal_moment)
 J = linear_part(orbit.state)[:, 1:6]
 linear_covariance = J * J'
 println("Nonlinear mean minus nominal state [km; km/s]: ", state_mean - nominal.state)
@@ -451,10 +439,6 @@ println()
 # onto two orthogonal directions tangent to the nominal line of sight.
 # These dimensionless coordinates avoid the right-ascension branch cut;
 # near the centre they equal angular offsets in radians to first order.
-function two_body(u, mu, t)
-    r = u[1:3]
-    return vcat(u[4:6], -mu * r / sum(abs2, r)^(3 // 2))
-end
 future_time = 900.0
 flow_problem = ODEProblem(two_body, orbit.state, (0.0, future_time), mu)
 flow = solve(flow_problem, TaylorMethod(18); abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false, dense = false)
@@ -516,7 +500,7 @@ println("Future pointing maximum error (arcsec): ", pointing_error)
 # evaluating the map supplies particles for a particle filter. Do not treat
 # the original three observations as independent new data in those methods.
 joint_map = vcat(orbit.state, pointing_map)
-joint_mean, joint_covariance = normal_statistics(joint_map)
+joint_mean, joint_covariance = polynomial_statistics(joint_map, normal_moment)
 predicted_mean = joint_mean[7:8]
 predicted_covariance = joint_covariance[7:8, 7:8]
 cross_covariance = joint_covariance[1:6, 7:8]
@@ -529,7 +513,7 @@ innovation = measurement - predicted_mean
 K = cross_covariance / S
 updated_mean = state_mean + K * innovation
 # This equivalent form avoids subtracting two almost equal covariance matrices.
-_, residual_covariance = normal_statistics(orbit.state - K * pointing_map)
+_, residual_covariance = polynomial_statistics(orbit.state - K * pointing_map, normal_moment)
 updated_covariance = residual_covariance + K * R * K'
 @assert isposdef(Symmetric(updated_covariance))
 @assert tr(updated_covariance[1:3, 1:3]) < tr(state_covariance[1:3, 1:3])

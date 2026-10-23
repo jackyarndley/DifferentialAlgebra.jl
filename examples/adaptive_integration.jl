@@ -10,10 +10,8 @@ using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 
-function kepler_rhs(u)
-    factor = -(u[1]^2 + u[2]^2)^(-3 / 2)
-    return [u[3], u[4], factor * u[1], factor * u[2]]
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
+kepler_rhs(u) = two_body(u, 1, 0)
 
 magnitude(x::Real) = abs(x)
 magnitude(x::TaylorPolynomial) = coefficient_norm(x)

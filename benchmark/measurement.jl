@@ -9,9 +9,10 @@ let
             ) if isdefined(@__MODULE__, name)
     ]
     revision = readchomp(`git -C $(pkgdir(DifferentialAlgebra)) rev-parse HEAD`)
+    working_tree_dirty = !isempty(readchomp(`git -C $(pkgdir(DifferentialAlgebra)) status --porcelain`))
     println(
         (;
-            julia = VERSION, revision, cpu = Sys.CPU_NAME,
+            julia = VERSION, revision, working_tree_dirty, cpu = Sys.CPU_NAME,
             threads = Threads.nthreads(), packages,
         )
     )
@@ -35,6 +36,5 @@ function measure(f; samples = 30, batch = nothing, seconds = 0.5)
     # BenchmarkTools calibrates its warmed loop after that timer has stopped.
     first_call = @timed Base.invokelatest(f)
     warmed = Base.invokelatest(warmed_measurement, f, samples, batch, seconds)
-    compilation = hasproperty(first_call, :compile_time) ? first_call.compile_time : missing
-    return (; warmed..., first_seconds = first_call.time, compilation)
+    return (; warmed..., first_seconds = first_call.time, compilation = first_call.compile_time)
 end

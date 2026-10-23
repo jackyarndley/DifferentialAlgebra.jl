@@ -37,6 +37,8 @@ Copies, coefficient conversion and inspection preserve stored terms.
 
 `set_coefficient_tolerance!(tol)` discards small floating coefficients from
 arithmetic results. The default is zero; a BigFloat tolerance keeps its precision.
+Other tolerance types must convert to a finite Float64; pass a BigFloat explicitly
+when a finite threshold exceeds that range.
 Filtering and truncation are approximations, not error bounds. Taylor models
 record their retained order and reject arithmetic under a different working
 order; their queries preserve the stored polynomial and remainder.

@@ -49,9 +49,7 @@ Base.conj(a::TaylorPolynomial) = copy(a)
 Base.real(a::TaylorPolynomial) = copy(a)
 Base.abs2(a::TaylorPolynomial) = a * a
 function Base.:+(a::TaylorPolynomial)
-    ctx = valid(a)
-    return a.len <= ctx.basis.ends[working_order(ctx) + 1] ?
-        copy(a) : trim(a, 0, working_order(ctx))
+    return scaled(a, one(coefficient_type(a)))
 end
 negative_coefficient_type(::Type{T}) where {T} = T
 negative_coefficient_type(::Type{Bool}) = Int
@@ -186,7 +184,7 @@ end
 Base.:*(a::TaylorPolynomial, b::Real) = scaled(a, b)
 Base.:*(a::Real, b::TaylorPolynomial) = b * a
 function scalar_sum(
-        a::TaylorPolynomial{T}, b::Real, ::Val{OP}
+        a::TaylorPolynomial{T}, b::Real, ::Val{OP}; filter::Bool = true
     ) where {T <: Real, OP}
     ctx = valid(a)
     R = promote_type(T, typeof(b))
@@ -199,18 +197,28 @@ function scalar_sum(
     end
     c = coefficient_convert(R, b)
     out.coeffs[1] = OP === :subtract ? out.coeffs[1] - c : out.coeffs[1] + c
-    return finish!(out, n)
+    return finish!(out, n; filter)
 end
 Base.:+(a::TaylorPolynomial, b::Real) = scalar_sum(a, b, Val(:add))
 Base.:+(a::Real, b::TaylorPolynomial) = b + a
 Base.:-(a::TaylorPolynomial, b::Real) = scalar_sum(a, b, Val(:subtract))
 Base.:-(a::Real, b::TaylorPolynomial) = scalar_sum(b, a, Val(:subtract_from))
-function Base.:/(a::TaylorPolynomial, b::Real)
+function divided(a::TaylorPolynomial, b::Real; filter::Bool = true)
     invertible_constant(b) || throw(TaylorError("Division requires a denominator excluding zero"))
-    # Invert in the coefficient precision. inv(3) would promote Float32 to
-    # Float64 and inject a rounded Float64 reciprocal into BigFloat coefficients.
-    return a * inv(coefficient_convert(promote_type(coefficient_type(a), typeof(b)), b))
+    ctx = valid(a)
+    R = promote_type(coefficient_type(a), typeof(b))
+    denominator = coefficient_convert(R, b)
+    T = typeof(one(R) / one(R))
+    n = min(a.len, ctx.basis.ends[working_order(ctx) + 1])
+    out = allocate_undef(ctx, T, n)
+    # Divide coefficients directly: a representable quotient can have an
+    # overflowing reciprocal, notably for subnormal floating denominators.
+    @inbounds for i in 1:n
+        out.coeffs[i] = coefficient_operand(R, a.coeffs[i]) / denominator
+    end
+    return finish!(out, n; filter)
 end
+Base.:/(a::TaylorPolynomial, b::Real) = divided(a, b)
 Base.:/(a::Real, b::TaylorPolynomial) = quotient(a, b)
 Base.:/(a::TaylorPolynomial, b::TaylorPolynomial) = quotient(a, b)
 

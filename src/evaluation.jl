@@ -171,18 +171,18 @@ function composition_algebra(map::CompiledMap)
         throw(ArgumentError("Compiled map belongs to a previous initialization"))
     return ctx
 end
-function compose(map::CompiledMap{T}, args::AbstractVector{<:TaylorPolynomial}, cutoff::Int) where {T}
+function compose(map::CompiledMap{T}, args::AbstractVector{<:TaylorPolynomial}, cutoff::Int; filter::Bool = true) where {T}
     Base.require_one_based_indexing(args)
     ctx = composition_algebra(map)
     all(a -> valid(a) === ctx, args) || throw(ArgumentError("Different polynomial contexts"))
     R = foldl((S, a) -> promote_type(S, coefficient_type(a)), args; init = T)
     return if isempty(ctx.basis.products)
-        compose_map(R, map, args, ctx, cutoff, Val(false))
+        compose_map(R, map, args, ctx, cutoff, Val(false); filter)
     else
-        compose_map(R, map, args, ctx, cutoff, Val(true))
+        compose_map(R, map, args, ctx, cutoff, Val(true); filter)
     end
 end
-function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where {T, TABLE}
+function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}; filter::Bool = true) where {T, TABLE}
     n = noutputs(map); capacity = ctx.basis.ends[cutoff + 1]
     result = [allocate(ctx, T, capacity) for _ in 1:n]
     @inbounds for j in 1:n
@@ -208,7 +208,7 @@ function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where
             end
         end
     end
-    foreach(finish!, result)
+    foreach(p -> finish!(p; filter), result)
     return result
 end
 
@@ -298,7 +298,7 @@ function evaluate!(result::AbstractVector, map::CompiledMap, args::AbstractVecto
     return copyto!(result, values)
 end
 
-function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:TaylorPolynomial})
+function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:TaylorPolynomial}; filter::Bool = true)
     Base.require_one_based_indexing(A, x)
     size(A, 2) == length(x) || throw(DimensionMismatch("Linear map dimensions differ"))
     ctx = compatible(x)
@@ -308,8 +308,9 @@ function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:Taylor
     for j in eachindex(x), i in eachindex(result)
         c = A[i, j]
         coefficient_iszero(c) && continue
-        weighted_sum!(result[i], result[i], one(T), x[j], c)
+        weighted_sum!(result[i], result[i], one(T), x[j], c; filter = false)
     end
+    foreach(p -> finish!(p; filter), result)
     return result
 end
 """
@@ -327,10 +328,10 @@ function invert(f::AbstractVector{<:TaylorPolynomial})
     1 <= length(f) <= nv || throw(DimensionMismatch("Map dimension exceeds the independent variables"))
     T = mapreduce(coefficient_type, promote_type, f)
     if length(f) < nv
-        identities = [TaylorPolynomial{T}(ctx, i, one(T)) for i in (length(f) + 1):nv]
+        identities = [TaylorPolynomial{T}(ctx, i, one(T); filter = false) for i in (length(f) + 1):nv]
         return invert(vcat(f, identities))[1:length(f)]
     end
-    x = [TaylorPolynomial{T}(ctx, i, one(T)) for i in 1:nv]
+    x = [TaylorPolynomial{T}(ctx, i, one(T); filter = false) for i in 1:nv]
     c, A = constant_term.(f), linear_part(f)
     Ainv = try
         lu(A) \ Matrix{T}(I, nv, nv)
@@ -338,14 +339,19 @@ function invert(f::AbstractVector{<:TaylorPolynomial})
         error isa LinearAlgebra.SingularException || rethrow()
         throw(TaylorError("Cannot invert a map with a singular linear part"))
     end
-    linear_inverse = _linear_transform(Ainv, x)
-    nonlinear = compile(_linear_transform(Ainv, trim.(f, 2)))
-    result = linear_inverse
+    linear_inverse = _linear_transform(Ainv, x; filter = false)
+    nonlinear = compile(_linear_transform(Ainv, trim.(f, 2; filter = false); filter = false))
+    result = copy.(linear_inverse)
     # Explicit local orders avoid changing the context or racing other readers.
     for degree in 2:working_order(ctx)
-        result = linear_inverse - compose(nonlinear, result, degree)
+        correction = compose(nonlinear, result, degree; filter = false)
+        for i in eachindex(result)
+            R = coefficient_type(result[i])
+            weighted_sum!(result[i], linear_inverse[i], one(R), correction[i], -one(R); order = degree, filter = false)
+        end
     end
-    return compose(compile(result), x - c, working_order(ctx))
+    shifted = [scalar_sum(x[i], c[i], Val(:subtract); filter = false) for i in eachindex(x)]
+    return compose(compile(result), shifted, working_order(ctx))
 end
 
 # Call syntax delegates to the same numeric evaluation and composition methods.

@@ -130,7 +130,7 @@ Copy the terms whose total degrees lie in `low:high`, applying the coefficient
 tolerance. The bounds must be nonnegative. An empty range returns zero; `high`
 is limited by the stored algebra order rather than the current working order.
 """
-function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a))
+function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a); filter::Bool = true)
     ctx = valid(a)
     low >= 0 && high >= 0 || throw(ArgumentError("Invalid order range"))
     low > high && return zero(a)
@@ -139,7 +139,7 @@ function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a))
     @inbounds for i in 1:n
         ctx.basis.degrees[i] >= low && (out.coeffs[i] = a.coeffs[i])
     end
-    return finish!(out, n)
+    return finish!(out, n; filter)
 end
 trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer) = trim.(a, low)
 trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer) =
@@ -220,9 +220,10 @@ for an outward-rounded enclosure of the stored polynomial.
 """
 function bounds(a::TaylorPolynomial)
     b = valid(a).basis
-    lo = hi = constant_term(a)
+    T = negative_coefficient_type(coefficient_type(a))
+    lo = hi = coefficient_convert(T, constant_term(a))
     for i in 2:a.len
-        c = a.coeffs[i]
+        c = coefficient_convert(T, a.coeffs[i])
         if all(iseven, @view b.exponents[:, i])
             lo += min(c, zero(c)); hi += max(c, zero(c))
         else

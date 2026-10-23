@@ -15,16 +15,11 @@ using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab20),))
 
-function kepler_ode!(du, u, μ, time)
-    factor = -μ * (u[1]^2 + u[2]^2)^(-3 / 2)
-    du[1], du[2] = u[3], u[4]
-    du[3], du[4] = factor * u[1], factor * u[2]
-    return nothing
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 
 initial(x) = [x[1], x[2], zero(x[1]), 1.1 + zero(x[1])]
 function advance(state, span)
-    problem = ODEProblem(kepler_ode!, state, span, 1.0)
+    problem = ODEProblem(two_body!, state, span, 1.0)
     solution = solve(problem, Vern9(); abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false)
     successful_retcode(solution) || error("Orbit integration failed")
     return solution.u[end]
@@ -44,7 +39,7 @@ flow_map = adaptive_flow(advance, initial, lower, upper, times; order = 4, atol 
 function advance(state, span, monitor)
     condition(u, t, integrator) = monitor(u, t)
     callback = DiscreteCallback(condition, terminate!; save_positions = (false, true))
-    problem = ODEProblem(kepler_ode!, state, span, 1.0)
+    problem = ODEProblem(two_body!, state, span, 1.0)
     solution = solve(problem, Vern9(); callback, abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false)
     successful_retcode(solution) || error("Orbit integration failed")
     return (; state = solution.u[end], time = solution.t[end])

@@ -1,4 +1,4 @@
-# Select the checkout with Pkg.develop in the benchmark environment.
+# The benchmark environment selects this checkout through its [sources] entry.
 using DifferentialAlgebra, IntervalArithmetic, LinearAlgebra
 import DiffEqBase, OrdinaryDiffEqCore
 include("measurement.jl")

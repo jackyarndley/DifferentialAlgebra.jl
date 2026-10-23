@@ -217,11 +217,16 @@ end
 
 Set the current algebra's finite, nonnegative filtering threshold and return its
 previous value. Exact real coefficient types retain all nonzero coefficients.
+Pass a `BigFloat` for thresholds outside the finite `Float64` range.
 """
 function set_coefficient_tolerance!(value::Real)
     isfinite(value) && value >= 0 || throw(ArgumentError("Epsilon must be finite and nonnegative"))
+    epsilon = Float64(value)
+    isfinite(epsilon) || value isa BigFloat || throw(
+        ArgumentError("Tolerance exceeds the finite Float64 range; pass a BigFloat")
+    )
     ctx = ready(); old = coefficient_tolerance()
-    ctx.epsilon = Float64(value)
+    ctx.epsilon = epsilon
     ctx.big_epsilon = value isa BigFloat ? copy(value) : nothing
     return old
 end
@@ -265,6 +270,28 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 @inline coefficient_muladd(a::Real, b::Real, c::Real) = muladd(a, b, c)
 @inline coefficient_power(c::Real, n::Integer) = c^n
 @inline invertible_constant(c::Real) = !coefficient_iszero(c)
+
+# Analytic recurrences form weight*a*b/c. Separate floating exponents only
+# when an intermediate product exceeds the normal range; the completed result
+# may still be finite. Exact and interval types retain their scalar arithmetic.
+coefficient_product_quotient(a::Real, b::Real, c::Real, weight::Real) =
+    weight * a * b / c
+function coefficient_product_quotient(a::T, b::T, c::T, weight::T) where {T <: AbstractFloat}
+    scaled = weight * a
+    product = scaled * b
+    if isfinite(scaled) && isfinite(product) &&
+            abs(scaled) >= floatmin(T) && abs(product) >= floatmin(T)
+        return product / c
+    end
+    all(isfinite, (a, b, c, weight)) && !iszero(c) || return product / c
+    if any(iszero, (a, b, weight))
+        negative = signbit(a) ⊻ signbit(b) ⊻ signbit(c) ⊻ signbit(weight)
+        return negative ? -zero(T) : zero(T)
+    end
+    am, ae = frexp(a); bm, be = frexp(b)
+    cm, ce = frexp(c); wm, we = frexp(weight)
+    return ldexp(wm * am * bm / cm, we + ae + be - ce)
+end
 
 @inline keep(c::Real, epsilon::Float64) = !coefficient_iszero(c)
 @inline keep(c::AbstractFloat, epsilon::Float64) = !(abs(c) <= epsilon)
@@ -328,21 +355,21 @@ function TaylorPolynomial{T}(x::Real) where {T <: Real}
 end
 # Explicit owning contexts keep object-based operations independent of factories
 # bound to the current task's temporary algebra.
-function TaylorPolynomial{T}(ctx::Algebra, x::Real) where {T <: Real}
+function TaylorPolynomial{T}(ctx::Algebra, x::Real; filter::Bool = true) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     c = coefficient_convert(T, x)
-    return TaylorPolynomial{T}([keep(c, ctx) ? c : zero(T)], 1, ctx)
+    return TaylorPolynomial{T}([!filter || keep(c, ctx) ? c : zero(T)], 1, ctx)
 end
 function TaylorPolynomial{T}(i::Integer, c::Real) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     return TaylorPolynomial{T}(ready(), i, c)
 end
-function TaylorPolynomial{T}(ctx::Algebra, i::Integer, c::Real) where {T <: Real}
+function TaylorPolynomial{T}(ctx::Algebra, i::Integer, c::Real; filter::Bool = true) where {T <: Real}
     isconcretetype(T) || throw(ArgumentError("Choose a concrete coefficient type"))
     0 <= i <= ctx.basis.variables || throw(ArgumentError("Variable index out of bounds"))
     a = allocate(ctx, T, Int(i) + 1)
     a.coeffs[i + 1] = coefficient_convert(T, c)
-    return finish!(a)
+    return finish!(a; filter)
 end
 TaylorPolynomial(i::Integer, c::Real) = TaylorPolynomial{typeof(float(c))}(i, c)
 """

@@ -7,6 +7,23 @@ function interval_box(box, n; guaranteed = false)
     return box
 end
 
+# Exact scalar points may need a nonthin enclosure (for example π). Use at
+# least the stored endpoint precision so lowering BigFloat precision does not
+# turn a valid point query into a box extending beyond its declared domain.
+function point_interval(::Type{I}, value, domain) where {I <: Interval}
+    value isa Interval && !IA.isthin(value) &&
+        throw(ArgumentError("Point coordinates must be scalar values or thin intervals; use enclose for boxes"))
+    x = if IA.numtype(I) === BigFloat
+        bits = max(precision(BigFloat), precision(IA.inf(domain)), precision(IA.sup(domain)))
+        setprecision(BigFloat, bits) do
+            asinterval(I, value)
+        end
+    else
+        asinterval(I, value)
+    end
+    return checked_interval(x; guaranteed = true)
+end
+
 # Exact geometric coordinates omit interval metadata. After validating every
 # input (including NG rejection), preserve its minimum decoration in projected
 # domains and query results without changing endpoints or guarantee flags.
@@ -183,8 +200,8 @@ function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box
     !point && interval_box(box, length(c.box); guaranteed = true)
     result = Vector{I}(undef, length(box))
     for i in eachindex(box)
-        x = checked_interval(asinterval(I, box[i]); guaranteed = true)
-        point && box[i] isa Interval && !IA.isthin(box[i]) && throw(ArgumentError("Point coordinates must be scalar values or thin intervals; use enclose for boxes"))
+        x = point ? point_interval(I, box[i], c.box[i]) :
+            checked_interval(asinterval(I, box[i]); guaranteed = true)
         IA.issubset_interval(x, c.box[i]) || throw(DomainError(box, "Query lies outside the Taylor-model validity domain"))
         # Both sets enclose the same exact normalized coordinate. The public
         # :auto policy preserves the minimum input decoration and all NG flags;
@@ -284,6 +301,7 @@ function Base.:^(a::TaylorModel, n::Integer)
     model_context(a)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Exponent out of range"))
     n < 0 && return inv(a)^(-n)
+    iszero(n) && return TaylorModel(IA.pown(DA.enclose(a), 0), a)
     n == 1 && return copy(a)
     result, factor = one(a), a
     while n > 0
@@ -454,7 +472,7 @@ shorten_model(a, image) = IA.diam(a._remainder) > IA.diam(image) ?
 function elementary_model(fn, a::TaylorModel)
     model_context(a)
     x = checked_interval(DA.enclose(a); guaranteed = true)
-    fn === sqrt && IA.isthinzero(x) && return zero(a)
+    fn === sqrt && IA.isthinzero(x) && return TaylorModel(sqrt(x), a)
     if fn === inv && IA.in_interval(0, x)
         throw(DomainError(x, "The reciprocal input enclosure must exclude zero"))
     elseif fn in (log, sqrt) && IA.inf(x) <= 0

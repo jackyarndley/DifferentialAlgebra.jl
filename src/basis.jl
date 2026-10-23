@@ -54,6 +54,54 @@ end
     return index
 end
 
+# Return the complementary monomial in x^k / x^i, or zero when x^i does not divide it.
+@inline function complementary_index(b::MonomialBasis, k::Int, i::Int, powers)
+    @inbounds for v in eachindex(powers)
+        power = b.exponents[v, k] - b.exponents[v, i]
+        power < 0 && return 0
+        powers[v] = power
+    end
+    return rank(b, powers, b.degrees[k] - b.degrees[i])
+end
+
+# Table-free recurrences enumerate divisors of the output multi-index, avoiding
+# a scan over unrelated monomials. The caller supplies one reusable exponent buffer.
+struct MonomialDivisors
+    basis::MonomialBasis
+    output::Int
+    limit::Int
+    powers::Vector{Int}
+end
+function monomial_divisors(b::MonomialBasis, k::Int, limit::Int, powers)
+    fill!(powers, 0)
+    return MonomialDivisors(b, k, limit, powers)
+end
+Base.IteratorSize(::Type{MonomialDivisors}) = Base.SizeUnknown()
+Base.eltype(::Type{MonomialDivisors}) = Tuple{Int, Int}
+@inline function Base.iterate(pairs::MonomialDivisors, degree::Int = 0)
+    b, k, powers = pairs.basis, pairs.output, pairs.powers
+    return @inbounds while true
+        v = length(powers)
+        while v > 0 && powers[v] == b.exponents[v, k]
+            degree -= powers[v]
+            powers[v] = 0
+            v -= 1
+        end
+        v == 0 && return nothing
+        powers[v] += 1
+        degree += 1
+        i = rank(b, powers, degree)
+        i > pairs.limit && continue
+        remaining = b.degrees[k] - degree
+        j = remaining == 0 ? 1 : b.ends[remaining] + 1
+        for variable in 1:(b.variables - 1)
+            remaining -= b.exponents[variable, k] - powers[variable]
+            remaining > 0 && (j += b.counts[remaining, b.variables - variable + 1])
+        end
+        return (i, j), degree
+    end
+end
+
 function foreach_monomial(f, no::Int, nv::Int)
     current = zeros(Int, nv)
     function visit(v, remaining, degree)

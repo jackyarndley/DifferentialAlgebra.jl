@@ -41,14 +41,11 @@ println("Taylor step at τ = 0.2: ", exponential(0.2))
 # Use normalized units with μ=1 and nominal semimajor axis a=1. The orbital
 # period is 2π. The out-of-place right-hand side is shared by Taylor integration
 # and an independent Vern9 integration; it accepts numbers or time series.
-function kepler(u, μ, t)
-    factor = -μ / (u[1]^2 + u[2]^2)^(3 // 2)
-    return [u[3], u[4], factor * u[1], factor * u[2]]
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 periapsis(a, e) = [a * (1 - e), zero(a), zero(a), sqrt((1 + e) / (a * (1 - e)))]
 initial = periapsis(1.0, 0.4)
 period = 2π
-problem = ODEProblem(kepler, initial, (0.0, period), 1.0)
+problem = ODEProblem(two_body, initial, (0.0, period), 1.0)
 trajectory = solve(problem, TaylorMethod(18); abstol = 1.0e-13, reltol = 1.0e-13)
 @assert successful_retcode(trajectory)
 reference = solve(problem, Vern9(); abstol = 1.0e-13, reltol = 1.0e-13)
@@ -93,7 +90,7 @@ map_errors = [
     let
         u0 = periapsis(1 + 2.0e-4a, 0.4 + 1.0e-4e)
         numeric = solve(
-            ODEProblem(kepler, u0, (0.0, period), 1.0), Vern9();
+            ODEProblem(two_body, u0, (0.0, period), 1.0), Vern9();
             abstol = 1.0e-13, reltol = 1.0e-13, save_everystep = false
         )
         @assert successful_retcode(numeric)

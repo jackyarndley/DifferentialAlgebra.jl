@@ -52,9 +52,11 @@ limits. Override only the settings to change:
 Patch errors consistently use one entry per output; use `only(...)` for scalars.
 
 `map.patches` copies its vector, so cache it before repeated indexing. Entries
-are read-only; use `copy(map)` for independent patch storage. Irrational query coordinates
-use BigFloat for routing; supply explicit BigFloat values when boundary precision
-matters. See [Domain splitting](manual/domain-splitting.md).
+are read-only; use `copy(map)` for independent patch storage. Polygon projection
+rows are normalized to maximum absolute entry one, preserving physical cuts.
+Ordinary irrational point queries use BigFloat for routing; certified queries
+enclose the exact coordinate outward and require that enclosure to lie inside
+the physical domain. See [Domain splitting](manual/domain-splitting.md).
 
 ## Validated arithmetic
 

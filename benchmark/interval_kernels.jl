@@ -68,14 +68,12 @@ function report(; table_bytes = 0, profiling = false)
             EXT.power_cache(a._coordinates.normalized, 6, Interval{Float64})
         )
     )
-    if isdefined(EXT, :decorated_discarded_unit_bound)
-        println(
-            "Discarded products, decorated reference: ", measure_kernel(
-                () ->
-                EXT.decorated_discarded_unit_bound(p, q, 3, bounds, Interval{Float64})
-            )
+    println(
+        "Discarded products, decorated reference: ", measure_kernel(
+            () ->
+            EXT.decorated_discarded_unit_bound(p, q, 3, bounds, Interval{Float64})
         )
-    end
+    )
     println(
         "Dense polynomial range: ", measure_kernel(
             () -> EXT.polynomial_bound(

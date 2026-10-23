@@ -163,6 +163,8 @@ end
 # With y=exp(s*x)*z, scaled I/K remain scaled throughout (no overflow-prone unscaling).
 function bessel_series(fn::F, n::Integer, a::TaylorPolynomial, q::Int, s) where {F}
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Bessel order out of range"))
+    # Neighbor orders must be signed, and n² must not overflow a narrow input type.
+    n = Int(n)
     x = constant_term(a)
     !invertible_constant(x) &&
         fn in (

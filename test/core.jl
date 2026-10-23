@@ -109,3 +109,17 @@ end
         @test coefficient_tolerance() == tolerance
     end
 end
+
+@testset "Filtering policy and signed heuristic bounds" begin
+    x, = variables(1; order = 2)
+    p = 2 + 0.05x
+    set_coefficient_tolerance!(0.1)
+    @test coefficients(+p) == [2, 0, 0]
+    @test coefficient(p, [1]) == 0.05
+    @test_throws ArgumentError set_coefficient_tolerance!(big(10)^400)
+    @test coefficient_tolerance() == 0.1
+    set_coefficient_tolerance!(BigFloat(10)^400)
+    @test constant_term(TaylorPolynomial(Inf)) == Inf
+    x, = variables(UInt8, 1; order = 2)
+    @test DA.bounds(x) == (lower = -1, upper = 1)
+end

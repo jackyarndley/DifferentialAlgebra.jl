@@ -109,3 +109,45 @@ end
         @test coefficients(mod(wrapped, 3)) == [2, 2, 0]
     end
 end
+
+@testset "Finite coefficients across extreme scalar ranges" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 3, table_bytes = budget)
+        @test coefficients(log(1.0e308 + 1.0e308x)) ≈ [log(1.0e308), 1, -1 / 2, 1 / 3]
+        @test coefficients((1.0e308 + 1.0e308x)^0.25) ≈ 1.0e77 .* [1, 1 / 4, -3 / 32, 7 / 128]
+        @test coefficients(atan(1.0e200 + 1.0e200x))[2:end] ≈ [1.0e-200, -1.0e-200, 1.0e-200]
+        @test coefficients(log(1.0e-320 + 1.0e-320x)) ≈ [log(1.0e-320), 1, -1 / 2, 1 / 3]
+        p = 1.0e-320 + 2.0e-320x
+        @test all(coefficients(q) == [1, 2, 0, 0] for q in (p / 1.0e-320, p / TaylorPolynomial(1.0e-320)))
+        a = 1.0e-320 + x
+        @test coefficients(a / a) == [1, 0, 0, 0]
+        tiny = nextfloat(0.0)
+        ratio = tiny / 1.0e-320
+        @test coefficients(tiny / (1.0e-320 + tiny * x)) ≈ [ratio * (-ratio)^k for k in 0:3]
+        with_order(2) do
+            numerator = 1.0e308 + 1.0e308x^2
+            @test coefficients(numerator / (numerator - 1.0e308x)) == [1, 1, 1, 0]
+            # Both unscaled logarithm terms are finite and cancel exactly.
+            a0, a1, a2 = ldexp(1.0, -1000), ldexp(1.0, 10), ldexp(1.0, 1019)
+            @test coefficients(log(a0 + a1 * x + a2 * x^2)) == [log(a0), ldexp(1.0, 1010), 0, 0]
+            argument = 1.0e308x^2
+            @test all(coefficients(f(argument)) == [0, 0, 1.0e308, 0] for f in (sin, sinh))
+            @test all(coefficients(f(argument)) == [1, 0, 0, 0] for f in (cos, cosh))
+            @test map(coefficients, sincos(argument)) == ([0, 0, 1.0e308, 0], [1, 0, 0, 0])
+            @test coefficients((1 + 1.0e-308x)^1.0e308) ≈ [1, 1, 1 / 2, 0]
+            @test coefficients((1 + 1.0e-308x^2)^1.0e308) ≈ [1, 0, 1, 0]
+            root = sqrt(1.0e-320 + 1.0e-160x)
+            expected = setprecision(256) do
+                c, s = BigFloat(1.0e-320), BigFloat(1.0e-160)
+                Float64.([sqrt(c), s / (2sqrt(c)), -s^2 / (8c^(big(3) / 2)), 0])
+            end
+            @test all(isapprox.(coefficients(root), expected; rtol = 1.0e-14))
+        end
+        x, y = variables(2; order = 3, table_bytes = budget)
+        e, l, p = exp(2x - 3y), log(2 + x - 2y), (2 + x - 2y)^0.25
+        indices = [Tuple(Int.(a)) for a in DA.multiindices(3, 2)]
+        @test all(coefficient(e, [i, j]) ≈ 2.0^i * (-3.0)^j / (factorial(i) * factorial(j)) for (i, j) in indices)
+        @test all(coefficient(l, [i, j]) ≈ (i + j == 0 ? log(2) : (-1)^(i + j + 1) * binomial(i + j, i) * 0.5^i * (-1)^j / (i + j)) for (i, j) in indices)
+        @test all(coefficient(p, [i, j]) ≈ 2^0.25 * prod(0.25 - k for k in 0:(i + j - 1); init = 1.0) * 0.5^i * (-1)^j / (factorial(i) * factorial(j)) for (i, j) in indices)
+    end
+end

@@ -109,3 +109,31 @@ end
         @test truncation_order() == 1
     end
 end
+
+@testset "Public map and moment calculations filter completed results" begin
+    x, y = variables(2; order = 2)
+    f = [x - y + 0.06x^2, y + 0.06x^2]
+    set_coefficient_tolerance!(0.1)
+    inverse = invert(f)
+    # Quadratic inverse: z - A^-1*q(A^-1*z), independent of DA composition.
+    @test coefficient.(inverse, Ref([1, 1])) ≈ [-0.24, -0.12]
+    @test [coefficient(inverse[1], a) for a in ([2, 0], [0, 2])] ≈ [-0.12, -0.12]
+    x, = variables(1; order = 3)
+    mgf = exp(0.01x + 5000x^2)
+    set_coefficient_tolerance!(0.1)
+    @test last(DA.central_moments(mgf, 3)) ≈ [1, 0, 10000, 0]
+end
+
+@testset "Moment scaling avoids factorial overflow" begin
+    x, = variables(1; order = 200, table_bytes = 0)
+    @test last(last(DA.raw_moments(one(x), 200))) == 0
+    p = monomial([200], 1.0e-300)
+    expected = Float64(BigFloat(1.0e-300) * factorial(big(200)))
+    @test last(last(DA.raw_moments(p, 200))) ≈ expected rtol = 1.0e-13
+    for T in (BigInt, Rational{BigInt})
+        x, = variables(T, 1; order = 30, table_bytes = 0)
+        @test last(last(DA.raw_moments(x^30, 30))) == factorial(big(30))
+    end
+    x, = variables(Int, 1; order = 21, table_bytes = 0)
+    @test_throws OverflowError DA.raw_moments(x^21, 21)
+end

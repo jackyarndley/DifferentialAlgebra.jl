@@ -56,3 +56,11 @@ end
     end
     @test_throws ArgumentError polygamma(-1, x)
 end
+
+@testset "Integer Bessel orders use signed working arithmetic" begin
+    x, = variables(1; order = 2)
+    # At x = n the Y_n equation reduces to y″ = -y′/n.
+    slope = (bessely(19, 20.0) - bessely(21, 20.0)) / 2
+    @test coefficient(bessely(Int8(20), 20 + x), [2]) ≈ -slope / 40
+    @test coefficient(besselj(UInt64(0), 20 + x), [1]) ≈ -besselj(1, 20.0)
+end

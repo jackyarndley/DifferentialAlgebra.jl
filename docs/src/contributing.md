@@ -52,11 +52,6 @@ contracts; they are not duplicated algorithms. Share a kernel only when its
 mathematical invariant and ownership rules agree. Rigorous interval bounds and
 ordinary coefficient estimates intentionally have different contracts.
 
-The [function inventory](https://github.com/jackyarndley/DifferentialAlgebra.jl/tree/main/dev)
-lists named methods, constructors and generated templates across source,
-extensions, tests, tutorials and benchmarks. Regenerate it after source changes
-with `julia dev/inventory.jl`; `dev/README.md` defines its scope and limitations.
-
 ## Readable code and comments
 
 Follow [SciMLStyle](https://docs.sciml.ai/SciMLStyle/dev/) and the surrounding code.
@@ -74,7 +69,7 @@ Format with the version pinned in CI:
 
 ```sh
 julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src ext test examples benchmark docs dev
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src ext test examples benchmark docs
 ```
 
 Replace `--inplace` with `--check` to verify. Keep formatter versions and shared
@@ -97,9 +92,10 @@ catalog also drives the sidebar. Generated pages and local manifests stay untrac
 
 Start an example with the question, then show the calculation and a meaningful
 result check. Keep each script runnable from the checkout; put shared physical
-models in `examples/support/` so companion tutorials cannot drift apart. Explain
-their equations and assumptions in the relevant tutorial. Use `##` for comments
-inside Julia blocks so Literate does not split an incomplete function or loop.
+models and moment calculations in `examples/support/` so companion tutorials
+cannot drift apart. Explain their equations and assumptions in the relevant
+tutorial. Use `##` for comments inside Julia blocks so Literate does not split
+an incomplete function or loop.
 End figure blocks with `fig`; separate printed reports from figures with prose
 or `#-`. Label sampled errors, display floors and rigorous bounds accurately.
 Keep numerical reference provenance and citations beside the relevant calculation.

@@ -7,6 +7,14 @@ function polygon_real(x::Union{Integer, Rational, AbstractFloat})
     isfinite(x) || throw(ArgumentError("Polygon coordinates must be finite"))
     return deepcopy(PolygonReal(x))
 end
+function polygon_real(x::BigFloat)
+    isfinite(x) || throw(ArgumentError("Polygon coordinates must be finite"))
+    # Rationalization performs floating arithmetic. Preserve all stored bits
+    # when a snapshot is queried after the caller lowers BigFloat precision.
+    return setprecision(BigFloat, max(precision(BigFloat), precision(x))) do
+        PolygonReal(x)
+    end
+end
 polygon_real(x) = throw(ArgumentError("Supply finite integer, rational or floating polygon coordinates"))
 
 # These bounds are only a filter for exact geometry. Nonfinite arithmetic gives
@@ -158,10 +166,31 @@ function polygon_frame(directions)
     directions isa AbstractMatrix && size(directions) == (2, 2) || throw(DimensionMismatch("directions must be a 2x2 matrix of projection rows"))
     Base.require_one_based_indexing(directions)
     B = polygon_real.(directions)
+    # Positive row scaling leaves every physical midpoint cut unchanged. Unit
+    # maximum entries also prevent finite point projections from overflowing
+    # before cancellation merely because the caller chose large frame units.
+    for i in axes(B, 1)
+        scale = maximum(abs, @view B[i, :])
+        iszero(scale) && throw(ArgumentError("Splitting directions must be linearly independent"))
+        B[i, :] ./= scale
+    end
     determinant = B[1, 1] * B[2, 2] - B[1, 2] * B[2, 1]
     iszero(determinant) && throw(ArgumentError("Splitting directions must be linearly independent"))
     A = [B[2, 2] -B[1, 2]; -B[2, 1] B[1, 1]] ./ determinant
     return B, A
+end
+
+# Form the physical affine cover before rounding its coefficients. Converting
+# A alone can overflow or underflow even when its products with the radii are
+# representable, and floating products can overflow before center cancellation.
+function polygon_affine_frame(A, center, radius, ::Type{T}) where {T}
+    offset = A * polygon_real.(center)
+    linear = A .* permutedims(polygon_real.(radius))
+    c, L = T.(offset), T.(linear)
+    all(isfinite, c) && all(isfinite, L) &&
+        all(i -> iszero(linear[i]) == iszero(L[i]), eachindex(L)) ||
+        throw(ArgumentError("Physical affine cover is not representable; use a wider scalar type"))
+    return c, L
 end
 polygon_project(B, x) = (B[1, 1] * x[1] + B[1, 2] * x[2], B[2, 1] * x[1] + B[2, 2] * x[2])
 function polygon_projection_bounds(p, B)

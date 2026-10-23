@@ -19,6 +19,7 @@ set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 # Both tutorials load the same dynamics and Jacobi diagnostic. Positions and
 # rotating-frame velocities are nondimensional, following [JPL's convention](https://ssd-api.jpl.nasa.gov/doc/periodic_orbits.html).
 include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "cr3bp.jl"))
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "moments.jl"))
 μ = 0.01215058560962404
 nominal = [0.5 - μ + 0.01, sqrt(3) / 2, 0.0, -0.01]
 width = 5.0e-4
@@ -92,23 +93,11 @@ println("Maximum sampled Jacobi drift of the fifth-order map: ", sampled_drift)
 # For covariance, form products of **coefficient lists**: multiplying two
 # degree-five polynomials in the current algebra would discard degrees 6–10
 # and produce an incorrect second moment.
-uniform_moment(powers) = any(isodd, powers) ? 0.0 : prod(k -> 1 / (k + 1), powers)
-function uniform_statistics(map)
-    mean = [sum(m.coefficient * uniform_moment(m.exponents) for m in monomials(p); init = 0.0) for p in map]
-    centered = monomials.(map - mean)
-    covariance = [
-        sum(
-            a.coefficient * b.coefficient * uniform_moment(a.exponents + b.exponents)
-                for a in centered[i], b in centered[j]; init = 0.0
-        ) for i in eachindex(map), j in eachindex(map)
-    ]
-    return mean, covariance
-end
-position_moments = [uniform_statistics(map[1:2]) for map in flow.u]
+position_moments = [polynomial_statistics(map[1:2], uniform_moment) for map in flow.u]
 means = stack(first.(position_moments))
 deviations = stack(sqrt.(diag(covariance)) for (_, covariance) in position_moments)
-initial_mean, initial_covariance = uniform_statistics(first(flow.u))
-final_mean, final_covariance = uniform_statistics(final_map)
+initial_mean, initial_covariance = polynomial_statistics(first(flow.u), uniform_moment)
+final_mean, final_covariance = polynomial_statistics(final_map, uniform_moment)
 @assert isapprox(initial_mean, nominal; atol = 1.0e-14)
 @assert isapprox(diag(initial_covariance), [width^2 / 3, 0, 0, width^2 / 3]; atol = 1.0e-18)
 @assert minimum(eigvals(Symmetric(final_covariance))) >= -1.0e-16

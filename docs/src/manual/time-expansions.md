@@ -25,6 +25,8 @@ Differentiation reduces it by one and integration increases it by one, with
 zero integration constant. Arithmetic, roots, powers, `exp`, `log`, trigonometric
 and hyperbolic functions are supported at regular analytic centers.
 `TimeSeries` is a `Number`, not a `Real`; comparison-based RHS branches are unsupported.
+With polynomial coefficients, filtering applies to the completed public result;
+internal seeds and intermediate time coefficients retain terms needed later.
 
 ## Expand an ODE solution
 
@@ -56,7 +58,9 @@ Use a dense `Vector` for the state, with numeric or polynomial elements and a
 fixed dimension. Both `f!(du,u,p,t)` and `f(u,p,t)` RHS forms work. SciML supplies
 adaptive control, `saveat`, `dtmax`, `tstops`, callbacks, `init` and `step!`.
 Dense output evaluates the local polynomial and its derivatives. Use
-`adaptive=false, dt=...` for fixed steps.
+`adaptive=false, dt=...` for fixed steps. A scalar `save_idxs=i` returns scalar
+saved values and scalar dense values/derivatives; a vector of indices retains
+vector output.
 
 The last two time terms estimate local error. Scalar or component tolerances
 scale each error; for polynomial states the coefficient L1 norm includes uncertain

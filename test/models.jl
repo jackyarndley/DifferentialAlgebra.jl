@@ -38,6 +38,51 @@ sameinterval(a, b) = IA.isequal_interval(a, b)
     end
 end
 
+@testset "Analytic coefficients retain interval guarantees" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(Interval{Float64}, 1; order = 3, table_bytes = budget)
+        square = x^(2 // 1)
+        @test all(k -> sameinterval(coefficient(square, [k]), interval(k == 2 ? 1 : 0)), 0:3)
+        for (power, expected) in (
+                (1 // 2, (1, 1 // 2, -1 // 8, 1 // 16)),
+                (1 // 3, (1, 1 // 3, -1 // 9, 5 // 81)),
+            )
+            result = (1 + x)^power
+            values = [coefficient(result, [k]) for k in 0:3]
+            @test all(contains.(values, expected))
+            @test all(c -> IA.isguaranteed(c) && IA.decoration(c) == IA.com, values)
+        end
+        for result in (exp(x), log(1 + x), sin(x))
+            @test all(c -> IA.isguaranteed(c) && IA.decoration(c) == IA.com, coefficients(result))
+        end
+    end
+end
+
+@testset "Model shortcut metadata and exact irrational points" begin
+    x, = taylor_models([interval(-1, 1)]; order = 2)
+    for (value, operation, expected) in ((2, a -> a^0, 1), (0, sqrt, 0))
+        model = TaylorModel(IA.setdecoration(interval(value), IA.def), x)
+        result = enclose(operation(model))
+        @test sameinterval(result, interval(expected))
+        @test IA.decoration(result) == IA.def && IA.isguaranteed(result)
+    end
+    @test_throws DomainError x((pi,))
+    # The scalar π is exact, unlike a stored BigFloat approximation. A point
+    # enclosure must retain enough precision to fit this narrow saved domain.
+    reference = setprecision(BigFloat, 512) do
+        BigFloat(pi)
+    end
+    setprecision(BigFloat, 192) do
+        x, = taylor_models([interval(BigFloat, pi)]; order = 1)
+        snapshot = compile(x)
+        setprecision(BigFloat, 64) do
+            @test contains(x((pi,)), reference)
+            @test contains(snapshot(Real[pi]), reference)
+            @test_throws DomainError snapshot((22 // 7,))
+        end
+    end
+end
+
 @testset "Absolute remainders independently of certificates" begin
     for budget in (0, 32 * 1024^2)
         x, y = taylor_models(

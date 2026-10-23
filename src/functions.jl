@@ -20,13 +20,13 @@ end
 # A pair shares the nonconstant argument and rotates three Horner buffers.
 function series_pair(
         a::TaylorPolynomial, first_coeffs::AbstractVector{T},
-        second_coeffs::AbstractVector{T}
+        second_coeffs::AbstractVector{T}; filter::Bool = true
     ) where {T}
     ctx = valid(a)
     R = promote_type(coefficient_type(a), T)
     if a.len == 1
-        return TaylorPolynomial{R}(ctx, first_coeffs[1]),
-            TaylorPolynomial{R}(ctx, second_coeffs[1])
+        return TaylorPolynomial{R}(ctx, first_coeffs[1]; filter),
+            TaylorPolynomial{R}(ctx, second_coeffs[1]; filter)
     end
     n = min(working_order(ctx), length(first_coeffs) - 1, length(second_coeffs) - 1)
     h = TaylorPolynomial{R}(a)
@@ -45,15 +45,13 @@ function series_pair(
         finish!(scratch, scratch.len; filter = false)
         c, scratch = scratch, c
     end
-    return finish!(s, s.len), finish!(c, c.len)
+    return finish!(s, s.len; filter), finish!(c, c.len; filter)
 end
 
 # Normalization is an intermediate analytic step: a small coefficient can grow
 # in the subsequent composition. Only the completed public result is filtered.
 function normalized_argument(a::TaylorPolynomial, x::Real)
-    R = promote_type(coefficient_type(a), typeof(x))
-    factor = inv(coefficient_convert(R, x))
-    return scale!(allocate_undef(valid(a), typeof(factor), a.len), a, factor; filter = false)
+    return divided(a, x; filter = false)
 end
 function domain_call(f, x)
     return try
@@ -71,53 +69,132 @@ end
 # E(exp(a))=exp(a)E(a), a E(log(a))=E(a), and a E(a^p)=p a^p E(a)
 # into triangular coefficient recurrences. One traversal replaces repeated
 # polynomial products, with no cutoff applied to intermediate Taylor factors.
-function recurrence(a::TaylorPolynomial, c0, p, ::Val{MODE}; filter::Bool = true) where {MODE}
+function recurrence(a::TaylorPolynomial, c0, p, mode; filter::Bool = true)
+    return isempty(valid(a).basis.products) ?
+        recurrence(a, c0, p, mode, Val(false); filter) :
+        recurrence(a, c0, p, mode, Val(true); filter)
+end
+
+# This formula is shared by stored pairs and on-demand complementary monomials.
+function recurrence_term(ai::T, yj::T, a0::T, p::T, di, dj, degree, ::Val{MODE}) where {T, MODE}
+    denominator = coefficient_convert(T, degree_factor(ai, degree))
+    if MODE === :exp
+        return coefficient_product_quotient(
+            ai, yj, denominator, coefficient_convert(T, degree_factor(ai, di))
+        )
+    end
+    MODE === :log && dj == 0 && return zero(T)
+    left = coefficient_convert(T, degree_factor(ai, di)) / denominator
+    right = coefficient_convert(T, degree_factor(ai, dj)) / denominator
+    # p*di can overflow even when p*(di/degree) and the result are finite.
+    weight = MODE === :log ? -right : p * left - right
+    return coefficient_product_quotient(ai, yj, a0, weight)
+end
+
+# With coefficients in this conservative range, every weighted product and
+# sum stays normal. Ordinary problems can accumulate one numerator per output;
+# extreme inputs use the range-preserving contribution formula above.
+function recurrence_range(a, c0, p, ::Type{T}, n) where {T}
+    T <: Union{Float32, Float64, BigFloat} || return nothing
+    upper = sqrt(sqrt(floatmax(T) / (T(a.algebra.basis.order) * T(min(a.len, n)))))
+    upper > one(T) || return nothing
+    lower = inv(upper)
+    normal(x) = iszero(x) || lower <= abs(x) <= upper
+    normal(c0) && normal(p) && all(normal, @view(a.coeffs[1:a.len])) || return nothing
+    return (lower, upper)
+end
+
+function recurrence(
+        a::TaylorPolynomial, c0, p, mode::Val{MODE}, table::Val{TABLE};
+        filter::Bool = true
+    ) where {MODE, TABLE}
     ctx = valid(a); basis = ctx.basis
     T = promote_type(coefficient_type(a), typeof(c0), typeof(p))
     a.len == 1 && return finish!(TaylorPolynomial{T}([coefficient_convert(T, c0)], 1, ctx), 1; filter)
     n = basis.ends[working_order(ctx) + 1]
     out = allocate_undef(ctx, T, n); out.coeffs[1] = c0
-    a0 = a.coeffs[1]
+    a0, exponent = coefficient_convert(T, a.coeffs[1]), coefficient_convert(T, p)
+    powers = TABLE ? Int[] : zeros(Int, basis.variables)
+    range = recurrence_range(a, c0, p, T, n)
+    direct = range !== nothing
     @inbounds for k in 2:n
-        degree = basis.degrees[k]
-        value = zero(T)
-        for t in (basis.splits[k] + 1):basis.splits[k + 1]
-            i, j = Int(basis.left[t]), Int(basis.right[t])
-            i > a.len && break
-            ai = a.coeffs[i]
-            coefficient_iszero(ai) && continue
-            weight = if MODE === :exp
-                degree_factor(ai, basis.degrees[i])
-            elseif MODE === :log
-                degree_factor(ai, -basis.degrees[j])
-            else
-                p * degree_factor(ai, basis.degrees[i]) - degree_factor(ai, basis.degrees[j])
-            end
-            value += weight * ai * out.coeffs[j]
-        end
-        if MODE === :log
-            value += k <= a.len ? degree_factor(a.coeffs[k], degree) * a.coeffs[k] : zero(T)
-        end
-        out.coeffs[k] = if MODE === :exp
-            value / degree_factor(value, degree)
-        else
-            value / (degree_factor(a0, degree) * a0)
+        out.coeffs[k] = direct ?
+            recurrence_coefficient(a, out, a0, exponent, k, powers, mode, table, Val(:fast)) :
+            recurrence_coefficient(a, out, a0, exponent, k, powers, mode, table, Val(:checked))
+        if direct && !coefficient_iszero(out.coeffs[k])
+            direct = range[1] <= abs(out.coeffs[k]) <= range[2]
         end
     end
     return finish!(out, n; filter)
 end
 
+@inline function recurrence_coefficient(
+        a, out::TaylorPolynomial{T}, a0, p, k, powers,
+        mode::Val{MODE}, table::Val{TABLE}, ::Val{POLICY}
+    ) where {T, MODE, TABLE, POLICY}
+    basis = a.algebra.basis
+    degree = basis.degrees[k]
+    # Preserve cancellation in the finite numerator before dividing. Only a
+    # range failure retries with separately normalized contributions.
+    value = zero(T)
+    pairs = TABLE ? ((basis.splits[k] + 1):split_end(basis, k, a.len)) :
+        monomial_divisors(basis, k, a.len, powers)
+    @inbounds for pair in pairs
+        i = TABLE ? Int(basis.left[pair]) : pair[1]
+        ai = coefficient_convert(T, a.coeffs[i])
+        coefficient_iszero(ai) && continue
+        j = TABLE ? Int(basis.right[pair]) : pair[2]
+        if POLICY !== :normalized
+            di, dj = degree_factor(ai, basis.degrees[i]), degree_factor(ai, basis.degrees[j])
+            weight = MODE === :exp ? di : MODE === :log ? -dj : p * di - dj
+            term = weight * ai * out.coeffs[j]
+            if POLICY === :checked
+                primal = coefficient_primal(term)
+                if primal isa AbstractFloat &&
+                        (!isfinite(primal) || abs(primal) < floatmin(typeof(primal))) &&
+                        !coefficient_iszero(weight) && !coefficient_iszero(out.coeffs[j])
+                    return recurrence_coefficient(a, out, a0, p, k, powers, mode, table, Val(:normalized))
+                end
+            end
+            value += term
+            if POLICY === :checked && !isfinite(value)
+                return recurrence_coefficient(a, out, a0, p, k, powers, mode, table, Val(:normalized))
+            end
+        else
+            value += recurrence_term(
+                ai, out.coeffs[j], a0, p,
+                basis.degrees[i], basis.degrees[j], degree, mode
+            )
+        end
+    end
+    if POLICY !== :normalized
+        factor = degree_factor(a0, degree)
+        MODE === :log && (value += factor * coefficient_convert(T, coefficient_at(a, k)))
+        denominator = MODE === :exp ? factor : factor * a0
+        if POLICY === :checked && (!isfinite(value) || !isfinite(denominator))
+            return recurrence_coefficient(a, out, a0, p, k, powers, mode, table, Val(:normalized))
+        end
+        return value / denominator
+    end
+    return MODE === :log ? coefficient_convert(T, coefficient_at(a, k)) / a0 + value : value
+end
+
 function trig_recurrence(
-        a::TaylorPolynomial, hyperbolic::Bool, ::Val{OUTPUT} = Val(:both)
+        a::TaylorPolynomial, hyperbolic::Bool, ::Val{OUTPUT} = Val(:both);
+        filter::Bool = true
     ) where {OUTPUT}
     x = constant_term(a); ctx = a.algebra; basis = ctx.basis
+    if isempty(basis.products)
+        s, c = trig_series_pair(a, hyperbolic; filter)
+        return OUTPUT === :both ? (s, c) : OUTPUT === :sin ? s : c
+    end
     s0, c0 = hyperbolic ? (sinh(x), cosh(x)) : sincos(x)
     T = typeof(s0)
     if a.len == 1
         OUTPUT === :both && return (
-            TaylorPolynomial{T}(ctx, s0), TaylorPolynomial{T}(ctx, c0),
+            TaylorPolynomial{T}(ctx, s0; filter), TaylorPolynomial{T}(ctx, c0; filter),
         )
-        return TaylorPolynomial{T}(ctx, OUTPUT === :sin ? s0 : c0)
+        return TaylorPolynomial{T}(ctx, OUTPUT === :sin ? s0 : c0; filter)
     end
     order = working_order(ctx)
     n = basis.ends[order + 1]
@@ -126,7 +203,15 @@ function trig_recurrence(
     ns, nc = OUTPUT === :cos ? shared : n, OUTPUT === :sin ? shared : n
     s, c = allocate_undef(ctx, T, ns), allocate_undef(ctx, T, nc)
     s.coeffs[1], c.coeffs[1] = s0, c0
+    range = recurrence_range(a, s0, c0, T, n)
+    direct = range !== nothing
     @inbounds for k in 2:shared
+        if !direct
+            s.coeffs[k] = recurrence_coefficient(a, c, one(T), zero(T), k, (), Val(:exp), Val(true), Val(:checked))
+            cv = recurrence_coefficient(a, s, one(T), zero(T), k, (), Val(:exp), Val(true), Val(:checked))
+            c.coeffs[k] = hyperbolic ? cv : -cv
+            continue
+        end
         sv, cv = zero(T), zero(T)
         for t in (basis.splits[k] + 1):basis.splits[k + 1]
             i, j = Int(basis.left[t]), Int(basis.right[t])
@@ -139,47 +224,29 @@ function trig_recurrence(
         end
         s.coeffs[k] = sv / degree_factor(sv, basis.degrees[k])
         c.coeffs[k] = (hyperbolic ? cv : -cv) / degree_factor(cv, basis.degrees[k])
+        direct = all(v -> iszero(v) || range[1] <= abs(v) <= range[2], (s.coeffs[k], c.coeffs[k]))
     end
-    OUTPUT === :both && return finish!(s, n), finish!(c, n)
+    OUTPUT === :both && return finish!(s, n; filter), finish!(c, n; filter)
     result, partner = OUTPUT === :sin ? (s, c) : (c, s)
     @inbounds for k in (shared + 1):n
-        value = zero(T)
-        for t in (basis.splits[k] + 1):basis.splits[k + 1]
-            i, j = Int(basis.left[t]), Int(basis.right[t])
-            i > a.len && break
-            ai = a.coeffs[i]
-            coefficient_iszero(ai) && continue
-            value += degree_factor(ai, basis.degrees[i]) * ai * partner.coeffs[j]
-        end
+        value = direct ?
+            recurrence_coefficient(a, partner, one(T), zero(T), k, (), Val(:exp), Val(true), Val(:fast)) :
+            recurrence_coefficient(a, partner, one(T), zero(T), k, (), Val(:exp), Val(true), Val(:checked))
         OUTPUT === :cos && !hyperbolic && (value = -value)
-        result.coeffs[k] = value / degree_factor(value, basis.degrees[k])
+        result.coeffs[k] = value
     end
-    return finish!(result, n)
+    return finish!(result, n; filter)
 end
 
 function exponential(a::TaylorPolynomial; filter::Bool = true)
-    x = constant_term(a); c0 = exp(x)
-    !isempty(a.algebra.basis.products) &&
-        return recurrence(a, c0, zero(c0), Val(:exp); filter)
-    c = Vector{typeof(c0)}(undef, working_order(a.algebra) + 1); c[1] = c0
-    @inbounds for k in 1:(length(c) - 1)
-        c[k + 1] = c[k] / degree_factor(c[k], k)
-    end
-    return series(a, c; filter)
+    c0 = exp(constant_term(a))
+    return recurrence(a, c0, zero(c0), Val(:exp); filter)
 end
 Base.exp(a::TaylorPolynomial) = exponential(a)
 function logarithm(a::TaylorPolynomial; filter::Bool = true)
     x = constant_term(a); c0 = domain_call(log, x)
     !invertible_constant(x) && throw(TaylorError("Logarithm requires a constant excluding zero"))
-    !isempty(a.algebra.basis.products) &&
-        return recurrence(a, c0, zero(c0), Val(:log); filter)
-    c = Vector{typeof(c0)}(undef, working_order(a.algebra) + 1); c[1] = c0
-    factor = one(x)
-    @inbounds for k in 1:(length(c) - 1)
-        c[k + 1] = factor / degree_factor(factor, k)
-        factor = -factor
-    end
-    return series(normalized_argument(a, x), c; filter)
+    return recurrence(a, c0, zero(c0), Val(:log); filter)
 end
 Base.log(a::TaylorPolynomial) = logarithm(a)
 Base.log2(a::TaylorPolynomial) = log(2, a)
@@ -191,16 +258,9 @@ end
 Base.log(::Irrational{:ℯ}, a::TaylorPolynomial) = log(a)
 
 function power_series(a::TaylorPolynomial, p::Real, c0; filter::Bool = true)
-    x = constant_term(a)
-    invertible_constant(x) || throw(TaylorError("Noninteger powers require an expansion point excluding zero"))
-    !isempty(a.algebra.basis.products) && return recurrence(a, c0, p, Val(:power); filter)
-    T = promote_type(coefficient_type(a), typeof(c0), typeof(p))
-    x = coefficient_convert(T, x)
-    c = Vector{T}(undef, working_order(a.algebra) + 1); c[1] = c0
-    @inbounds for k in 1:(length(c) - 1)
-        c[k + 1] = c[k] * (p - degree_factor(p, k - 1)) / degree_factor(c[k], k)
-    end
-    return series(normalized_argument(a, x), c; filter)
+    invertible_constant(constant_term(a)) ||
+        throw(TaylorError("Noninteger powers require an expansion point excluding zero"))
+    return recurrence(a, c0, p, Val(:power); filter)
 end
 function Base.:^(a::TaylorPolynomial, p::AbstractFloat)
     R = promote_type(coefficient_type(a), typeof(p))
@@ -209,7 +269,14 @@ function Base.:^(a::TaylorPolynomial, p::AbstractFloat)
         return TaylorPolynomial{R}(valid(a), zero(R))
     return power_series(a, p, domain_call(x -> x^p, constant_term(a)))
 end
-Base.:^(a::TaylorPolynomial, p::Rational) = a^convert(float(promote_type(coefficient_type(a), typeof(p))), p)
+function Base.:^(a::TaylorPolynomial, p::Rational)
+    R = float(promote_type(coefficient_type(a), typeof(p)))
+    isinteger(p) && return convert(TaylorPolynomial{R}, a)^numerator(p)
+    coefficient_iszero(a) && p > 0 && return TaylorPolynomial{R}(valid(a), zero(R))
+    exponent = coefficient_convert(R, p)
+    center = coefficient_convert(R, constant_term(a))
+    return power_series(a, exponent, domain_call(x -> x^exponent, center))
+end
 # A zero base is locally constant for positive exponents. At a varying zero
 # exponent the two-sided real function has no analytic expansion.
 function zero_base_power(base, exponent, identically_zero)
@@ -228,6 +295,8 @@ function Base.:^(a::Real, b::TaylorPolynomial)
         c0 = domain_call(x -> float(base)^x, constant_term(b))
         return finish!(scalar_argument(b, c0), 1)
     end
+    invertible_constant(base) ||
+        throw(TaylorError("A varying exponent requires a nonzero base primal"))
     return exp(scaled(b, domain_call(log, base); filter = false))
 end
 Base.:^(a::TaylorPolynomial, b::TaylorPolynomial) =
@@ -246,31 +315,57 @@ function quotient(a::Real, b::TaylorPolynomial; filter::Bool = true)
     T = negative_coefficient_type(typeof(one(T) / one(T)))
     if b.len == 1
         if a isa TaylorPolynomial
-            return scaled(a, inv(coefficient_convert(T, b0)); filter)
+            return divided(a, b0; filter)
         end
         numerator = coefficient_operand(T, a)
         result = numerator / coefficient_convert(T, b0)
         return finish!(TaylorPolynomial{typeof(result)}([result], 1, ctx), 1; filter)
     end
-    basis = ctx.basis
-    if isempty(basis.products)
-        reciprocal = power_series(
-            b, -one(T), inv(coefficient_convert(T, b0)); filter = false
-        )
-        return a isa TaylorPolynomial ? product(a, reciprocal; filter) :
-            scaled(reciprocal, a; filter)
-    end
+    return isempty(ctx.basis.products) ?
+        quotient_recurrence(a, b, T, Val(false); filter) :
+        quotient_recurrence(a, b, T, Val(true); filter)
+end
+function quotient_recurrence(a, b, ::Type{T}, ::Val{TABLE}; filter::Bool = true) where {T, TABLE}
+    ctx = b.algebra; basis = ctx.basis
+    b0 = coefficient_convert(T, constant_term(b))
     n = basis.ends[working_order(ctx) + 1]
     result = allocate_undef(ctx, T, n)
-    result.coeffs[1] = coefficient_operand(T, constant_term(a)) / b0
+    result.coeffs[1] = coefficient_convert(T, constant_term(a)) / b0
+    powers = TABLE ? Int[] : zeros(Int, basis.variables)
     @inbounds for k in 2:n
-        value = coefficient_convert(T, coefficient_at(a, k))
-        @simd for t in (basis.splits[k] + 1):split_end(basis, k, b.len)
-            i, j = Int(basis.left[t]), Int(basis.right[t])
-            bi = b.coeffs[i]
-            value -= coefficient_iszero(bi) ? zero(T) : bi * result.coeffs[j]
+        # Subtract before division so a-a can cancel even when a/b0 overflows.
+        # Retry in normalized coordinates only if a product loses its range.
+        for normalized in (false, true)
+            value = coefficient_convert(T, coefficient_at(a, k))
+            normalized && (value /= b0)
+            rescale = false
+            pairs = TABLE ? ((basis.splits[k] + 1):split_end(basis, k, b.len)) :
+                monomial_divisors(basis, k, b.len, powers)
+            for pair in pairs
+                i = TABLE ? Int(basis.left[pair]) : pair[1]
+                bi = coefficient_convert(T, b.coeffs[i])
+                coefficient_iszero(bi) && continue
+                j = TABLE ? Int(basis.right[pair]) : pair[2]
+                term = normalized ? coefficient_product_quotient(bi, result.coeffs[j], b0, one(T)) :
+                    bi * result.coeffs[j]
+                primal = coefficient_primal(term)
+                if !normalized && primal isa AbstractFloat &&
+                        (!isfinite(primal) || abs(primal) < floatmin(typeof(primal))) &&
+                        !coefficient_iszero(result.coeffs[j])
+                    rescale = true
+                    break
+                end
+                value -= term
+                primal = coefficient_primal(value)
+                if !normalized && primal isa AbstractFloat && !isfinite(primal)
+                    rescale = true
+                    break
+                end
+            end
+            rescale && continue
+            result.coeffs[k] = normalized ? value : value / b0
+            break
         end
-        result.coeffs[k] = value / b0
     end
     return finish!(result, n; filter)
 end
@@ -311,13 +406,7 @@ function tablefree_square_root(a::TaylorPolynomial, c0; filter::Bool = true)
     powers = zeros(Int, basis.variables)
     @inbounds for k in 2:n
         value = coefficient_at(a, k)
-        for i in 2:(k - 1)
-            basis.degrees[i] > basis.degrees[k] ÷ 2 && break
-            for v in eachindex(powers)
-                powers[v] = basis.exponents[v, k] - Int(basis.exponents[v, i])
-            end
-            any(<(0), powers) && continue
-            j = rank(basis, powers, basis.degrees[k] - basis.degrees[i])
+        for (i, j) in monomial_divisors(basis, k, k - 1, powers)
             i > j && continue
             term = result.coeffs[i] * result.coeffs[j]
             value -= i == j ? term : term + term
@@ -338,7 +427,7 @@ function root_series(a::TaylorPolynomial, p::Integer; filter::Bool = true)
             p == 3 ? cbrt(x) : copysign(abs(x)^exponent, x), x
     )
     coefficient_iszero(a) && return finish!(scalar_argument(a, zero(c0)), 1; filter)
-    p == 2 && !isempty(a.algebra.basis.products) && return square_root(a, c0; filter)
+    p == 2 && return square_root(a, c0; filter)
     return power_series(a, exponent, c0; filter)
 end
 """
@@ -393,14 +482,17 @@ function trig_coefficients(s0, c0, n)
     sine, cosine = (s0, c0, -s0, -c0), (c0, -s0, -c0, s0)
     return cycle_coefficients(sine, n), cycle_coefficients(cosine, n)
 end
-function trig_series_pair(a::TaylorPolynomial)
-    s0, c0 = sincos(constant_term(a))
+function trig_series_pair(a::TaylorPolynomial, hyperbolic::Bool = false; filter::Bool = true)
+    x = constant_term(a)
+    s0, c0 = hyperbolic ? (sinh(x), cosh(x)) : sincos(x)
     T = typeof(s0)
     if a.len == 1
-        return TaylorPolynomial{T}(a.algebra, s0), TaylorPolynomial{T}(a.algebra, c0)
+        return TaylorPolynomial{T}(a.algebra, s0; filter), TaylorPolynomial{T}(a.algebra, c0; filter)
     end
-    s, c = trig_coefficients(s0, c0, working_order(a.algebra))
-    return series_pair(a, s, c)
+    n = working_order(a.algebra)
+    s, c = hyperbolic ? (cycle_coefficients((s0, c0, s0, c0), n), cycle_coefficients((c0, s0, c0, s0), n)) :
+        trig_coefficients(s0, c0, n)
+    return series_pair(a, s, c; filter)
 end
 Base.sincos(a::TaylorPolynomial) = isempty(valid(a).basis.products) ?
     trig_series_pair(a) : trig_recurrence(a, false)
@@ -447,6 +539,13 @@ for fn in (:asin, :acos, :atan, :asinh, :acosh, :atanh)
         a.len == 1 && coefficient_isequal(x, coefficient_primal(x)) &&
             return series(a, [c0]; filter)
         x = coefficient_convert(typeof(c0), x)
+        if $(fn === :atan) && x isa AbstractFloat && abs(x) > 2
+            reciprocal = quotient(one(x), a; filter = false)
+            result = inverse_series(reciprocal, Val(:atan); filter = false)
+            scale!(result, result, -one(coefficient_type(result)); filter = false)
+            result.coeffs[1] = c0
+            return finish!(result, result.len; filter)
+        end
         # Scale floating centers before squaring. Compose in the normalized
         # coordinate so tiny derivatives can still multiply large input slopes.
         if $(fn in (:asinh, :acosh)) && x isa AbstractFloat && abs(x) > 2

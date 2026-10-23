@@ -34,9 +34,10 @@ unmeasured current checkout.
 
 ## Interpret measurements
 
-All scripts use `measurement.jl`, which records revision, Julia/dependency versions,
-CPU and threads. It reports warmed minimum runtime, bytes, allocations, batch size,
-first-call elapsed time and compilation. Defaults request 30 samples and a
+All scripts use `measurement.jl`, which records revision, working-tree status,
+Julia/dependency versions, CPU and threads. It reports warmed minimum runtime,
+bytes, allocations, batch size, first-call elapsed time and compilation.
+Defaults request 30 samples and a
 0.5-second trial budget; `measure` accepts `samples`, `seconds` and `batch`.
 Use `batch=1` for nonrepeatable mutations; existing buffer workloads overwrite
 outputs on every call.

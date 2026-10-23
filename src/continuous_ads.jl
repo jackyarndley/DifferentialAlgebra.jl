@@ -167,8 +167,8 @@ function continuity_candidate(f, lo, hi, A, options, ctx, estimator::ADSEstimato
     box = ads_geometry(T.(lo), T.(hi))
     all(i -> isfinite(box.radius[i]) && (lo[i] == hi[i] || box.radius[i] > 0), eachindex(lo)) || throw(ArgumentError("Unrepresentable overlap domain"))
     x = [variable(i, T) for i in eachindex(lo)]
-    transform = T.(A)
-    callback(z) = f(transform * z)
+    center, linear = polygon_affine_frame(A, box.center, box.radius, T)
+    callback(z) = f(center + linear * ads_normalize.(z, box.center, box.radius))
     candidate = ads_static_fit(StaticMap(callback), box, x, ctx, options)
     C = eltype(candidate.errors)
     C <: AbstractFloat || throw(ArgumentError("Ordinary continuity fits require floating coefficients"))

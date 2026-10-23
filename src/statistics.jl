@@ -21,17 +21,25 @@ end
 
 Return multi-indices and raw moments through total degree `order`.
 `mgf` must be a moment-generating function about zero. Coefficients are multiplied
-by the factorials of their exponents to recover the moments.
+by the factorials of their exponents to recover the moments. Fixed-width integer
+moments throw on overflow; use `BigInt` coefficients for larger exact moments.
 """
 function raw_moments(mgf::TaylorPolynomial, no::Integer)
     basis = valid(mgf).basis
     0 <= no <= basis.order || throw(ArgumentError("Moment order exceeds initialized order"))
     indices = [UInt32.(view(basis.exponents, :, i)) for i in 1:basis.ends[no + 1]]
-    T = coefficient_type(mgf)
-    moments = [
-        coefficient(mgf, jj) * prod(j -> convert(T, factorial(big(j))), jj)
-            for jj in indices
-    ]
+    moments = map(indices) do powers
+        value = coefficient(mgf, powers)
+        coefficient_iszero(value) && return value
+        # The factorial itself may overflow even when its product with a tiny
+        # coefficient is finite. Small factors also retain exact scalar arithmetic.
+        for power in powers, factor in 2:Int(power)
+            value = value isa Base.BitInteger ?
+                Base.Checked.checked_mul(value, convert(typeof(value), factor)) :
+                value * degree_factor(value, factor)
+        end
+        return value
+    end
     return indices, moments
 end
 """
@@ -56,7 +64,11 @@ function central_moments(mgf::TaylorPolynomial, no::Integer)
         )
     )
     mean = linear_part(mgf)
-    T = coefficient_type(mgf)
-    shift = sum(mean[i] * TaylorPolynomial{T}(ctx, i, one(T)) for i in eachindex(mean))
-    return raw_moments(exp(-shift) * mgf, no)
+    T = negative_coefficient_type(coefficient_type(mgf))
+    shift = allocate(ctx, T, length(mean) + 1)
+    for i in eachindex(mean)
+        shift.coeffs[i + 1] = -coefficient_convert(T, mean[i])
+    end
+    finish!(shift; filter = false)
+    return raw_moments(product(exponential(shift; filter = false), mgf), no)
 end

@@ -59,10 +59,10 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
     A0 = Matrix{T}(constant_term.(A))
     F = LinearAlgebra.eigen(LinearAlgebra.Symmetric(A0))
     R, V = eltype(F.values), eltype(F.vectors)
-    values = TaylorPolynomial{R}.(Ref(ctx), F.values)
-    vectors = TaylorPolynomial{V}.(Ref(ctx), F.vectors)
+    values = TaylorPolynomial{R}.(Ref(ctx), F.values; filter = false)
+    vectors = TaylorPolynomial{V}.(Ref(ctx), F.vectors; filter = false)
     all(a -> all(coefficient_iszero, @view(a.coeffs[2:min(a.len, limit)])), A) &&
-        return values, vectors
+        return finish!.(values), finish!.(vectors)
     scale = max(one(R), maximum(abs, F.values; init = zero(R)))
     minimum((abs(F.values[i] - F.values[j]) for i in 1:n for j in (i + 1):n); init = convert(R, Inf)) > 100eps(R) * scale ||
         throw(ArgumentError("Repeated or numerically indistinguishable eigenvalues do not define unique Taylor eigenvectors"))
@@ -70,17 +70,19 @@ function eigenpairs(A::AbstractMatrix{<:TaylorPolynomial})
         v0, lambda0 = F.vectors[:, k], F.values[k]
         J = [A0 - lambda0 * I -v0; permutedims(v0) zero(R)]
         Ji = inv(J)
-        v, lambda = copy(vectors[:, k]), values[k]
+        v, lambda = copy.(vectors[:, k]), copy(values[k])
         for degree in 1:working_order(ctx)
             residual = eigen_residual(A, v, lambda, degree)
-            correction = _linear_transform(Ji, residual)
-            v = v - correction[1:n]
-            lambda = lambda - correction[end]
+            correction = _linear_transform(Ji, residual; filter = false)
+            for i in eachindex(v)
+                weighted_sum!(v[i], v[i], one(V), correction[i], -one(V); filter = false)
+            end
+            weighted_sum!(lambda, lambda, one(R), correction[end], -one(R); filter = false)
         end
         vectors[:, k] = v
         values[k] = lambda
     end
-    return values, vectors
+    return finish!.(values), finish!.(vectors)
 end
 
 # Local degree limits make eigenpair lifting safe alongside ordinary arithmetic.
@@ -92,16 +94,16 @@ function eigen_residual(A, v, lambda, degree::Int)
     work = allocate(ctx, T, ctx.basis.ends[degree + 1])
     for i in 1:n
         for j in 1:n
-            multiply!(work, A[i, j], v[j], degree)
-            weighted_sum!(result[i], result[i], one(T), work, one(T); order = degree)
+            multiply!(work, A[i, j], v[j], degree; filter = false)
+            weighted_sum!(result[i], result[i], one(T), work, one(T); order = degree, filter = false)
         end
-        multiply!(work, lambda, v[i], degree)
-        weighted_sum!(result[i], result[i], one(T), work, -one(T); order = degree)
-        multiply!(work, v[i], v[i], degree)
-        weighted_sum!(result[end], result[end], one(T), work, one(T) / 2; order = degree)
+        multiply!(work, lambda, v[i], degree; filter = false)
+        weighted_sum!(result[i], result[i], one(T), work, -one(T); order = degree, filter = false)
+        multiply!(work, v[i], v[i], degree; filter = false)
+        weighted_sum!(result[end], result[end], one(T), work, one(T) / 2; order = degree, filter = false)
     end
     result[end].coeffs[1] -= one(T) / 2
-    finish!(result[end], result[end].len)
+    finish!(result[end], result[end].len; filter = false)
     return result
 end
 function eigenpairs(A::AbstractMatrix{<:Real})

@@ -49,6 +49,13 @@ m = exp(x+y)*cos(x*y)
 box. Restricting a query keeps the entire remainder. To improve it, reevaluate
 the original expression on a smaller domain.
 
+Point queries enclose exact irrational coordinates such as `π` outward.
+Conversion retains at least the stored domain's BigFloat precision, even after
+the caller lowers it. The entire coordinate enclosure must lie inside the
+physical domain; a boundary-straddling enclosure is rejected. An explicit
+`BigFloat(π)` queries that rounded value. These rules also apply to certified
+piecewise and continuous maps.
+
 `compile(m)` creates an owned `CompiledTaylorModel` for numeric evaluation and
 enclosure after algebra reinitialization. It does not support arithmetic or
 composition. Live models follow `variables`' lifetime rules; `taylor_models`

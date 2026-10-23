@@ -77,6 +77,8 @@ function ODECore.alg_cache(
         (u, p, t) -> f(u, p, t)
     end
     workspace = DifferentialAlgebra.prepare_time_expansion(rhs, u, t; order = alg.order, parameters = p)
+    DifferentialAlgebra.taylor_solver_coefficient(coefficient_type(first(workspace.series))) ||
+        throw(ArgumentError("TaylorMethod does not support interval coefficients"))
     if coefficient_type(first(workspace.series)) <: TaylorPolynomial && !(eltype(u) <: TaylorPolynomial)
         throw(ArgumentError("Use polynomial initial states when the ODE has uncertain polynomial parameters"))
     end
@@ -103,6 +105,15 @@ coefficient_size(x::Real) = abs(x)
 coefficient_size(x::TaylorPolynomial) = coefficient_norm(x, 1)
 tolerance_at(x::Number, i) = x
 tolerance_at(x::AbstractArray, i) = x[i]
+function tail_size(coefficient, h, degree)
+    value = coefficient_size(coefficient)
+    # Starting at the coefficient avoids overflow in h^degree when their
+    # product is representable, as in a tiny coefficient over a long interval.
+    for _ in 1:degree
+        value *= h
+    end
+    return value
+end
 
 function ODECore.perform_step!(integrator, cache::TaylorCaches, _repeat_step = false)
     (; uprev, t, dt, p, opts) = integrator
@@ -123,8 +134,8 @@ function ODECore.perform_step!(integrator, cache::TaylorCaches, _repeat_step = f
             scale = tolerance_at(opts.abstol, i) + tolerance_at(opts.reltol, i) *
                 max(coefficient_size(uprev[i]), coefficient_size(u[i]))
             tail = max(
-                coefficient_size(coefficient(cache.workspace.series[i], cache.order - 1)) * abs(dt)^(cache.order - 1),
-                coefficient_size(coefficient(cache.workspace.series[i], cache.order)) * abs(dt)^cache.order
+                tail_size(coefficient(cache.workspace.series[i], cache.order - 1), abs(dt), cache.order - 1),
+                tail_size(coefficient(cache.workspace.series[i], cache.order), abs(dt), cache.order)
             )
             return iszero(scale) ? (iszero(tail) ? zero(tail) : oftype(tail, Inf)) : tail / scale
         end
@@ -157,8 +168,10 @@ function ODECore._ode_interpolant(
         idxs, ::Type{Val{D}}, differential_vars
     ) where {D}
     D >= 0 || throw(ArgumentError("Derivative order must be nonnegative"))
-    indices = idxs === nothing ? eachindex(y0) : idxs isa Integer ? (idxs,) : idxs
     h = Θ * dt
+    y0 isa Number && idxs === nothing &&
+        return dense_value(k, cache.order, 1, h, y0, Val(D))
+    indices = idxs === nothing ? eachindex(y0) : idxs isa Integer ? (idxs,) : idxs
     idxs isa Integer && return dense_value(k, cache.order, idxs, h, y0[idxs], Val(D))
     return map(i -> dense_value(k, cache.order, i, h, y0[i], Val(D)), indices)
 end

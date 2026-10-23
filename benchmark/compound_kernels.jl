@@ -3,15 +3,9 @@ using DifferentialAlgebra, IntervalArithmetic, SpecialFunctions
 include("measurement.jl")
 
 function report(name, f; budget = missing)
-    try
-        measurement = measure(f)
-        println((; path = name, budget, measurement))
-        return f()
-    catch err
-        failure = first(split(sprint(showerror, err), '\n'))
-        println((; path = name, budget, failure))
-    end
-    return nothing
+    measurement = measure(f)
+    println((; path = name, budget, measurement))
+    return f()
 end
 for budget in (0, 32 * 1024^2)
     x, = variables(1; order = 4, table_bytes = budget)
@@ -48,22 +42,18 @@ for (name, c) in (
     grouped = report(
         Symbol(name, :_degrees), () -> DifferentialAlgebra.degree_norms(p, 0, 2)
     )
-    if !isnothing(result)
-        println(
-            (;
-                path = name, bounds = (inf(result), sup(result)),
-                guaranteed = isguaranteed(result), decoration = decoration(result),
-            )
+    println(
+        (;
+            path = name, bounds = (inf(result), sup(result)),
+            guaranteed = isguaranteed(result), decoration = decoration(result),
         )
-    end
-    if !isnothing(grouped)
-        println(
-            (;
-                path = name, degree_bounds = (inf(grouped[2]), sup(grouped[2])),
-                guaranteed = isguaranteed(grouped[2]), decoration = decoration(grouped[2]),
-            )
+    )
+    println(
+        (;
+            path = name, degree_bounds = (inf(grouped[2]), sup(grouped[2])),
+            guaranteed = isguaranteed(grouped[2]), decoration = decoration(grouped[2]),
         )
-    end
+    )
 end
 for T in (Float64, BigFloat, Rational{BigInt})
     variables(T, 1; order = 2)

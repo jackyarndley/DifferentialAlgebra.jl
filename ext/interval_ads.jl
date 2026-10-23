@@ -191,8 +191,11 @@ function piecewise_query(a::DA.PiecewiseTaylorModel{I}, box; point = false) wher
     box isa AbstractVector && Base.require_one_based_indexing(box)
     length(box) == DA.nvariables(a) || throw(DimensionMismatch("Provide exactly one physical coordinate per dimension"))
     !point && interval_box(box, length(box); guaranteed = true)
-    query = Tuple(checked_interval(asinterval(I, x); guaranteed = true) for x in box)
-    point && any(x -> x isa Interval && !IA.isthin(x), box) && throw(ArgumentError("Use enclose for interval subboxes"))
+    query = Tuple(
+        point ? point_interval(I, box[i], a._domain[i]) :
+            checked_interval(asinterval(I, box[i]); guaranteed = true)
+            for i in eachindex(box)
+    )
     all(i -> IA.issubset_interval(query[i], a._domain[i]), eachindex(query)) || throw(DomainError(box, "Query lies outside the ADS validity domain"))
     result = nothing
     DA.ads_visit_intersections(a.nodes, (IA.inf.(query), IA.sup.(query))) do index

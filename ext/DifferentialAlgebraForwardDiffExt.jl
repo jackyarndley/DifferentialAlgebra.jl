@@ -16,6 +16,23 @@ DA.time_exponent(p::Rational, value::ForwardDiff.Dual) =
 DA.invertible_constant(c::ForwardDiff.Dual) =
     DA.invertible_constant(ForwardDiff.value(c))
 
+# Apply the same range-preserving scalar formula to each product/quotient
+# derivative. Recursion retains mixed derivatives for nested dual coefficients.
+function DA.coefficient_product_quotient(
+        a::D, b::D, c::D, weight::D
+    ) where {Tag, V, N, D <: ForwardDiff.Dual{Tag, V, N}}
+    av, bv, cv, wv = ForwardDiff.value.((a, b, c, weight))
+    value = DA.coefficient_product_quotient(av, bv, cv, wv)
+    ap, bp, cp, wp = ForwardDiff.partials.((a, b, c, weight))
+    partials = ntuple(Val(N)) do i
+        DA.coefficient_product_quotient(ap[i], bv, cv, wv) +
+            DA.coefficient_product_quotient(av, bp[i], cv, wv) +
+            DA.coefficient_product_quotient(av, bv, cv, wp[i]) -
+            DA.coefficient_product_quotient(value, cp[i], cv, one(cv))
+    end
+    return ForwardDiff.Dual{Tag}(value, partials)
+end
+
 # Resolve the intersections of ForwardDiff's Dual/Real and polynomial/Real
 # operations without unwrapping the dual or losing its coefficient derivatives.
 Base.promote_rule(

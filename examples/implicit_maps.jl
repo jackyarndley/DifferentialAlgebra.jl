@@ -10,15 +10,7 @@ using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 
-function kepler_root(mean, eccentricity)
-    E = mean
-    for _ in 1:40
-        step = (E - eccentricity * sin(E) - mean) / (1 - eccentricity * cos(E))
-        E -= step
-        abs(step) < 2.0e-15 && return E
-    end
-    error("Kepler root did not converge")
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 
 δE, δe = variables((:δE, :δe); order = 20)
 mean, e0 = π / 2, 0.3

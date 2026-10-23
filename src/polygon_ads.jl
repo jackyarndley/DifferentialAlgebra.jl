@@ -128,7 +128,8 @@ domain(a::PiecewisePolygonMap) = copy(a._domain)
     split_directions(map::PiecewisePolygonMap)
 
 Return an independent exact 2x2 matrix whose rows project physical coordinates
-onto the splitting frame. It need not be orthonormal.
+onto the splitting frame. Each row has maximum absolute entry one; the frame
+need not be orthonormal. Positive rescaling of input rows gives the same frame.
 """
 split_directions(a::PiecewisePolygonMap) = deepcopy(a._directions)
 nvariables(::PiecewisePolygonMap) = 2
@@ -160,7 +161,9 @@ nonlinear sensitivity of one interior probe of degree three to five; they are a
 heuristic choice of frame, not an optimality claim. Supply a nonsingular 2x2
 matrix with projection directions in its rows to override this choice. Use
 `directions=:axes` for an unrotated polygon baseline. Each child reevaluates `f`
-over its bounding parallelogram. The callback must be valid over these covers.
+over its bounding parallelogram. Rows are normalized by their exact maximum
+absolute entry without changing physical cuts. The callback must be valid over
+these covers, which must be representable in the source scalar type.
 
 All four ADS error methods are supported. Only `IntervalBound()` supplies
 certified uniform errors and requires IntervalArithmetic. `:oriented` uses
@@ -252,8 +255,8 @@ function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimat
         )
     )
     x = [variable(i, T) for i in 1:2]
-    z = geometry.center .+ geometry.radius .* x
-    p = ads_analyze(f(T.(A) * z), geometry, options, ctx)
+    center, linear = polygon_affine_frame(A, geometry.center, geometry.radius, T)
+    p = ads_analyze(f(center + linear * x), geometry, options, ctx)
     if options.check_points
         points = collect(polygon._vertices)
         push!(points, ntuple(i -> sum(v -> v[i], polygon._vertices) / length(polygon._vertices), 2))

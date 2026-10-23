@@ -64,6 +64,31 @@ tail_polynomial(v) = v[1]^2 + 3v[1]^3
     @test sum(domain_area(domain(p)) for p in refined.patches) == 4
 end
 
+@testset "Frame scaling and representable physical covers" begin
+    lo, hi = 2.0 - 1.0e-6, 2.0 + 1.0e-6
+    polygon = ConvexPolygon([(lo, lo), (hi, lo), (hi, hi), (lo, hi)])
+    for scale in (1.0e308, 1 // big(2)^1100)
+        fit = adaptive_map(
+            first, polygon; directions = [scale -scale; 0 1],
+            order = 1, check_points = false
+        )
+        @test split_directions(fit) == [1 -1; 0 1]
+        @test domain_area(domain(only(fit.patches))) == domain_area(polygon)
+        @test fit((2.0, 2.0)) ≈ 2.0
+        @test continuous_map(first, fit; check_points = false)((2.0, 2.0)) ≈ 2.0
+        @test ForwardDiff.derivative(t -> fit((t, 2.0)), 2.0) ≈ 1
+    end
+    # Row normalization cannot rescue a nonrepresentable physical cover from
+    # nearly parallel directions. Fail before evaluating the callback.
+    calls = Ref(0)
+    @test_throws ArgumentError adaptive_map(
+        v -> (calls[] += 1; first(v)), polygon;
+        directions = [1 0; 1 1 // big(2)^1100], order = 1
+    )
+    @test iszero(calls[])
+    @test_throws ArgumentError adaptive_map(first, polygon; directions = [1 1; 2 2])
+end
+
 @testset "Certified subdivision and closed-boundary routing" begin
     fit = adaptive_map(
         v -> v[1]^2, [interval(-1, 1)]; order = 1,
@@ -127,6 +152,44 @@ end
         v -> log(v[1]), [interval(-1, 1)];
         order = 2, max_depth = 0, strict = false
     )
+end
+
+@testset "Certified irrational queries preserve exact domain membership" begin
+    reference = setprecision(BigFloat, 512) do
+        BigFloat(pi)
+    end
+    setprecision(BigFloat, 192) do
+        broad = adaptive_map(first, [interval(BigFloat, -4, 4)]; order = 1)
+        smooth = continuous_map(first, broad)
+        @test IA.in_interval(reference, enclose(smooth, (pi,)))
+        narrow = adaptive_map(first, [interval(BigFloat, pi)]; order = 1)
+        smooth = continuous_map(first, narrow)
+        setprecision(BigFloat, 64) do
+            @test IA.in_interval(reference, narrow((pi,)))
+            @test IA.in_interval(reference, enclose(smooth, Real[pi]))
+            @test_throws DomainError enclose(smooth, (-pi,))
+        end
+    end
+    # The narrowest Float64 bracket of π is admitted as a whole, including
+    # when transformed into polygon coordinates; the point -π is outside.
+    lower = Float64(pi)
+    polygon = adaptive_map(
+        first, [interval(lower, nextfloat(lower)), interval(-1, 1)];
+        order = 1, splitter = :oriented, directions = [1 1; -1 1]
+    )
+    @test IA.in_interval(reference, polygon((pi, 0)))
+    @test IA.in_interval(reference, polygon(Real[pi, 0]))
+    @test_throws DomainError polygon((-pi, 0))
+    @test IA.in_interval(reference, enclose(continuous_map(first, polygon), (pi, 0)))
+    # A rounded-down Float64 endpoint is strictly below the exact scalar π.
+    outside = adaptive_map(first, [interval(0, lower)]; order = 1)
+    @test_throws DomainError outside((pi,))
+    @test_throws DomainError enclose(continuous_map(first, outside), (pi,))
+    outside = adaptive_map(
+        first, [interval(0, lower), interval(-1, 1)];
+        order = 1, splitter = :oriented, directions = :axes
+    )
+    @test_throws DomainError outside((pi, 0))
 end
 
 @testset "Continuity, partition weights and irrational endpoints" begin

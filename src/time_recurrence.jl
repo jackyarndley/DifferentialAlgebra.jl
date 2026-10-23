@@ -60,16 +60,20 @@ end
 time_rhs_buffer(u::AbstractVector) = zero.(u)
 time_rhs_buffer(u::AbstractVector{<:TimeNode}) = TimeDerivativeBuffer(zero.(u))
 
-function time_node(tape::TimeTape{T, R}, op, value, left = 0, right = 0, power = zero(R)) where {T, R}
+function time_node(tape::TimeTape{T, R}, op, value, left = 0, right = 0, power = 0) where {T, R}
     isfinite(value) || throw(TaylorError("Nonfinite time coefficient"))
-    push!(tape.instructions, TimeInstruction{R}(op, left, right, power))
-    push!(tape.constants, value)
+    if T <: TaylorPolynomial && !(value isa TaylorPolynomial)
+        ctx = isempty(tape.constants) ? ready() : valid(first(tape.constants))
+        value = TaylorPolynomial{coefficient_type(T)}(ctx, value; filter = false)
+    end
+    push!(tape.instructions, TimeInstruction{R}(op, left, right, coefficient_convert(R, power)))
+    push!(tape.constants, value isa T ? value : coefficient_convert(T, value))
     return TimeNode(tape, length(tape.constants))
 end
 time_value(a::TimeNode) = a.tape.constants[a.index]
 time_constant(a::TimeNode, x::Real) = time_node(a.tape, TimeConstant, x)
 Base.zero(a::TimeNode) = time_constant(a, zero(time_value(a)))
-Base.one(a::TimeNode) = time_constant(a, one(time_value(a)))
+Base.one(a::TimeNode) = time_constant(a, time_identity(time_value(a)))
 Base.copy(a::TimeNode) = a
 Base.real(a::TimeNode) = a
 Base.conj(a::TimeNode) = a
@@ -79,7 +83,7 @@ Base.:-(a::TimeNode) = zero(a) - a
 function record_time_binary(op, f, a::TimeNode, b::TimeNode)
     a.tape === b.tape || throw(ArgumentError("Cannot mix independent time expansions"))
     return time_node(
-        a.tape, op, domain_call(x -> f(x, time_value(b)), time_value(a)), a.index, b.index
+        a.tape, op, domain_call(x -> time_coefficient(f, x, time_value(b)), time_value(a)), a.index, b.index
     )
 end
 for (f, op) in ((:+, :TimeAdd), (:-, :TimeSubtract), (:*, :TimeMultiply), (:/, :TimeDivide))
@@ -108,34 +112,44 @@ function Base.:^(a::TimeNode, n::Integer)
 end
 function record_time_power(a::TimeNode, p::Real)
     p isa TaylorPolynomial && return exp(p * log(a))
-    isinteger(p) && return a^BigInt(p)
-    return time_node(a.tape, TimePower, domain_call(x -> x^p, time_value(a)), a.index, 0, p)
+    p isa Union{AbstractFloat, Rational} && isinteger(p) && return a^BigInt(p)
+    exponent = time_exponent(p, time_value(a))
+    return record_time_power(a, exponent, x -> time_coefficient(^, x, exponent))
+end
+function record_time_power(a::TimeNode, p, f)
+    value = domain_call(x -> time_coefficient(f, x), time_value(a))
+    a.tape.instructions[a.index].operation === TimeConstant &&
+        return time_constant(a, value)
+    return time_node(a.tape, TimePower, value, a.index, 0, p)
 end
 Base.:^(a::TimeNode, p::Real) = record_time_power(a, p)
 Base.:^(a::TimeNode, p::Rational) = record_time_power(a, p)
-Base.:^(a::TimeNode, b::TimeNode) = exp(b * log(a))
+function Base.:^(a::TimeNode, b::TimeNode)
+    a.tape === b.tape || throw(ArgumentError("Cannot mix independent time expansions"))
+    b.tape.instructions[b.index].operation === TimeConstant && return a^time_value(b)
+    return exp(b * log(a))
+end
 function Base.:^(a::Real, b::TimeNode)
-    base = convert(promote_type(typeof(a), typeof(time_value(b))), a)
+    R = promote_type(typeof(a), typeof(constant_term(time_value(b))))
+    base = coefficient_convert(R, a)
     coefficient_iszero(base) && return time_constant(
         b, zero_base_power(
             base, time_value(b),
             b.tape.instructions[b.index].operation === TimeConstant && iszero(time_value(b))
         )
     )
+    b.tape.instructions[b.index].operation === TimeConstant &&
+        return time_constant(b, domain_call(x -> time_coefficient(^, float(base), x), time_value(b)))
     return exp(domain_call(log, base) * b)
 end
 Base.:^(::Irrational{:ℯ}, b::TimeNode) = exp(b)
-Base.sqrt(a::TimeNode) = time_node(
-    a.tape, TimePower, domain_call(sqrt, time_value(a)), a.index, 0, 1 // 2
-)
-Base.cbrt(a::TimeNode) = time_node(
-    a.tape, TimePower, domain_call(cbrt, time_value(a)), a.index, 0, 1 // 3
-)
-Base.exp(a::TimeNode) = time_node(a.tape, TimeExp, exp(time_value(a)), a.index)
-Base.log(a::TimeNode) = time_node(a.tape, TimeLog, domain_call(log, time_value(a)), a.index)
+Base.sqrt(a::TimeNode) = record_time_power(a, 1 // 2, sqrt)
+Base.cbrt(a::TimeNode) = record_time_power(a, 1 // 3, cbrt)
+Base.exp(a::TimeNode) = time_node(a.tape, TimeExp, time_coefficient(exp, time_value(a)), a.index)
+Base.log(a::TimeNode) = time_node(a.tape, TimeLog, domain_call(x -> time_coefficient(log, x), time_value(a)), a.index)
 function record_time_sincos(a::TimeNode, hyperbolic)
     x = time_value(a)
-    s, c = hyperbolic ? (sinh(x), cosh(x)) : sincos(x)
+    s, c = hyperbolic ? (time_coefficient(sinh, x), time_coefficient(cosh, x)) : time_coefficient(sincos, x)
     i = length(a.tape.constants) + 1
     snode = time_node(a.tape, hyperbolic ? TimeSinh : TimeSin, s, a.index, i + 1)
     cnode = time_node(a.tape, hyperbolic ? TimeCosh : TimeCos, c, a.index, i)
@@ -154,7 +168,7 @@ function Base.tanh(a::TimeNode)
     return s / c
 end
 
-function advance_time_coefficient!(values, instructions, reciprocals, k)
+function advance_time_coefficient!(values, instructions, denominators, k)
     @inbounds for node in eachindex(instructions)
         instruction = instructions[node]
         op, left, right = instruction.operation, instruction.left, instruction.right
@@ -163,26 +177,26 @@ function advance_time_coefficient!(values, instructions, reciprocals, k)
         if op === TimeConstant
             c[k + 1] = zero(c[1])
         elseif op === TimeClock
-            c[k + 1] = k == 1 ? one(c[1]) : zero(c[1])
+            c[k + 1] = k == 1 ? time_identity(c[1]) : zero(c[1])
         elseif op === TimeAdd
-            c[k + 1] = values[left][k + 1] + values[right][k + 1]
+            c[k + 1] = time_coefficient(+, values[left][k + 1], values[right][k + 1])
         elseif op === TimeSubtract
-            c[k + 1] = values[left][k + 1] - values[right][k + 1]
+            c[k + 1] = time_coefficient(-, values[left][k + 1], values[right][k + 1])
         elseif op === TimeMultiply
             a, b = values[left], values[right]
             if instructions[left].operation === TimeConstant
-                c[k + 1] = a[1] * b[k + 1]
+                c[k + 1] = time_coefficient(*, a[1], b[k + 1])
             elseif instructions[right].operation === TimeConstant
-                c[k + 1] = a[k + 1] * b[1]
+                c[k + 1] = time_coefficient(*, a[k + 1], b[1])
             else
                 c[k + 1] = time_convolution(a, b, k, c[1])
             end
         elseif op === TimeDivide
             a, b = values[left], values[right]
             c[k + 1] = if instructions[right].operation === TimeConstant
-                a[k + 1] * reciprocals[node]
+                time_coefficient(/, a[k + 1], denominators[node])
             else
-                time_quotient_coefficient(a, b, c, k, reciprocals[node])
+                time_quotient_coefficient(a, b, c, k, denominators[node])
             end
         elseif op === TimeExp
             a = values[left]
@@ -191,14 +205,35 @@ function advance_time_coefficient!(values, instructions, reciprocals, k)
             a = values[left]
             !invertible_constant(constant_term(a[1])) && throw(TaylorError("The time expansion is not analytic here"))
             mode = op === TimeLog ? Val(:log) : Val(:power)
-            c[k + 1] = time_unary_coefficient(a, c, k, instruction.power, reciprocals[node], mode)
+            c[k + 1] = time_unary_coefficient(a, c, k, instruction.power, denominators[node], mode)
         else # Coupled trigonometric recurrences use only earlier degrees.
             a, partner = values[left], values[right]
             value = time_weighted_sum(a, partner, k, 0, Val(:exp))
-            c[k + 1] = (op === TimeCos ? -value : value) / k
+            c[k + 1] = op === TimeCos ? time_coefficient(-, value) : value
         end
     end
     return nothing
+end
+
+# Probe with the same unfiltered coefficient arithmetic as the concrete tape:
+# a plain polynomial RHS could otherwise discard small terms before promotion.
+# Abstract storage is confined to this short type-discovery pass; recurrence
+# buffers below always use the promoted concrete coefficient type.
+function time_initial_derivative(f, initial, epoch, parameters)
+    tape = TimeTape(TimeInstruction{Real}[], Real[])
+    state = [time_node(tape, TimeInput, value) for value in initial]
+    time = time_node(tape, TimeClock, epoch)
+    derivative = f(state, parameters, time)
+    derivative isa AbstractVector && length(derivative) == length(initial) ||
+        throw(DimensionMismatch("The right-hand side must return one derivative per state"))
+    Base.require_one_based_indexing(derivative)
+    return map(derivative) do value
+        if value isa TimeNode
+            value.tape === tape || throw(ArgumentError("Cannot mix independent time expansions"))
+            return time_value(value)
+        end
+        return value
+    end
 end
 
 struct TimeWorkspace{T, R}
@@ -207,7 +242,7 @@ struct TimeWorkspace{T, R}
     states::Vector{TimeNode{T, R}}
     outputs::Vector{Int}
     series::Vector{TimeSeries{T}}
-    reciprocals::Vector{T}
+    denominators::Vector{T}
     order::Int
     nstate::Int
 end
@@ -225,7 +260,7 @@ end
 # Re-record at every step, respecting parameter/callback changes while reusing
 # node and coefficient buffers. No generated method or fixed graph is retained.
 function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, parameters) where {T}
-    (; tape, values, states, outputs, series, reciprocals, order, nstate) = workspace
+    (; tape, values, states, outputs, series, denominators, order, nstate) = workspace
     length(initial) == nstate || throw(DimensionMismatch("The state dimension changed"))
     empty!(tape.instructions)
     empty!(tape.constants)
@@ -238,6 +273,7 @@ function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, 
     derivative = f(states, parameters, time)
     derivative isa AbstractVector && length(derivative) == nstate ||
         throw(DimensionMismatch("The right-hand side must return one derivative per state"))
+    Base.require_one_based_indexing(derivative)
     for value in derivative
         if value isa TimeNode
             value.tape === tape || throw(ArgumentError("Cannot mix independent time expansions"))
@@ -253,7 +289,7 @@ function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, 
     for i in eachindex(tape.constants)
         values[i][1] = copy(tape.constants[i])
     end
-    resize!(reciprocals, length(tape.instructions))
+    resize!(denominators, length(tape.instructions))
     for i in eachindex(tape.instructions)
         node = tape.instructions[i]
         if node.operation in (TimeDivide, TimePower, TimeLog)
@@ -261,21 +297,21 @@ function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, 
             denominator = values[input][1]
             !invertible_constant(constant_term(denominator)) &&
                 throw(TaylorError("The time expansion is not analytic here"))
-            reciprocals[i] = inv(denominator)
+            denominators[i] = denominator
         end
     end
     for k in 0:(order - 1)
-        k > 0 && advance_time_coefficient!(values, tape.instructions, reciprocals, k)
+        k > 0 && advance_time_coefficient!(values, tape.instructions, denominators, k)
         for i in 1:nstate
-            value = values[outputs[i]][k + 1] / (k + 1)
+            coefficient = values[outputs[i]][k + 1]
+            value = time_coefficient(/, coefficient, degree_factor(coefficient, k + 1))
             isfinite(value) || throw(TaylorError("Nonfinite time coefficient"))
             values[i][k + 2] = value
         end
     end
-    if isempty(series)
-        for i in 1:nstate
-            push!(series, TimeSeries{T}(values[i]))
-        end
+    empty!(series)
+    for i in 1:nstate
+        push!(series, time_finish(TimeSeries(values[i])))
     end
     return series
 end

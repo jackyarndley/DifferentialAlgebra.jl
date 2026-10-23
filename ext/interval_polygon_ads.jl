@@ -40,6 +40,10 @@ end
 function polygon_interval_point(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == 2 || throw(DimensionMismatch("Provide two physical coordinates"))
     point isa AbstractVector && Base.require_one_based_indexing(point)
+    if any(x -> x isa AbstractIrrational, point)
+        domain = DA.ads_interval_domain(a)
+        return [point_interval(eltype(domain), point[i], domain[i]) for i in 1:2]
+    end
     x = map(point) do value
         if value isa Interval
             checked_interval(value; guaranteed = true)
@@ -93,6 +97,9 @@ function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; p
     validated_rounding()
     a._estimator isa DA.IntervalBound || throw(ArgumentError("Select IntervalBound for polygon enclosures"))
     routing = point ? polygon_interval_point(a, query) : nothing
+    # A transcendental coordinate has no exact rational representation. Query
+    # its outward enclosure, admitting it only when the entire box is inside.
+    routing isa AbstractVector && return DA.polygon_interval_query(a, routing)
     exact = point ? DA.polygon_exact!(routing) : nothing
     constraints = query === nothing || point ? nothing : polygon_interval_constraints(a, query)
     result = nothing
