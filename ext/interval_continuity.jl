@@ -4,7 +4,10 @@ function DA.continuity_layout(a::DA.PiecewiseTaylorModel)
     box = DA.domain(a)
     lo, hi = DA.polygon_real.(IA.inf.(box)), DA.polygon_real.(IA.sup.(box))
     B = Matrix{DA.PolygonReal}(DA.I, length(lo), length(lo))
-    cores = [(DA.polygon_real.(IA.inf.(DA.domain(p))), DA.polygon_real.(IA.sup.(DA.domain(p)))) for p in a.patches]
+    cores = [
+        (DA.polygon_real.(IA.inf.(DA.domain(p))), DA.polygon_real.(IA.sup.(DA.domain(p))))
+            for p in DA.ads_patches(a)
+    ]
     return (domain = box, bounds = (lo, hi), B, A = copy(B), cores, scalar = a._scalar)
 end
 DA.continuity_scalar_type(::DA.PiecewiseTaylorModel{I}) where {I <: Interval} = IA.numtype(I)
@@ -13,6 +16,7 @@ function DA.continuity_candidate(f, lo, hi, A, options, ctx, ::DA.IntervalBound)
     validated_rounding()
     T = options.T
     box = [checked_interval(IA.interval(T, a, b); guaranteed = true) for (a, b) in zip(lo, hi)]
+    retain_decoration!(box, options.interval_domain)
     z = coordinate_models(box, options.order)
     x = [sum(IA.interval(T, A[i, j]) * z[j] for j in eachindex(z)) for i in eachindex(z)]
     fit = validated_fit(f, x, first(z), ctx, ctx.basis.order)
@@ -21,13 +25,19 @@ function DA.continuity_candidate(f, lo, hi, A, options, ctx, ::DA.IntervalBound)
     map = DA.compile(mids)
     coordinates = first(z)._coordinates
     return (;
-        center = IA.inf.(collect(coordinates.center)), radius = IA.inf.(collect(coordinates.radius)),
+        center = IA.inf.(coordinates.center), radius = IA.inf.(coordinates.radius),
         map, certificates = compile_models(values),
         errors = fit.errors, scalar = fit.scalar,
     )
 end
-function DA.continuity_errors(patches::AbstractVector{<:DA.ContinuityPatch{T, C, V, E}}) where {T, C, V, E <: Tuple}
-    return [foldl((a, p) -> IA.hull(a, p.errors[j]; dec = :auto), Iterators.drop(patches, 1); init = first(patches).errors[j]) for j in eachindex(first(patches).errors)]
+function DA.continuity_errors(
+        patches::AbstractVector{<:DA.ContinuityPatch{T, C, V, E}}
+    ) where {T, C, V, E <: AbstractVector{<:Interval}}
+    errors = deepcopy(first(patches).errors)
+    for patch in Iterators.drop(patches, 1)
+        hull_outputs!(errors, patch.errors)
+    end
+    return errors
 end
 function DA.continuity_check_tolerance(errors::AbstractVector{I}, atol) where {I <: Interval}
     atol === nothing && return nothing
@@ -52,8 +62,13 @@ function continuity_query_bounds(a, query)
     query isa Union{Tuple, AbstractVector} && length(query) == DA.nvariables(a) || throw(DimensionMismatch("Provide one coordinate/interval per variable"))
     query isa AbstractVector && Base.require_one_based_indexing(query)
     if all(x -> x isa SupportedScalar, query)
-        z = DA.continuity_point(a, query)
-        return z, z
+        if any(x -> x isa AbstractIrrational, query)
+            domain = first(first(a._patches).certificates)._coordinates.box
+            query = [point_interval(eltype(domain), query[i], domain[i]) for i in eachindex(query)]
+        else
+            z = DA.continuity_point(a, query)
+            return z, z
+        end
     end
     interval_box(query, length(query); guaranteed = true)
     lo, hi = DA.polygon_real.(IA.inf.(query)), DA.polygon_real.(IA.sup.(query))
@@ -75,7 +90,9 @@ function DA.enclose(a::DA.ContinuousTaylorMap, query = nothing)
     first(a._patches).certificates !== nothing || throw(ArgumentError("Use an IntervalBound source for certified function enclosures"))
     lo, hi = continuity_query_bounds(a, query)
     result = nothing
-    for patch in a._patches
+    query_bounds = (DA.ads_float_bounds(lo)[1], DA.ads_float_bounds(hi)[2])
+    for index in DA.continuity_indices(a, query_bounds)
+        patch = a._patches[index]
         lower, upper = max.(lo, patch.lower), min.(hi, patch.upper)
         any(lower .> upper) && continue
         # The query/support intersection is conservatively bounded in projected
@@ -84,8 +101,9 @@ function DA.enclose(a::DA.ContinuousTaylorMap, query = nothing)
         T = IA.numtype(typeof(m._remainder))
         box = [IA.intersect_interval(IA.interval(T, l, h), b; dec = :auto) for (l, h, b) in zip(lower, upper, m._coordinates.box)]
         values = snapshot_bounds(patch.certificates, box)
-        result = result === nothing ? values : map((x, y) -> IA.hull(x, y; dec = :auto), result, values)
+        result = hull_outputs!(result, values)
     end
     result === nothing && throw(ErrorException("Overlap fits did not cover the query"))
+    retain_decoration!(result, query)
     return a._scalar ? only(result) : collect(result)
 end

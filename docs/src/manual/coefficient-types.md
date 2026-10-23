@@ -1,49 +1,68 @@
 # Coefficient types
 
-`TaylorPolynomial{T}` is parameterized by a real scalar type `T <: Real`. This includes the
-`AbstractFloat` hierarchy and allows other real number types. A subtype bound
-alone does not supply arithmetic: each operation requires the corresponding
-scalar methods and conversions.
+`TaylorPolynomial{T}` stores coefficients of a concrete real scalar type.
+Choose `T` to match the precision and arithmetic needed by the calculation;
+`variables(n; order)` defaults to `Float64`.
 
-## Choose a type
-
-Use `variables(T, n; order)` to choose the coefficient type explicitly.
-`variables(n; order)` defaults to `Float64`. Construct constants with
-`TaylorPolynomial{T}(c)` when their storage type should be explicit.
-
-For example, rational coefficients can preserve exact polynomial arithmetic:
+## Choose the scalar arithmetic
 
 ```@example exact
 using DifferentialAlgebra
-x, y = variables(Rational{Int}, 2; order=4)
+x, y = variables(Rational{BigInt}, 2; order=4)
 p = (1 + x/3 + y/2)^2
 coefficient(p, [1, 1])
 ```
 
-Arithmetic follows Julia's promotion rules. Division or an elementary function
-may produce a different coefficient type when its scalar result requires one.
-The convenience constructor `TaylorPolynomial(c)` uses `typeof(float(c))`; use `TaylorPolynomial{T}(c)`
-to retain an exact scalar type.
-Explicit polynomial constants also avoid competing mixed-scalar methods when
-a custom number type defines broad operations on `Real` values.
+Use `variables(BigFloat, n; order)` for higher floating precision and construct
+all inputs inside the intended `setprecision` context. Fixed-width integer types
+retain Julia's overflow behavior, including powers in affine substitutions;
+`BigInt` or `Rational{BigInt}` avoids that overflow in exact arithmetic.
 
-## Scalar requirements
+Arithmetic follows scalar promotion rules. Division and analytic functions may
+change the coefficient type. `TaylorPolynomial(c)` uses `typeof(float(c))`;
+`TaylorPolynomial{T}(c)` preserves an explicitly chosen type. Explicit polynomial
+constants can also disambiguate custom number types with broad `Real` methods.
 
-| Operation | Requirements on the coefficient type |
+## Conversion and scalar queries
+
+Converting to `Float32`, `Float64` or `BigFloat` requires a constant polynomial;
+a nonconstant input raises `InexactError`. Use `constant_term(p)` to discard
+higher terms explicitly. Conversion between polynomial coefficient types retains
+stored terms, trimming only exact zeros introduced by conversion.
+
+| Intent | Use |
 |:--|:--|
-| Construction | `zero`, `one`, conversion and a concrete storage type |
-| Polynomial arithmetic | Addition, subtraction, multiplication, `muladd`, `iszero` and promotion |
-| Division and integration | Scalar division and conversion of integer factors |
-| Elementary functions | The corresponding scalar function at the expansion point |
-| Special functions | Suitable scalar methods, generally provided by SpecialFunctions.jl |
-| Eigenpairs and map inversion | The required scalar linear algebra and factorization methods |
+| Inspect the expansion-center value | `constant_term(p)` |
+| Select a larger coefficient type | `TaylorPolynomial{BigFloat}(p)` or `TaylorPolynomial{BigInt}(p)` |
+| Round a scalar center | `round(constant_term(p))` |
+| Construct rational coefficients | `variables(Rational{BigInt}, n; order=...)` |
+| Divide Taylor expansions | `p/q` |
 
-An analytic expansion also requires a regular center, such as a nonzero
-constant for a reciprocal. Numerical precision and range are properties of the
-chosen scalar type. For configurable-precision types, construct coefficients
-and perform calculations within that type's precision context.
+Polynomial `Int`, integer `floor`, `round`, `trunc`, `big`, `ldexp`, `//` and
+`fma` are unsupported. Use the scalar operation explicitly or ordinary polynomial
+scaling/division. `muladd` is supported: it filters the completed product and sum,
+but promises no single fused rounding.
 
-Loading IntervalArithmetic adds narrow coefficient hooks for exact-zero tests,
-internal integer factors and interval accumulation. See
-[intervals and Taylor models](interval-models.md) for guarantee flags, supported
-operations and the distinction between interval coefficients and function remainders.
+Comparisons and `sign` inspect constant parts; structural equality and full-term
+predicates are described in [Getting started](getting-started.md#Compare-polynomials).
+
+## Operation requirements
+
+| Operation | Required scalar behavior |
+|:--|:--|
+| Construction | Concrete storage, `zero`, `one`, conversion |
+| Polynomial arithmetic | `+`, `-`, `*`, `muladd`, `iszero`, promotion |
+| Division/integration | Division and conversion of integer factors |
+| Elementary/special functions | Corresponding scalar methods at the center |
+| Map inversion/eigenpairs | Required linear algebra/factorization methods |
+
+`T <: Real` alone does not supply these methods. Expansions also require regular
+real centers: singular reciprocals, gamma poles and invalid real logarithms raise
+`TaylorError`; invalid API parameters raise `ArgumentError`. NaN centers propagate.
+Zero to a varying power is supported only around a positive exponent; negative
+scalar bases require a constant exponent with a defined real scalar power.
+
+Loading ForwardDiff 1 enables mixed dual/polynomial arithmetic, preserving partials
+in coefficients. Loading IntervalArithmetic enables outward coefficient arithmetic
+and Taylor models. Their [guarantee rules](interval-models.md) remain distinct
+from the ordinary truncation contract.

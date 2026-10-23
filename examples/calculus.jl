@@ -38,7 +38,6 @@ calculus_fig
 # and subtract the primitive at the endpoints. Compare with the independent
 # error-function formula for the probability in [-1, 1].
 using SpecialFunctions: erf
-using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 

@@ -1,15 +1,3 @@
-function checked_interval(x::Interval; guaranteed::Bool = false)
-    !IA.isnai(x) && !IA.isempty_interval(x) && IA.isbounded(x) && IA.decoration(x) >= IA.def ||
-        throw(ArgumentError("Require finite, nonempty intervals without loose-evaluation decorations"))
-    guaranteed && !IA.isguaranteed(x) && throw(ArgumentError("Taylor models require guaranteed intervals; an NG input was supplied"))
-    return x
-end
-const SupportedScalar = Union{Integer, Rational, AbstractFloat, AbstractIrrational}
-asinterval(::Type{Interval{T}}, x::Interval) where {T <: IA.NumTypes} = IA.interval(T, x) # preserves flags
-asinterval(::Type{Interval{T}}, x::SupportedScalar) where {T <: IA.NumTypes} = IA.interval(T, x)
-asinterval(::Type{Interval{T}}, x::IA.ExactReal) where {T <: IA.NumTypes} = asinterval(Interval{T}, x.value)
-asinterval(::Type{<:Interval}, x) = throw(ArgumentError("Unsupported scalar; supply a real value or decorated Interval explicitly"))
-
 function interval_box(box, n; guaranteed = false)
     box isa Union{Tuple, AbstractVector} || throw(ArgumentError("Supply a tuple or vector of decorated intervals"))
     box isa AbstractVector && Base.require_one_based_indexing(box)
@@ -19,37 +7,50 @@ function interval_box(box, n; guaranteed = false)
     return box
 end
 
-# Integer powers, rather than repeated interval products, preserve even powers.
-# The matrix caches all powers needed by either a range or a discarded product.
-function power_cache(box, order, ::Type{I}) where {I <: Interval}
-    powers = Matrix{I}(undef, length(box), order + 1)
-    for v in eachindex(box)
-        x = asinterval(I, box[v])
-        powers[v, 1] = one(I)
-        for k in 1:order
-            powers[v, k + 1] = IA.pown(x, k)
+# Exact scalar points may need a nonthin enclosure (for example π). Use at
+# least the stored endpoint precision so lowering BigFloat precision does not
+# turn a valid point query into a box extending beyond its declared domain.
+function point_interval(::Type{I}, value, domain) where {I <: Interval}
+    value isa Interval && !IA.isthin(value) &&
+        throw(ArgumentError("Point coordinates must be scalar values or thin intervals; use enclose for boxes"))
+    x = if IA.numtype(I) === BigFloat
+        bits = max(precision(BigFloat), precision(IA.inf(domain)), precision(IA.sup(domain)))
+        setprecision(BigFloat, bits) do
+            asinterval(I, value)
         end
+    else
+        asinterval(I, value)
     end
-    return powers
+    return checked_interval(x; guaranteed = true)
 end
-function monomial_bound(coefficients, exponents, powers, ::Type{I}) where {I <: Interval}
-    result = zero(I)
-    @inbounds for k in eachindex(coefficients)
-        c = asinterval(I, coefficients[k])
-        checked_interval(c)
-        DA.coefficient_iszero(c) && continue
-        term = c
-        for v in axes(exponents, 1)
-            term *= powers[v, exponents[v, k] + 1]
-        end
-        result += term
+
+# Exact geometric coordinates omit interval metadata. After validating every
+# input (including NG rejection), preserve its minimum decoration in projected
+# domains and query results without changing endpoints or guarantee flags.
+function retain_decoration!(values, domain)
+    domain isa Union{Tuple, AbstractVector} || return values
+    decoration = minimum(
+        x -> x isa Interval ? IA.decoration(checked_interval(x; guaranteed = true)) : IA.com,
+        domain; init = IA.com
+    )
+    for i in eachindex(values)
+        values[i] = IA.setdecoration(values[i], min(IA.decoration(values[i]), decoration))
     end
-    return result
+    return values
 end
-function polynomial_bound(p, powers, ::Type{I}) where {I <: Interval}
-    b = DA.valid(p).basis
-    return monomial_bound(@view(p.coeffs[1:p.len]), b.exponents, powers, I)
+
+# Validate before initializing an algebra, so invalid input cannot invalidate
+# the caller's polynomials. ADS and direct models use the same endpoint policy.
+function model_endpoint_type(box)
+    box isa Union{Tuple, AbstractVector} && !isempty(box) ||
+        throw(ArgumentError("Supply a nonempty interval box"))
+    interval_box(box, length(box); guaranteed = true)
+    T = mapreduce(IA.numtype, promote_type, box)
+    T in (Float64, BigFloat) ||
+        throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
+    return T
 end
+
 function DA.enclose(p::TaylorPolynomial, box)
     validated_rounding()
     b = DA.valid(p).basis
@@ -63,43 +64,120 @@ function DA.enclose(p::TaylorPolynomial, box)
     return polynomial_bound(p, power_cache(box, DA.degree(p), I), I)
 end
 
-function model_result(p::TaylorPolynomial{I}, r::I, coordinates, order) where {I <: Interval}
-    checked_interval(r; guaranteed = true)
+function model_interval(x::Interval)
+    !IA.isnai(x) && !IA.isempty_interval(x) && !IA.isbounded(x) && throw(
+        OverflowError("Taylor-model arithmetic overflow; use BigFloat interval endpoints")
+    )
+    return checked_interval(x; guaranteed = true)
+end
+
+function model_result(
+        p::TaylorPolynomial{I}, r::I, coordinates, order,
+        enclosure::Union{Nothing, I} = nothing
+    ) where {I <: Interval}
+    model_interval(r)
     for k in 1:p.len
-        checked_interval(p.coeffs[k]; guaranteed = true)
+        model_interval(p.coeffs[k])
     end
-    return TaylorModel(p, r, coordinates, order, Val(:owned))
+    if enclosure !== nothing
+        !IA.isnai(enclosure) && !IA.isempty_interval(enclosure) &&
+            IA.decoration(enclosure) >= IA.def && IA.isguaranteed(enclosure) ||
+            throw(ArgumentError("A model range certificate must be valid and guaranteed"))
+    end
+    return TaylorModel(p, r, deepcopy(enclosure), coordinates, order, Val(:owned))
 end
 function coordinate_models(box, order)
     validated_rounding()
-    box isa Union{Tuple, AbstractVector} && !isempty(box) || throw(ArgumentError("Supply a nonempty interval box"))
-    interval_box(box, length(box); guaranteed = true)
-    T = mapreduce(IA.numtype, promote_type, box)
-    T in (Float64, BigFloat) || throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
+    T = model_endpoint_type(box)
     I = Interval{T}
-    physical = Tuple(deepcopy(asinterval(I, x)) for x in box)
-    centers = Tuple(IA.interval(T, IA.mid(x)) for x in physical)
-    radii = Tuple(IA.interval(T, IA.sup(abs(x - c))) for (x, c) in zip(physical, centers))
+    physical = [deepcopy(asinterval(I, x)) for x in box]
+    centers = [
+        IA.setdecoration(IA.interval(T, IA.mid(x)), IA.decoration(x))
+            for x in physical
+    ]
+    radii = [
+        IA.setdecoration(IA.interval(T, IA.sup(abs(x - c))), IA.decoration(x))
+            for (x, c) in zip(physical, centers)
+    ]
     foreach(x -> checked_interval(x; guaranteed = true), radii)
-    normalized = Tuple(IA.isthinzero(r) ? zero(I) : IA.interval(T, -1, 1) for r in radii)
+    normalized = [
+        IA.setdecoration(
+            IA.isthinzero(r) ? zero(I) : IA.interval(T, -1, 1),
+            IA.decoration(x)
+        ) for (x, r) in zip(physical, radii)
+    ]
     coordinates = DA.ModelCoordinates(physical, centers, radii, normalized, Ref(nothing))
-    return [model_result(centers[i] + radii[i] * DA.variable(i, I), zero(I), coordinates, Int(order)) for i in eachindex(physical)]
+    return [
+        model_result(
+            centers[i] + radii[i] * DA.variable(i, I), zero(I), coordinates,
+            Int(order), constant_bound(centers[i] + radii[i] * normalized[i], coordinates)
+        ) for i in eachindex(physical)
+    ]
 end
 function DA.taylor_models(box; order::Integer, names = nothing, table_bytes::Integer = 32 * 1024^2)
     validated_rounding()
-    box isa Union{Tuple, AbstractVector} && !isempty(box) || throw(ArgumentError("Supply a nonempty interval box"))
-    interval_box(box, length(box); guaranteed = true)
-    T = mapreduce(IA.numtype, promote_type, box)
-    T in (Float64, BigFloat) || throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
+    model_endpoint_type(box)
     DA.initialize!(order, length(box); names, table_bytes)
     return coordinate_models(box, order)
 end
+function model_scalar(::Type{I}, value::Real) where {I <: Interval}
+    value isa AbstractFloat && throw(
+        ArgumentError(
+            "Floating constant $value in Taylor-model arithmetic: use an exact " *
+                "rational, interval($value) or IntervalArithmetic.exact($value)"
+        )
+    )
+    value isa TaylorPolynomial && throw(
+        ArgumentError(
+            "Supply an explicit absolute remainder when constructing a model " *
+                "from a polynomial"
+        )
+    )
+    return checked_interval(DA.coefficient_convert(I, value); guaranteed = true)
+end
 function TaylorModel(value::Real, reference::TaylorModel{I}) where {I <: Interval}
     model_context(reference)
-    value isa TaylorPolynomial && throw(ArgumentError("Supply an explicit absolute remainder when constructing a model from a polynomial"))
-    c = checked_interval(asinterval(I, value); guaranteed = true)
-    p = TaylorPolynomial{I}(deepcopy(c))
+    c = model_scalar(I, value)
+    p = TaylorPolynomial{I}(DA.model_valid(reference), deepcopy(c))
     return model_result(p, zero(I), reference._coordinates, reference._order)
+end
+
+# A constant has no variable dependence, but its range still carries every
+# coordinate's decoration, including unused fixed axes.
+function constant_bound(c::I, coordinates) where {I <: Interval}
+    result = zero(I)
+    for axis in coordinates.normalized
+        result *= IA.pown(asinterval(I, axis), 0)
+    end
+    return result + checked_interval(asinterval(I, c))
+end
+
+function model_scalar_sum(
+        op, a::TaylorModel{I}, value::Real, reverse = false
+    ) where {I <: Interval}
+    model_context(a)
+    c = model_scalar(I, value)
+    z = zero(I)
+    sign = reverse && op === (-) ? -one(I) : one(I)
+    p = DA.scaled(a._polynomial, sign; filter = false)
+    # Match polynomial addition's endpoint precision and own BigFloat zeros.
+    map!(coefficient -> coefficient + z, p.coeffs, p.coeffs)
+    p.coeffs[1] = op === (-) && !reverse ? p.coeffs[1] - c : p.coeffs[1] + c
+    DA.finish!(p, p.len)
+    r = reverse ? op(z, a._remainder) : op(a._remainder, z)
+    enclosure = if a._enclosure === nothing
+        nothing
+    else
+        range, scalar = a._enclosure, constant_bound(c, a._coordinates)
+        reverse ? op(scalar, range) : op(range, scalar)
+    end
+    return model_result(p, r, a._coordinates, a._order, enclosure)
+end
+for op in (:+, :-)
+    @eval begin
+        Base.$op(a::TaylorModel, b::Real) = model_scalar_sum($op, a, b)
+        Base.$op(a::Real, b::TaylorModel) = model_scalar_sum($op, b, a, true)
+    end
 end
 function TaylorModel(p::TaylorPolynomial, r::Real, reference::TaylorModel{I}) where {I <: Interval}
     model_context(reference)
@@ -107,7 +185,9 @@ function TaylorModel(p::TaylorPolynomial, r::Real, reference::TaylorModel{I}) wh
     DA.degree(p) <= reference._order || throw(ArgumentError("Polynomial exceeds the retained model order; no implicit truncation is allowed"))
     coeffs = [deepcopy(checked_interval(asinterval(I, p.coeffs[k]); guaranteed = true)) for k in 1:p.len]
     owned = TaylorPolynomial{I}(coeffs, p.len, p.algebra)
-    return model_result(owned, deepcopy(checked_interval(asinterval(I, r); guaranteed = true)), reference._coordinates, reference._order)
+    return model_result(
+        owned, deepcopy(model_scalar(I, r)), reference._coordinates, reference._order
+    )
 end
 
 function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box; point = false) where {I <: Interval}
@@ -120,64 +200,78 @@ function normalized_box(a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}}, box
     !point && interval_box(box, length(c.box); guaranteed = true)
     result = Vector{I}(undef, length(box))
     for i in eachindex(box)
-        x = checked_interval(asinterval(I, box[i]); guaranteed = true)
-        point && box[i] isa Interval && !IA.isthin(box[i]) && throw(ArgumentError("Point coordinates must be scalar values or thin intervals; use enclose for boxes"))
+        x = point ? point_interval(I, box[i], c.box[i]) :
+            checked_interval(asinterval(I, box[i]); guaranteed = true)
         IA.issubset_interval(x, c.box[i]) || throw(DomainError(box, "Query lies outside the Taylor-model validity domain"))
         # Both sets enclose the same exact normalized coordinate. The public
         # :auto policy preserves the minimum input decoration and all NG flags;
         # the default set-operation decoration would be trv even for valid sets.
-        result[i] = IA.isthinzero(c.radius[i]) ? zero(I) : IA.intersect_interval((x - c.center[i]) / c.radius[i], c.normalized[i]; dec = :auto)
+        result[i] = if IA.isthinzero(c.radius[i])
+            IA.setdecoration(zero(I), min(IA.decoration(x), IA.decoration(c.box[i])))
+        else
+            IA.intersect_interval(
+                (x - c.center[i]) / c.radius[i], c.normalized[i];
+                dec = :auto
+            )
+        end
     end
     return result
 end
-function DA.enclose(a::TaylorModel{I}) where {I <: Interval}
+function intersect_range(a, bound)
+    return a._enclosure === nothing ? bound :
+        IA.intersect_interval(bound, a._enclosure; dec = :auto)
+end
+certificate_bound(a) = a._enclosure === nothing ? model_bound(a) : a._enclosure
+polynomial_bound(a::TaylorModel, powers, I) = polynomial_bound(a._polynomial, powers, I)
+polynomial_bound(a::DA.CompiledTaylorModel, powers, I) =
+    monomial_bound(a._coefficients, a._exponents, powers, I)
+
+# Live models and owned snapshots share range arithmetic; only coefficient
+# access differs. Public queries copy the result at their ownership boundary.
+model_bound(a, powers, ::Type{I}) where {I <: Interval} =
+    intersect_range(a, polynomial_bound(a, powers, I) + a._remainder)
+function model_bound(
+        a::Union{TaylorModel{I}, DA.CompiledTaylorModel{I}},
+        normalized = a._coordinates.normalized
+    ) where {I <: Interval}
+    powers = power_cache(normalized, DA.degree(a), I)
+    return model_bound(a, powers, I)
+end
+function DA.enclose(a::Union{TaylorModel, DA.CompiledTaylorModel})
     validated_rounding()
-    DA.model_valid(a)
-    return polynomial_bound(a._polynomial, power_cache(a._coordinates.normalized, DA.degree(a), I), I) + a._remainder
+    a isa TaylorModel && DA.model_valid(a)
+    return deepcopy(model_bound(a))
 end
-function DA.enclose(a::TaylorModel{I}, physical_subbox) where {I <: Interval}
+function DA.enclose(a::Union{TaylorModel, DA.CompiledTaylorModel}, physical_subbox)
     normalized = normalized_box(a, physical_subbox)
-    return polynomial_bound(a._polynomial, power_cache(normalized, DA.degree(a), I), I) + a._remainder
+    return deepcopy(model_bound(a, normalized))
 end
-function DA.evaluate(a::TaylorModel{I}, physical_point) where {I <: Interval}
+function DA.evaluate(a::Union{TaylorModel, DA.CompiledTaylorModel}, physical_point)
     normalized = normalized_box(a, physical_point; point = true)
-    return polynomial_bound(a._polynomial, power_cache(normalized, DA.degree(a), I), I) + a._remainder
+    return deepcopy(model_bound(a, normalized))
 end
 
 Base.zero(a::TaylorModel) = TaylorModel(0, a)
 Base.one(a::TaylorModel) = TaylorModel(1, a)
 function Base.:-(a::TaylorModel)
     model_context(a)
-    return model_result(-a._polynomial, -a._remainder, a._coordinates, a._order)
+    enclosure = a._enclosure === nothing ? nothing : -a._enclosure
+    return model_result(
+        -a._polynomial, -a._remainder, a._coordinates, a._order, enclosure
+    )
 end
 for op in (:+, :-)
     @eval function Base.$op(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
         compatible_models(a, b)
-        return model_result($op(a._polynomial, b._polynomial), $op(a._remainder, b._remainder), a._coordinates, a._order)
+        enclosure = a._enclosure === nothing && b._enclosure === nothing ? nothing :
+            $op(certificate_bound(a), certificate_bound(b))
+        return model_result(
+            $op(a._polynomial, b._polynomial), $op(a._remainder, b._remainder),
+            a._coordinates, a._order, enclosure
+        )
     end
 end
 
-# Bound every ordered discarded product directly in the original basis. No
-# order-2n algebra, exponent-vector allocation, or nearest-rounded sum is used.
-function discarded_bound(p, q, order, powers, ::Type{I}) where {I <: Interval}
-    basis = p.algebra.basis
-    result = zero(I)
-    @inbounds for i in 1:p.len
-        ac = p.coeffs[i]
-        DA.coefficient_iszero(ac) && continue
-        for j in 1:q.len
-            basis.degrees[i] + basis.degrees[j] > order || continue
-            bc = q.coeffs[j]
-            DA.coefficient_iszero(bc) && continue
-            term = ac * bc
-            for v in 1:basis.variables
-                term *= powers[v, basis.exponents[v, i] + basis.exponents[v, j] + 1]
-            end
-            result += term
-        end
-    end
-    return result
-end
 function Base.:*(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
     ctx = compatible_models(a, b)
     p, q = a._polynomial, b._polynomial
@@ -185,11 +279,18 @@ function Base.:*(a::TaylorModel{I}, b::TaylorModel{I}) where {I <: Interval}
     tail = discarded_bound(p, q, a._order, powers, I)
     rp, rq = polynomial_bound(p, powers, I), polynomial_bound(q, powers, I)
     r = tail + rp * b._remainder + rq * a._remainder + a._remainder * b._remainder
+    enclosure = if a._enclosure === nothing && b._enclosure === nothing
+        nothing
+    else
+        ra = a._enclosure === nothing ? rp + a._remainder : a._enclosure
+        rb = b._enclosure === nothing ? rq + b._remainder : b._enclosure
+        a === b ? IA.pown(ra, 2) : ra * rb
+    end
     retained = DA.allocate(ctx, I, ctx.basis.ends[a._order + 1])
     DA.multiply!(retained, p, q, a._order)
-    return model_result(retained, r, a._coordinates, a._order)
+    return model_result(retained, r, a._coordinates, a._order, enclosure)
 end
-for op in (:+, :-, :*, :/)
+for op in (:*, :/)
     @eval begin
         Base.$op(a::TaylorModel, b::Real) = $op(a, TaylorModel(b, a))
         Base.$op(a::Real, b::TaylorModel) = $op(TaylorModel(a, b), b)
@@ -200,6 +301,7 @@ function Base.:^(a::TaylorModel, n::Integer)
     model_context(a)
     typemin(Int32) < n <= typemax(Int32) || throw(ArgumentError("Exponent out of range"))
     n < 0 && return inv(a)^(-n)
+    iszero(n) && return TaylorModel(IA.pown(DA.enclose(a), 0), a)
     n == 1 && return copy(a)
     result, factor = one(a), a
     while n > 0
@@ -210,55 +312,220 @@ function Base.:^(a::TaylorModel, n::Integer)
     return result
 end
 
-# f^(k)(X)/k!, with interval constants and no floating factorial approximation.
-# These are valid on the whole hull from the expansion point to the input range.
-function normalized_derivative(fn, x::I, k::Int) where {I <: Interval}
+function inverse_factorial(::Type{I}, k) where {I <: Interval}
     T = IA.numtype(I)
-    if fn === inv
-        return (isodd(k) ? -one(I) : one(I)) / IA.pown(x, k + 1)
-    elseif fn === log
-        k == 0 && return log(x)
-        return (iseven(k) ? -one(I) : one(I)) / (IA.interval(T, k) * IA.pown(x, k))
-    elseif fn === sqrt
-        factor = one(I)
-        for j in 1:k
-            factor *= (IA.interval(T, 1 // 2) - IA.interval(T, j - 1)) / IA.interval(T, j)
-        end
-        return factor * sqrt(x) / IA.pown(x, k)
-    end
     factor = one(I)
     for j in 1:k
         factor /= IA.interval(T, j)
     end
+    return factor
+end
+
+# f^(k)(X)/k!, valid on the hull from the expansion point to the input range.
+function model_derivative(fn, x::I, k::Int) where {I <: Interval}
+    factor = inverse_factorial(I, k)
     fn === exp && return exp(x) * factor
-    values = fn === sin ? (sin(x), cos(x), -sin(x), -cos(x)) : (cos(x), -sin(x), -cos(x), sin(x))
+    s, c = sincos(x)
+    values = fn === sin ? (s, c, -s, -c) : (c, -s, -c, s)
     return values[mod(k, 4) + 1] * factor
 end
-function elementary_model(fn, a::TaylorModel{I}) where {I <: Interval}
-    model_context(a)
-    x = checked_interval(DA.enclose(a); guaranteed = true)
-    fn === sqrt && IA.isthinzero(x) && return zero(a)
-    fn === inv && IA.in_interval(0, x) && throw(DomainError(x, "Reciprocal requires exclusion of zero on the whole model enclosure"))
-    fn in (log, sqrt) && IA.inf(x) <= 0 && throw(DomainError(x, "This expansion requires strict positivity on the whole model enclosure"))
-    center = IA.interval(IA.numtype(I), IA.mid(x))
+
+function model_horner(a, h, coefficients)
+    result = TaylorModel(coefficients[end], a)
+    for k in (length(coefficients) - 1):-1:1
+        result = result * h + coefficients[k]
+    end
+    return result
+end
+
+# For |u| <= r <= 1 the absolute binomial tail is bounded by
+# sqrt(c)*binomial(2n,n)/4^n * r^(n+1). The central factor is also
+# (2n-1)*abs(sqrt(c)*binomial(1/2,n)), available from the last coefficient.
+function sqrt_remainder(x::I, center::I, coefficients) where {I <: Interval}
+    T = IA.numtype(I)
+    n = length(coefficients) - 1
+    # The chosen center is inside x and at least sup(x)/2, proving |u| <= 1.
+    u = IA.intersect_interval((x - center) / center, IA.interval(T, -1, 1); dec = :auto)
+    radius = IA.interval(T, IA.mag(u))
+    power = IA.pown(radius, n + 1)
+    central = IA.interval(T, 2n - 1) * abs(coefficients[end])
+    upper = IA.sup(central * power)
+    if IA.sup(radius) < 1
+        omitted = coefficients[end] * IA.interval(T, 1 // 2 - n) / IA.interval(T, n + 1)
+        upper = min(upper, IA.sup(abs(omitted) * power / (one(I) - radius)))
+    end
+    # Even-order derivatives of sqrt are negative throughout the positive axis.
+    return IA.interval(T, -upper, isodd(n) ? zero(T) : upper)
+end
+
+# Compose in u=(a-c)/c, avoiding large or tiny powers of c in coefficients.
+function relative_model(
+        fn, a::TaylorModel{I}, x::I, center::I, image::I
+    ) where {I <: Interval}
+    T = IA.numtype(I)
+    n = a._order
+    coefficients = Vector{I}(undef, n + 1)
+    coefficients[1] = fn(center)
+    for k in 1:n
+        coefficients[k + 1] = if fn === inv
+            -coefficients[k]
+        elseif fn === log
+            (isodd(k) ? one(I) : -one(I)) / IA.interval(T, k)
+        else
+            coefficients[k] * IA.interval(T, 1 // 2 - (k - 1)) / IA.interval(T, k)
+        end
+    end
+    # The displacement owns its polynomial. Divide its coefficients directly:
+    # an intermediate reciprocal can overflow at a subnormal center even when
+    # every normalized coefficient (and the final sqrt/log result) is finite.
+    h = a - center
+    p = h._polynomial
+    for k in 1:p.len
+        p.coeffs[k] /= center
+    end
+    h = model_result(
+        DA.finish!(p, p.len; filter = false), h._remainder / center, a._coordinates, n,
+        h._enclosure === nothing ? nothing : h._enclosure / center
+    )
+    result = model_horner(a, h, coefficients)
+    tail = if fn === inv
+        IA.pown(-((x - center) / center), n + 1) / x
+    elseif fn === log
+        # Integral remainder: (-1)^n*u^(n+1)*int_0^1 s^n/(1+s*u) ds.
+        # Since x/c contains 1, it bounds every denominator along the segment.
+        factor = isodd(n) ? -one(I) : one(I)
+        u = (x - center) / center
+        bound = factor * IA.pown(u, n + 1) /
+            (IA.interval(T, n + 1) * (x / center))
+        if IA.isbounded(bound) && IA.decoration(bound) >= IA.def
+            bound
+        else
+            # The denominator can be subnormal and the bound can overflow.
+            # Evaluate a separate finite residual instead of using that bound.
+            approximation = coefficients[end]
+            for k in n:-1:2
+                approximation = approximation * u + coefficients[k]
+            end
+            residual = log(x) - coefficients[1] - approximation * u
+            isodd(n) ? IA.intersect_interval(
+                    residual, IA.interval(T, IA.inf(residual), 0); dec = :auto
+                ) : residual
+        end
+    else
+        sqrt_remainder(x, center, coefficients)
+    end
+    return model_result(
+        result._polynomial, result._remainder + tail, a._coordinates, n, image
+    )
+end
+
+function model_center(fn, x::I) where {I <: Interval}
+    T = IA.numtype(I)
+    midpoint = IA.mid(x)
+    if fn === sqrt
+        # Outward half-upper also handles rounding when the midpoint is near
+        # sup(x)/2. It stays inside x and makes the binomial tail valid at r=1.
+        midpoint = max(midpoint, IA.sup(IA.interval(T, IA.sup(x)) / 2))
+    end
+    center = IA.interval(T, midpoint)
     IA.issubset_interval(center, x) || throw(ArgumentError("Could not construct an expansion point inside the input enclosure"))
+    return center
+end
+
+function elementary_series(
+        fn, a::TaylorModel{I}, x::I, center::I, image::I
+    ) where {I <: Interval}
+    fn in (inv, log, sqrt) && return relative_model(fn, a, x, center, image)
     h = a - center
     n = a._order
-    result = TaylorModel(normalized_derivative(fn, center, n), a)
-    for k in (n - 1):-1:0
-        result = result * h + normalized_derivative(fn, center, k)
+    coefficients = if fn === exp
+        values = Vector{I}(undef, n + 1)
+        values[1] = exp(center)
+        for k in 1:n
+            values[k + 1] = values[k] / DA.degree_factor(values[k], k)
+        end
+        values
+    else
+        s, c = sincos(center)
+        values = fn === sin ? (s, c, -s, -c) : (c, -s, -c, s)
+        DA.cycle_coefficients(values, n)
     end
+    result = model_horner(a, h, coefficients)
     # Taylor's theorem: the (n+1)th normalized derivative is bounded on x;
     # h^(n+1) here is an interval power of the whole input displacement.
-    tail = normalized_derivative(fn, x, n + 1) * IA.pown(x - center, n + 1)
-    return model_result(result._polynomial, result._remainder + tail, a._coordinates, n)
+    tail = model_derivative(fn, x, n + 1) * IA.pown(x - center, n + 1)
+    return model_result(
+        result._polynomial, result._remainder + tail, a._coordinates, n, image
+    )
+end
+
+function constant_image_model(a::TaylorModel{I}, image::I) where {I <: Interval}
+    center = IA.setdecoration(
+        IA.interval(IA.numtype(I), IA.mid(image)), IA.decoration(image)
+    )
+    p = TaylorPolynomial{I}(DA.model_valid(a), center)
+    return model_result(p, image - center, a._coordinates, a._order, image)
+end
+shorten_model(a, image) = IA.diam(a._remainder) > IA.diam(image) ?
+    constant_image_model(a, image) : a
+
+function elementary_model(fn, a::TaylorModel)
+    model_context(a)
+    x = checked_interval(DA.enclose(a); guaranteed = true)
+    fn === sqrt && IA.isthinzero(x) && return TaylorModel(sqrt(x), a)
+    if fn === inv && IA.in_interval(0, x)
+        throw(DomainError(x, "The reciprocal input enclosure must exclude zero"))
+    elseif fn in (log, sqrt) && IA.inf(x) <= 0
+        throw(DomainError(x, "This expansion requires a strictly positive whole enclosure"))
+    end
+    image = model_interval(fn(x))
+    result = try
+        elementary_series(fn, a, x, model_center(fn, x), image)
+    catch err
+        err isa OverflowError || rethrow()
+        return constant_image_model(a, image)
+    end
+    return shorten_model(result, image)
 end
 for fn in (:inv, :exp, :log, :sin, :cos, :sqrt)
     @eval Base.$fn(a::TaylorModel) = elementary_model($fn, a)
 end
 
 
-Base.sincos(a::TaylorModel) = (sin(a), cos(a))
+function Base.sincos(a::TaylorModel{I}) where {I <: Interval}
+    model_context(a)
+    x = checked_interval(DA.enclose(a); guaranteed = true)
+    sx, cx = sincos(x)
+    sine, cosine = try
+        sincos_models(a, x, sx, cx)
+    catch err
+        err isa OverflowError || rethrow()
+        return constant_image_model(a, sx), constant_image_model(a, cx)
+    end
+    return shorten_model(sine, sx), shorten_model(cosine, cx)
+end
+function sincos_models(a::TaylorModel{I}, x::I, sx::I, cx::I) where {I <: Interval}
+    center = model_center(sin, x)
+    h = a - center
+    n = a._order
+    s0, c0 = sincos(center)
+    s, c = DA.trig_coefficients(s0, c0, n)
+    sine, cosine = model_horner(a, h, s), model_horner(a, h, c)
+    sine_cycle, cosine_cycle = (sx, cx, -sx, -cx), (cx, -sx, -cx, sx)
+    index = mod(n + 1, 4) + 1
+    power = IA.pown(x - center, n + 1)
+    factor = inverse_factorial(I, n + 1)
+    return (
+        model_result(
+            sine._polynomial, sine._remainder + sine_cycle[index] * factor * power,
+            a._coordinates, n, sx
+        ),
+        model_result(
+            cosine._polynomial, cosine._remainder + cosine_cycle[index] * factor * power,
+            a._coordinates, n, cx
+        ),
+    )
+end
 
 function compile_models(models::AbstractVector{TaylorModel{I}}) where {I <: Interval}
     validated_rounding()
@@ -269,30 +536,33 @@ function compile_models(models::AbstractVector{TaylorModel{I}}) where {I <: Inte
     # these read-only snapshots, but own their coefficients and remainders.
     coordinates = deepcopy(reference._coordinates)
     exponents = Matrix{Int}(b.exponents[:, 1:maximum(m -> m._polynomial.len, models)])
-    return Tuple(
+    return [
         DA.CompiledTaylorModel(
             deepcopy(m._polynomial.coeffs[1:m._polynomial.len]), exponents,
-            deepcopy(m._remainder), coordinates, m._order, DA.degree(m)
+            deepcopy(m._remainder), deepcopy(m._enclosure), coordinates,
+            m._order, DA.degree(m)
         ) for m in models
-    )
+    ]
 end
 DA.compile(a::TaylorModel{I}) where {I <: Interval} = only(compile_models([a]))
 
-function snapshot_bound(a::DA.CompiledTaylorModel{I}, normalized) where {I <: Interval}
-    powers = power_cache(normalized, DA.degree(a), I)
-    return monomial_bound(a._coefficients, a._exponents, powers, I) + a._remainder
-end
-function snapshot_bounds(models::Tuple{Vararg{DA.CompiledTaylorModel{I}}}, box) where {I <: Interval}
+function snapshot_bounds(
+        models::AbstractVector{<:DA.CompiledTaylorModel{I}}, box
+    ) where {I <: Interval}
     normalized = normalized_box(first(models), box)
     powers = power_cache(normalized, maximum(DA.degree, models), I)
-    return [monomial_bound(m._coefficients, m._exponents, powers, I) + m._remainder for m in models]
+    return [deepcopy(model_bound(m, powers, I)) for m in models]
 end
-function DA.enclose(a::DA.CompiledTaylorModel)
-    validated_rounding()
-    return snapshot_bound(a, a._coordinates.normalized)
+
+# Query results own their storage. Hulling every intersecting closed patch
+# preserves both boundary coverage and the minimum input decoration.
+function hull_outputs!(result, values)
+    result === nothing && return values
+    for j in eachindex(result, values)
+        result[j] = IA.hull(result[j], values[j]; dec = :auto)
+    end
+    return result
 end
-DA.enclose(a::DA.CompiledTaylorModel, box) = snapshot_bound(a, normalized_box(a, box))
-DA.evaluate(a::DA.CompiledTaylorModel, point) = snapshot_bound(a, normalized_box(a, point; point = true))
 
 # Polynomial functions enclose coefficient arithmetic only. They do not acquire
 # a Taylor-model remainder. For interval coefficients sqrt avoids interval order
@@ -300,7 +570,11 @@ DA.evaluate(a::DA.CompiledTaylorModel, point) = snapshot_bound(a, normalized_box
 function Base.sqrt(a::TaylorPolynomial{I}) where {I <: Interval}
     x = DA.constant_term(a)
     DA.coefficient_iszero(a) && return zero(a)
-    IA.inf(checked_interval(x)) > 0 || throw(DomainError(x, "Polynomial square-root expansion requires a strictly positive constant interval"))
+    IA.inf(checked_interval(x)) > 0 || throw(
+        DA.TaylorError(
+            "Polynomial square-root expansion requires a strictly positive constant interval"
+        )
+    )
     c0 = sqrt(x)
     return isempty(a.algebra.basis.products) ? DA.power_series(a, IA.interval(IA.numtype(I), 1 // 2), c0) : DA.square_root(a, c0)
 end

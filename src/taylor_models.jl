@@ -1,10 +1,10 @@
 # IntervalArithmetic supplies the implementation through a package extension.
 # This file only declares native storage and the dependency-free API.
 struct ModelCoordinates{T <: Real}
-    box::Tuple{Vararg{T}}
-    center::Tuple{Vararg{T}}
-    radius::Tuple{Vararg{T}}
-    normalized::Tuple{Vararg{T}}
+    box::Vector{T}
+    center::Vector{T}
+    radius::Vector{T}
+    normalized::Vector{T}
     identity::Base.RefValue{Nothing}
 end
 
@@ -17,11 +17,14 @@ A native interval-coefficient polynomial, absolute interval remainder, physical
 domain and affine coordinates. Load IntervalArithmetic to construct models with
 [`taylor_models`](@ref). Its invariant is `f(c + r .* ξ) ∈ P(ξ) + R` throughout
 the declared normalized box. The retained total degree is fixed at construction.
+Elementary operations also retain an independent interval range certificate.
+Queries intersect it with `P + R`; the polynomial and absolute remainder are unchanged.
 
 The three-argument constructor asserts the supplied remainder for the stored
 polynomial in the reference coordinates. It cannot certify an unknown generating
 function's truncation error. There is deliberately no automatic polynomial-to-model
-conversion or implicit zero remainder. Constants denote their stored real values.
+conversion or implicit zero remainder. Integer and rational constants are exact;
+floating constants need an explicit interval or `ExactReal` declaration.
 
 Construction and `copy` own coefficient storage. Accessors return independent
 copies (including BigFloat endpoints); internal fields are read-only implementation
@@ -32,10 +35,14 @@ and enclosure do not depend on the working order or coefficient tolerance.
 struct TaylorModel{T <: Real}
     _polynomial::TaylorPolynomial{T}
     _remainder::T
+    _enclosure::Union{Nothing, T}
     _coordinates::ModelCoordinates{T}
     _order::Int
-    function TaylorModel(p::TaylorPolynomial{T}, r::T, coordinates::ModelCoordinates{T}, order::Int, ::Val{:owned}) where {T <: Real}
-        return new{T}(p, r, coordinates, order)
+    function TaylorModel(
+            p::TaylorPolynomial{T}, r::T, enclosure::Union{Nothing, T},
+            coordinates::ModelCoordinates{T}, order::Int, ::Val{:owned}
+        ) where {T <: Real}
+        return new{T}(p, r, enclosure, coordinates, order)
     end
 end
 
@@ -46,7 +53,11 @@ function model_valid(a::TaylorModel)
 end
 function model_arithmetic(a::TaylorModel)
     ctx = model_valid(a)
-    ctx.cutoff == a._order || throw(ArgumentError("Taylor-model arithmetic requires working order $(a._order); use with_order"))
+    working_order(ctx) == a._order || throw(
+        ArgumentError(
+            "Taylor-model arithmetic requires working order $(a._order); use with_order"
+        )
+    )
     return ctx
 end
 function model_compatible(a::TaylorModel, b::TaylorModel)
@@ -79,8 +90,9 @@ remainder(a::TaylorModel) = (model_valid(a); deepcopy(a._remainder))
 Return an independent physical validity domain: a vector of intervals for
 models/validated box ADS, `(lower, upper)` vectors in a named tuple for ordinary
 box ADS, or a `ConvexPolygon` for polygon ADS.
+Continuous maps preserve their core map's domain representation.
 """
-domain(a::TaylorModel) = (model_valid(a); collect(deepcopy(a._coordinates.box)))
+domain(a::TaylorModel) = (model_valid(a); deepcopy(a._coordinates.box))
 coefficient_type(::TaylorModel{T}) where {T} = T
 nvariables(a::TaylorModel) = model_valid(a).basis.variables
 max_order(a::TaylorModel) = (model_valid(a); a._order)
@@ -89,7 +101,10 @@ function Base.copy(a::TaylorModel)
     model_valid(a)
     c = a._coordinates
     coordinates = ModelCoordinates(deepcopy(c.box), deepcopy(c.center), deepcopy(c.radius), deepcopy(c.normalized), c.identity)
-    return TaylorModel(model_polycopy(a._polynomial), deepcopy(a._remainder), coordinates, a._order, Val(:owned))
+    return TaylorModel(
+        model_polycopy(a._polynomial), deepcopy(a._remainder), deepcopy(a._enclosure),
+        coordinates, a._order, Val(:owned)
+    )
 end
 Base.deepcopy_internal(a::TaylorModel, copies::IdDict) = get!(() -> copy(a), copies, a)
 Base.:+(a::TaylorModel) = (model_arithmetic(a); copy(a))
@@ -144,7 +159,7 @@ end
 compile(a::TaylorModel) = throw(ArgumentError("Load IntervalArithmetic to compile TaylorModel with its remainder and domain"))
 compile(a::AbstractVector{<:TaylorModel}) = throw(ArgumentError("compile is unsupported for TaylorModel"))
 invert(a::AbstractVector{<:TaylorModel}) = throw(ArgumentError("Verified model inversion is unsupported"))
-for op in (:(==), :<, :<=, :>, :>=, :isless, :isequal)
+for op in (:(==), :<, :<=, :isless, :isequal)
     @eval begin
         Base.$op(a::TaylorModel, b::TaylorModel) = throw(ArgumentError("Whole-model comparisons are unsupported"))
         Base.$op(a::TaylorModel, b::Real) = throw(ArgumentError("Whole-model comparisons are unsupported"))

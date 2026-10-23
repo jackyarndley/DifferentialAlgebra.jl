@@ -1,112 +1,104 @@
 # Contributing
 
-## Tests
-
-From a repository checkout:
-
-```sh
-julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
-```
-
-Tests run on Linux with Julia `1.10` and `1` (the latest stable release).
-Examples have a separate dependency environment.
-Each test file imports its dependencies and includes its own helpers. SafeTestsets
-isolates file namespaces; the dispatcher runs files sequentially because algebra
-configuration is global. Fresh-process checks also verify optional extension loading.
-Aqua checks package quality. Its unbound-argument audit exempts exactly five
-generated snapshot constructors whose tuple arguments can syntactically be empty
-on Julia 1.10; supported construction requires nonempty coordinates and patches.
-
-The test suite uses Julia code and inline inputs. Function-coefficient tests
-combine scalar derivatives from ForwardDiff with an independent multinomial
-expansion. Gaussian moment tests use exact rational integration-by-parts/Wick
-formulas, and small Cartesian enumerations check the monomial ordering. These
-expectations are computed during the tests, so regenerating coefficient or
-moment fixture files is unnecessary.
-
-Prefer closed-form expectations, exact rational arithmetic, and independent
-Julia calculations when adding tests. Keep small input matrices and numerical
-regression constants inline with their mathematical meaning and provenance.
-For larger fixtures, use CSV with descriptive headers and document the input
-semantics, provenance, and any Julia regeneration command.
-
-Floating-point coefficient comparisons are numerical regression checks.
-Interval-model inclusion tests separately use exact rational polynomial oracles
-and analytical remainder bounds; scalar automatic differentiation and sampled
-agreement do not establish a uniform enclosure.
-
-## Code style and organization
-
-Use [Runic.jl](https://github.com/fredrikekre/Runic.jl) for Julia source formatting.
-Install it in a separate environment, then format the source and executable examples:
-
-```sh
-julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
-julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src test ext examples benchmark docs/make.jl docs/literate.jl docs/test_literate.jl docs/test_navigation.jl
-```
-
-Replace `--inplace` with `--check` to verify formatting without modifying files.
-CI runs this check on the latest stable Julia release.
-Keep the Runic version in these instructions and the CI workflow synchronized;
-formatter upgrades may change the output.
-
-The source is organized by responsibility:
-
-- `basis.jl` defines the monomial basis; `polynomial.jl` defines polynomial storage and algebra configuration.
-- `arithmetic.jl`, `functions.jl` and `special_scalars.jl` implement numerical kernels.
-- `coefficients.jl` and `substitution.jl` implement coefficient access, calculus and substitutions.
-- `evaluation.jl`, `linear_algebra.jl` and `statistics.jl` implement maps and derived operations.
-- `ads_estimators.jl` defines error indicators; `ads_driver.jl` owns the shared ADS lifecycle and partition lookup; `domain_splitting.jl` supplies ordinary box fitting and evaluation; `polygon_ads.jl` supplies exact polygon geometry operations; `adaptive_flow.jl` monitors propagation.
-- `taylor_models.jl` and `validated_ads.jl` declare the dependency-free model and snapshot storage. The interval extension entry point loads `interval_models.jl` (arithmetic and shared monomial bounds), `interval_ads.jl` (validated local fitting and box geometry), and polygon/continuity adapters. It does not own a separate ADS construction loop.
-- `precompile.jl` holds the package's small compilation workload.
-- `display.jl` handles polynomial output. Public docstrings live immediately beside the definitions they document.
-
-Use standard Julia arrays and broadcasting. Add methods for `AbstractArray`
-interfaces when appropriate, and test views as well as dense arrays.
-
-## Build the documentation
+## Run the checks
 
 From the repository root:
 
 ```sh
-julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=test -e 'using Pkg; Pkg.instantiate()'
+julia --project=test --check-bounds=yes test/runtests.jl
+julia --project=test test/quality.jl
+```
+
+CI has one **Linux / Julia `1` (latest stable)** test job. Its steps run the
+numerical/integration suite, Aqua and Runic; documentation has its own workflow.
+The ForwardDiff integration requires version 1 and runs within the complete
+suite. For the faster fresh-process command and dependency preparation,
+see the repository's [test guide](https://github.com/jackyarndley/DifferentialAlgebra.jl/blob/main/test/README.md).
+Julia 1.12 is the minimum supported version, not an additional CI job.
+
+Prefer a small independent oracle over repeated type/order grids or two paths
+through the same implementation. Closed forms, exact rationals and externally
+derived coefficients are useful. Interval checks must inspect the raw polynomial
+plus remainder, separately from stored range certificates; sampled agreement
+alone cannot establish a uniform enclosure. Kernel timings and allocation
+measurements belong in `benchmark/`, rather than compiler-sensitive test assertions.
+
+SafeTestsets isolates file namespaces; tests run sequentially because default
+algebra initialization invalidates earlier polynomials. Loading tests run before
+optional imports. The only generated numerical fixture is documented beside its
+regeneration script in `test/`.
+
+## Source responsibilities
+
+| Files | Responsibility |
+|:--|:--|
+| `basis.jl`, `polynomial.jl` | Monomial indexing, storage, algebra ownership and policies |
+| `arithmetic.jl`, `functions.jl` | Polynomial arithmetic and elementary kernels |
+| `special_functions.jl`, `special_scalars.jl` | Polynomial special functions and scalar precision support |
+| `coefficients.jl`, `calculus.jl`, `substitution.jl` | Coefficient queries, derivatives/integrals, coordinate substitution |
+| `evaluation.jl`, `linear_algebra.jl`, `statistics.jl` | Compiled maps, eigenpairs, moment operations |
+| `ads_driver.jl`, `ads_estimators.jl` | Shared refinement lifecycle, lookup and error indicators |
+| `domain_splitting.jl`, `polygon_domains.jl`, `polygon_ads.jl` | Box fitting and exact polygon geometry/adapters |
+| `adaptive_flow.jl`, `continuous_ads.jl` | Propagation monitoring and overlapping smooth fits |
+| `taylor_models.jl`, `validated_ads.jl` | Dependency-free model/snapshot storage and interfaces |
+| `ext/interval_*.jl` | Interval kernels, model arithmetic and adapters to the shared ADS driver |
+| `time_series.jl`, `time_kernels.jl`, `time_recurrence.jl` | Public time series, shared coefficient recurrences, recorded RHS graph |
+| `ext/DifferentialAlgebra*Ext.jl` | Optional scalar and SciML integration |
+| `display.jl`, `precompile.jl` | Readable polynomial output and the small compile workload |
+
+Keep one owner for each algorithm. Thin dispatch methods express type-specific
+contracts; they are not duplicated algorithms. Share a kernel only when its
+mathematical invariant and ownership rules agree. Rigorous interval bounds and
+ordinary coefficient estimates intentionally have different contracts.
+
+## Readable code and comments
+
+Follow [SciMLStyle](https://docs.sciml.ai/SciMLStyle/dev/) and the surrounding code.
+Prefer ordinary arrays, broadcasting and suitable `AbstractArray` methods; test
+views when indexing behavior matters. Keep public docstrings next to definitions.
+Describe inputs, result, mutation/ownership and numerical restrictions once.
+Comments should explain a recurrence, invariant or non-obvious choice; avoid
+repeating an assignment or recording patch history in production code.
+
+The [API reference](api.md) identifies exported and supported qualified operations.
+Other helpers, including `coefficient_dot`, `filter_terms` and `convergence_radius`,
+are internal even when examples/tests use qualified names.
+
+Format with the version pinned in CI:
+
+```sh
+julia --project=@runic -e 'using Pkg; Pkg.add(PackageSpec(name="Runic", version=v"1.11.1"))'
+julia --project=@runic -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace --docstrings src ext test examples benchmark docs
+```
+
+Replace `--inplace` with `--check` to verify. Keep formatter versions and shared
+compatibility bounds aligned across the root, test, docs, example and benchmark
+environments. IntervalArithmetic stays within the 1.0 patch series because its
+rounding/metadata hooks require review before widening compatibility.
+
+## Documentation and examples
+
+```sh
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'
 julia --project=docs docs/test_literate.jl
 julia --project=docs docs/make.jl
 ```
 
-Open `docs/build/index.html` after a local build. Documenter.jl builds the site,
-Literate.jl executes the example scripts, DocumenterCitations.jl renders references,
-and DocumenterCodeBlocks.jl adds linked and highlighted code blocks.
+Open `docs/build/index.html`. The build executes every standalone example through
+Literate, checks public docstrings/doctests, and verifies navigation and local
+assets. Register each script once under a topic in `docs/src/examples.md`; that
+catalog also drives the sidebar. Generated pages and local manifests stay untracked.
 
-Keep examples executable and add references to `docs/src/references.bib`.
-Each example is a self-contained Literate script with numerical checks and
-CairoMakie figures where helpful. End each plotting block with `fig`; Literate
-captures its rich display automatically. Separate printed reports from figure
-blocks with narrative text or `#-`, since a returned figure takes precedence over
-standard output in the same block. Use `println` for reports, or return a value
-as the final expression of its own block, rather than calling `display` explicitly.
-Use `##` for code comments inside functions and loops so Literate does not split
-an incomplete Julia block. Label sampled errors and log-scale display floors
-separately from certified interval bounds, and use consistent scales for direct
-comparisons. Plot values alongside a useful diagnostic (residual, enclosure
-width, conditioning, conservation or partition size) when it explains the topic.
-Add new pages under a topic heading in `docs/src/examples.md`; these headings also
-generate the sidebar groups. The build checks that every script is registered
-exactly once. `collapselevel=3` keeps every tutorial topic and its links expanded
-on every page, including direct links into another topic. After rendering,
-`docs/test_navigation.jl` checks every HTML sidebar, resolves all tutorial links,
-and checks each tutorial's linked PNG assets. Run it separately after a build
-with `julia --project=docs docs/test_navigation.jl`; it supports both local flat
-URLs and CI's directory URLs. The rendering helper in `docs/literate.jl` converts Makie's
-embedded display images to links that work with both local and deployed URLs.
-Generated pages, build output and local manifests are excluded from version control.
+Start an example with the question, then show the calculation and a meaningful
+result check. Keep each script runnable from the checkout; put shared physical
+models and moment calculations in `examples/support/` so companion tutorials
+cannot drift apart. Explain their equations and assumptions in the relevant
+tutorial. Use `##` for comments inside Julia blocks so Literate does not split
+an incomplete function or loop.
+End figure blocks with `fig`; separate printed reports from figures with prose
+or `#-`. Label sampled errors, display floors and rigorous bounds accurately.
+Keep numerical reference provenance and citations beside the relevant calculation.
 
-## Publish documentation
-
-The Documentation workflow checks pushes and pull requests. Successful builds
-on `main` deploy to [GitHub Pages](https://jackyarndley.github.io/DifferentialAlgebra.jl/).
-Pull requests build the site without deploying it.
-
-In the repository's **Settings → Pages**, the source must be **GitHub Actions**.
-The workflow uses the repository token and the `github-pages` environment;
-no separate deployment key is required.
+The documentation workflow builds PRs and deploys successful `main` builds via
+GitHub Actions Pages. Source changes do not require a separate deployment key.

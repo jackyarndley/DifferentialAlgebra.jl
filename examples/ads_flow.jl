@@ -15,16 +15,11 @@ using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab20),))
 
-function kepler_ode!(du, u, μ, time)
-    factor = -μ * (u[1]^2 + u[2]^2)^(-3 / 2)
-    du[1], du[2] = u[3], u[4]
-    du[3], du[4] = factor * u[1], factor * u[2]
-    return nothing
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 
 initial(x) = [x[1], x[2], zero(x[1]), 1.1 + zero(x[1])]
 function advance(state, span)
-    problem = ODEProblem(kepler_ode!, state, span, 1.0)
+    problem = ODEProblem(two_body!, state, span, 1.0)
     solution = solve(problem, Vern9(); abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false)
     successful_retcode(solution) || error("Orbit integration failed")
     return solution.u[end]
@@ -44,7 +39,7 @@ flow_map = adaptive_flow(advance, initial, lower, upper, times; order = 4, atol 
 function advance(state, span, monitor)
     condition(u, t, integrator) = monitor(u, t)
     callback = DiscreteCallback(condition, terminate!; save_positions = (false, true))
-    problem = ODEProblem(kepler_ode!, state, span, 1.0)
+    problem = ODEProblem(two_body!, state, span, 1.0)
     solution = solve(problem, Vern9(); callback, abstol = 1.0e-12, reltol = 1.0e-12, save_everystep = false)
     successful_retcode(solution) || error("Orbit integration failed")
     return (; state = solution.u[end], time = solution.t[end])
@@ -124,11 +119,11 @@ accuracy_fig
 # changing its ADS estimator. Instead compare all four estimators on related
 # explicit two-body diagnostics of the same initial-position box. These are
 # initial energy, periapsis, apoapsis and period/(2π), with μ=1. The 1.1 literal
-# denotes its stored binary value throughout, including validated calculations.
+# is explicitly declared exact as a stored binary value for validated calculations.
 using IntervalArithmetic
 function orbit_diagnostics(v)
     x, y = v
-    speed = zero(x) + 1.1
+    speed = zero(x) + IntervalArithmetic.exact(1.1)
     radius = sqrt(x^2 + y^2)
     energy = speed^2 / 2 - 1 / radius
     h = x * speed

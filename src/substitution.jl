@@ -3,12 +3,13 @@ function affine_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Rea
     ctx = valid(p); b = ctx.basis
     1 <= from <= b.variables && 1 <= to <= b.variables || throw(ArgumentError("Variable index out of bounds"))
     T = promote_type(coefficient_type(p), typeof(a), typeof(c))
-    result = allocate(ctx, T)
+    degree = b.degrees[p.len]
+    result = allocate(ctx, T, b.ends[min(degree, cutoff) + 1])
     powers = zeros(Int, b.variables)
     # Precompute scalar powers once, including 0^0 = 1 for constant terms.
     a, c = coefficient_convert(T, a), coefficient_convert(T, c)
-    ap, cp = ones(T, b.order + 1), ones(T, b.order + 1)
-    for k in 1:b.order
+    ap, cp = ones(T, degree + 1), ones(T, degree + 1)
+    for k in 1:degree
         ap[k + 1], cp[k + 1] = ap[k] * a, cp[k] * c
     end
     for i in 1:p.len
@@ -42,10 +43,20 @@ end
     translate_variable(p, variable, a = 1, c = 0)
 
 Replace one coordinate by `a*x[variable]+c`, retaining the other variables.
+Binomial factors are exact for integer and rational coefficients. Scalar powers
+still use the promoted coefficient type: fixed-width integer powers can overflow
+as in ordinary Julia arithmetic. Use `BigInt` or `Rational{BigInt}` coefficients
+when unbounded exact affine arithmetic is required.
 """
 translate_variable(p::TaylorPolynomial, v::Integer, a::Real = 1, c::Real = 0) = affine_variable(p, v, v, a, c)
-replace_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Real = 1) = affine_variable(p, from, to, a, 0)
-scale_variable(p::TaylorPolynomial, v::Integer, a::Real = 1) = affine_variable(p, v, v, a, 0)
-substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) = affine_variable(p, v, v, 0, value; cutoff = valid(p).cutoff)
+"""
+    DifferentialAlgebra.substitute(p, variable, value = 0)
+
+Replace one coordinate by a scalar, keeping the other coordinates as polynomial
+variables. Apply the working order and coefficient tolerance. Arrays are processed
+elementwise and retain their shape.
+"""
+substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) =
+    affine_variable(p, v, v, 0, value; cutoff = working_order(valid(p)))
 
 substitute(a::AbstractArray{<:TaylorPolynomial}, i::Integer, value::Real = 0) = substitute.(a, i, value)

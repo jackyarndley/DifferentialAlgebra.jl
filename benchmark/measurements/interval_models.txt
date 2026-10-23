@@ -1,0 +1,27 @@
+(julia = v"1.13.2", revision = "6ea8d4d023d310aed14e212fe5d403efa3eb5eb0", cpu = "alderlake", threads = 1, packages = ["DifferentialAlgebra=0.2.0", "BenchmarkTools=1.8.0", "IntervalArithmetic=1.0.12"])
+
+Multiplication table budget: 0
+Six-variable model construction: (seconds = 6.63e-5, bytes = 113865, allocations = 1121, evals = 1, first_seconds = 0.0032287, compilation = 0.0031075)
+Model enclosure: (seconds = 4.2714285714285714e-6, bytes = 5280, allocations = 74, evals = 7, first_seconds = 0.0025095, compilation = 0.0024819)
+Model width / remainder width: (0.06118525332851177, 7.91912235766857e-7)
+Certified six-variable box ADS: (seconds = 7.84e-5, bytes = 145383, allocations = 1421, evals = 1, first_seconds = 0.0022678, compilation = 0.0021075)
+Certified ADS enclosure: (seconds = 5.583333333333333e-6, bytes = 7824, allocations = 106, evals = 6, first_seconds = 0.2006185, compilation = 0.2004351)
+ADS patches / width / largest uniform fit error: (1, 0.06118525332851177, 4.083095687002589e-7)
+Ordinary polynomial construction: (seconds = 1.4e-6, bytes = 8272, allocations = 57, evals = 10, first_seconds = 0.0033304, compilation = 0.003289)
+Stored-polynomial enclosure: (seconds = 1.3e-5, bytes = 6000, allocations = 146, evals = 1, first_seconds = 0.0330319, compilation = 0.0329878)
+Stored-polynomial width: 0.062307000000003665
+Reusable ordinary multiplication: (seconds = 3.5841121495327105e-7, bytes = 0, allocations = 0, evals = 214, first_seconds = 0.0102664, compilation = 0.0102509)
+Reusable ordinary evaluation: (seconds = 1.1851453175457482e-7, bytes = 0, allocations = 0, evals = 929, first_seconds = 0.0021835, compilation = 0.0021738)
+
+Multiplication table budget: 33554432
+Six-variable model construction: (seconds = 6.65e-5, bytes = 113881, allocations = 1121, evals = 1, first_seconds = 9.24e-5, compilation = 0.0)
+Model enclosure: (seconds = 4.3e-6, bytes = 5280, allocations = 74, evals = 7, first_seconds = 1.08e-5, compilation = 0.0)
+Model width / remainder width: (0.06118525332851177, 7.91912235766857e-7)
+Certified six-variable box ADS: (seconds = 8.1e-5, bytes = 145399, allocations = 1422, evals = 1, first_seconds = 9.67e-5, compilation = 0.0)
+Certified ADS enclosure: (seconds = 5.783333333333333e-6, bytes = 7824, allocations = 106, evals = 6, first_seconds = 2.52e-5, compilation = 0.0)
+ADS patches / width / largest uniform fit error: (1, 0.06118525332851177, 4.083095687002589e-7)
+Ordinary polynomial construction: (seconds = 1.68e-6, bytes = 5024, allocations = 32, evals = 10, first_seconds = 4.4e-6, compilation = 0.0)
+Stored-polynomial enclosure: (seconds = 1.22e-5, bytes = 6000, allocations = 146, evals = 1, first_seconds = 4.56e-5, compilation = 0.0)
+Stored-polynomial width: 0.062307000000003665
+Reusable ordinary multiplication: (seconds = 1.6619897959183674e-7, bytes = 0, allocations = 0, evals = 784, first_seconds = 3.9e-6, compilation = 0.0)
+Reusable ordinary evaluation: (seconds = 1.1368078175895765e-7, bytes = 0, allocations = 0, evals = 921, first_seconds = 1.7e-6, compilation = 0.0)

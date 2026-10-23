@@ -1,6 +1,48 @@
 using Test
 using Literate
+using DifferentialAlgebra
+import IntervalArithmetic as IA
 include("literate.jl")
+include("../examples/support/kepler.jl")
+include("../examples/support/moments.jl")
+
+@testset "Shared tutorial numerics" begin
+    for eccentricity in (0.0, 0.3, 0.999999), mean in (-0.6, 1.0e-4)
+        anomaly = kepler_root(mean, eccentricity)
+        @test anomaly - eccentricity * sin(anomaly) ≈ mean atol = 2.0e-15
+    end
+    @test_throws DomainError kepler_root(0.5, 1.0)
+
+    # A polar circular orbit fixes both the rotation and the force convention.
+    state = element_state(4.0, 0.0, π / 2, π / 2, 0.0, 0.0, 1.0)
+    @test state ≈ [0, 4, 0, 0, 0, 0.5] atol = 1.0e-15
+    expected = [0, 0, 0.5, 0, -1 / 16, 0]
+    @test two_body(state, 1.0, 0.0) ≈ expected atol = 1.0e-15
+    derivative = similar(state)
+    two_body!(derivative, state, 1.0, 0.0)
+    @test derivative ≈ expected atol = 1.0e-15
+
+    # The same orbital helper must retain guarantees for native intervals.
+    enclosed = element_state(IA.interval.((4, 0, 0, 0, 0, 0, 1))...)
+    @test all(IA.isguaranteed, enclosed)
+    @test all(IA.inf(value) <= expected <= IA.sup(value) for (value, expected) in zip(enclosed, (4, 0, 0, 0, 0.5, 0)))
+
+    # Moments must use all stored terms, independently of arithmetic policy.
+    x, = variables(1; order = 2)
+    p = 1 + 2x + 3x^2
+    previous_tolerance = set_coefficient_tolerance!(10)
+    try
+        with_order(0) do
+            for (moment, mean, variance) in ((uniform_moment, 2, 32 / 15), (normal_moment, 4, 22))
+                μ, covariance = polynomial_statistics([p], moment)
+                @test only(μ) ≈ mean
+                @test only(covariance) ≈ variance
+            end
+        end
+    finally
+        set_coefficient_tolerance!(previous_tolerance)
+    end
+end
 
 @testset "Tutorial topic navigation and registration" begin
     overview = read(joinpath(@__DIR__, "src/examples.md"), String)

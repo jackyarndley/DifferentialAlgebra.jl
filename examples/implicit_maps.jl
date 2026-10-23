@@ -1,24 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0; modified examples, see ../THIRD_PARTY_NOTICES.md. #src
 # # Kepler's equation by coupled map inversion
 #
-# Solve M = E - e sin(E), with M=π/2 and uncertain eccentricity near 0.3.
-# First locate the scalar root, then invert the augmented map
-# (δE, δe) ↦ (E - e sin(E) - M, δe). Setting its first output to zero
-# gives E as a polynomial in δe. The extra coordinate makes the map square.
+# Solve M = E - e sin(E) near M=π/2 and e=0.3. Inverting the augmented
+# map (δE, δe) ↦ (E - e sin(E) - M, δe) gives the solution's dependence
+# on both mean anomaly and eccentricity. Check its sensitivities analytically,
+# then compare a fixed-M slice with independently converged scalar roots.
 using DifferentialAlgebra
 using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 
-function kepler_root(mean, eccentricity)
-    E = mean
-    for _ in 1:40
-        step = (E - eccentricity * sin(E) - mean) / (1 - eccentricity * cos(E))
-        E -= step
-        abs(step) < 2.0e-15 && return E
-    end
-    error("Kepler root did not converge")
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 
 δE, δe = variables((:δE, :δe); order = 20)
 mean, e0 = π / 2, 0.3
@@ -26,13 +18,27 @@ E0 = kepler_root(mean, e0)
 E, e = E0 + δE, e0 + δe
 constraint = E - e * sin(E) - mean
 inverse = invert([constraint, δe])
+joint_solution = E0 + inverse[1]
 solution = E0 + evaluate(inverse[1], [zero(δe), δe])
 residual = coefficient_norm(solution - e * sin(solution) - mean)
 @assert residual < 1.0e-10
 println("E(δe) = ", solution)
 println("Maximum implicit-equation coefficient residual: ", residual)
 
-# Compare the polynomial with independently converged scalar roots.
+# ## Sensitivities without solving again
+#
+# The inverse's first coordinate now means δM, not the original δE.
+# Implicit differentiation gives ∂E/∂M = 1/(1-e cos(E)) and
+# ∂E/∂e = sin(E)/(1-e cos(E)) at the nominal root.
+sensitivity = constant_term(gradient(joint_solution))
+exact_sensitivity = [1.0, sin(E0)] / (1 - e0 * cos(E0))
+@assert maximum(abs, sensitivity - exact_sensitivity) < 1.0e-13
+println("Sensitivity to (M, e), DA / analytical: ", (sensitivity, exact_sensitivity))
+
+# ## A finite uncertainty interval
+#
+# Setting δM=0 yields E(δe). Scalar root solves provide an independent check
+# throughout e ∈ [0.1,0.5]; this sampled discrepancy is not a uniform bound.
 eccentricities = range(0.1, 0.5; length = 151)
 reference = [kepler_root(mean, e) for e in eccentricities]
 values = [solution([0.0, e - e0]) for e in eccentricities]

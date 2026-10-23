@@ -1,7 +1,7 @@
 name = "DifferentialAlgebra"
 uuid = "413ac9d4-45af-4c75-aec7-2a1db65c23cb"
 authors = ["Jack Yarndley"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -23,32 +23,14 @@ DifferentialAlgebraDiffEqBaseExt = "DiffEqBase"
 DifferentialAlgebraOrdinaryDiffEqExt = ["DiffEqBase", "OrdinaryDiffEqCore"]
 
 [compat]
-Aqua = "0.8"
-IntervalArithmetic = "1.0.12"
-DiffEqBase = "6, 7"
+# Validated metadata/rounding hooks are checked against the IA 1.0 API.
+IntervalArithmetic = "~1.0.12"
+DiffEqBase = "7.21.2"
 ForwardDiff = "1"
-GenericLinearAlgebra = "0.4"
 LinearAlgebra = "1"
 OrdinaryDiffEqCore = "4.18"
 PrecompileTools = "1"
 QuadGK = "2"
 Random = "1"
-SafeTestsets = "0.1"
-SciMLBase = "2, 3"
 SpecialFunctions = "2"
-Test = "1"
-julia = "1.10"
-
-[extras]
-Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
-IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
-DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
-ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
-OrdinaryDiffEqCore = "bbf590c4-e513-4bbe-9b18-05decba2e5d8"
-SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
-SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[targets]
-test = ["Aqua", "DiffEqBase", "ForwardDiff", "GenericLinearAlgebra", "IntervalArithmetic", "OrdinaryDiffEqCore", "SafeTestsets", "SciMLBase", "Test"]
+julia = "1.12"

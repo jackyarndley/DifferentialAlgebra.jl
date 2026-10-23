@@ -1,5 +1,8 @@
 # Human-readable expressions. Display is deliberately independent of file formats.
 # Use scalar show methods so coefficient precision and custom types are preserved.
+compact_variable_name(name) = length(name) == 1 ||
+    (isletter(first(name)) && all(c -> '₀' <= c <= '₉', Iterators.drop(name, 1)))
+
 function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     negative = coefficient < zero(coefficient)
     if first
@@ -11,9 +14,13 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
     magnitude = negative ? -(coefficient isa Integer ? big(coefficient) : coefficient) : coefficient
     show(io, magnitude)
     any(!iszero, exponents) && print(io, ' ')
+    separator = !all(compact_variable_name, names)
+    factor = false
     for (i, power) in enumerate(exponents)
         iszero(power) && continue
+        separator && factor && print(io, '*')
         print(io, names[i])
+        factor = true
         if power != 1
             for digit in string(power)
                 print(io, ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')[digit - '0' + 1])
@@ -24,7 +31,7 @@ function show_term(io::IO, coefficient::Real, exponents, names, first::Bool)
 end
 
 function Base.show(io::IO, p::TaylorPolynomial)
-    if !p.algebra.active
+    if !algebra_active(p.algebra)
         print(io, "TaylorPolynomial(inactive)")
         return nothing
     end
@@ -46,8 +53,16 @@ function Base.show(io::IO, p::TaylorPolynomial)
     return nothing
 end
 
+function Base.show(io::IO, z::Complex{<:TaylorPolynomial})
+    print(io, '(')
+    show(io, z.re)
+    print(io, get(io, :compact, false) ? ")+(" : ") + (")
+    show(io, z.im)
+    return print(io, ")*im")
+end
+
 function Base.show(io::IO, ::MIME"text/plain", p::TaylorPolynomial)
-    p.algebra.active || return show(io, p)
+    algebra_active(p.algebra) || return show(io, p)
     n = p.algebra.basis.variables
     print(
         io, typeof(p), " polynomial in ", n, n == 1 ? " variable" : " variables",

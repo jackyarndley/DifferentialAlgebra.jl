@@ -36,7 +36,7 @@ makedocs(
     root = @__DIR__,
     sitename = "DifferentialAlgebra.jl",
     modules = [DifferentialAlgebra],
-    checkdocs = :exports,
+    checkdocs = :public,
     plugins = [
         CitationBibliography(joinpath(@__DIR__, "src", "references.bib"); style = :authoryear),
         CodeBlocks(),
@@ -46,6 +46,7 @@ makedocs(
         # Keep the same tutorial topics and links visible on every page.
         collapselevel = 3,
         canonical = "https://jackyarndley.github.io/DifferentialAlgebra.jl/",
+        edit_link = "main",
     ),
     pages = [
         "Home" => "index.md",
@@ -71,4 +72,23 @@ makedocs(
     ],
 )
 
+# Pages publishes one version at the site root. Documenter's deployment-only
+# metadata is not part of that artifact, so do not request its selector scripts.
+deployment_scripts = r"""
+<script\b[^>]*\bsrc="
+(?:\.\./)*(?:siteinfo|versions)\.js"
+[^>]*>\s*</script>
+"""x
+for (directory, _, files) in walkdir(joinpath(@__DIR__, "build"))
+    for file in files
+        endswith(file, ".html") || continue
+        path = joinpath(directory, file)
+        html = read(path, String)
+        html = replace(html, deployment_scripts => "")
+        write(path, html)
+    end
+end
+
 include(joinpath(@__DIR__, "test_navigation.jl"))
+
+test_navigation(examples, joinpath(@__DIR__, "build"), destination)

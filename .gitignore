@@ -7,3 +7,6 @@ docs/src/generated/
 results/
 *.log
 LocalPreferences.toml
+*.cov
+*.mem
+lcov.info

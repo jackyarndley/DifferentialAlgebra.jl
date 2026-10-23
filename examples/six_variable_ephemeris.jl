@@ -5,6 +5,9 @@
 # coordinates are independent uniforms on [-1,1]; E is supplied, not solved.
 using DifferentialAlgebra, IntervalArithmetic, CairoMakie, LinearAlgebra, Random
 
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "moments.jl"))
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
+
 # JPL gives the [orbital-plane coordinates and inertial rotation](https://ssd.jpl.nasa.gov/planets/approx_pos.html).
 # Units are kilometres, seconds and radians. Constants below are declared exact
 # rationals, including the illustrative Earth μ=398600.4418 km³/s². Wrap them
@@ -18,14 +21,7 @@ function cartesian(ξ)
     Ω = c(1 // 3) + c(1 // 100) * ξ[4]
     ω = c(1 // 5) + c(1 // 50) * ξ[5]
     E = c(1) + c(1 // 25) * ξ[6]
-    s, co = sincos(E)
-    β = sqrt(c(1) - e^2)
-    speed = sqrt(c(3986004418 // 10000) / a) / (c(1) - e * co)
-    sw, cw = sincos(ω)
-    si, ci = sincos(i)
-    sn, cn = sincos(Ω)
-    rotate(x, y) = [cn * (cw * x - sw * y) - sn * ci * (sw * x + cw * y), sn * (cw * x - sw * y) + cn * ci * (sw * x + cw * y), si * (sw * x + cw * y)]
-    return vcat(rotate(a * (co - e), a * β * s), rotate(-speed * s, speed * β * co))
+    return element_state(a, e, i, Ω, ω, E, c(3986004418 // 10000))
 end
 ξ = variables((:δa, :δe, :δi, :δΩ, :δω, :δE); order = 3)
 state = cartesian(ξ)
@@ -38,14 +34,7 @@ stored_ranges = [enclose(p, box) for p in state]
 # for covariance: multiplying in the order-three algebra would discard degrees
 # four through six and lose part of the second moment. These are moments of
 # the stored polynomial, not a certified distribution of the original function.
-uniform_moment(α) = any(isodd, α) ? 0.0 : prod(k -> 1 / (k + 1), α)
-function uniform_statistics(polys)
-    mean = [sum(m.coefficient * uniform_moment(m.exponents) for m in monomials(p); init = 0.0) for p in polys]
-    terms = monomials.(polys .- mean)
-    covariance = [sum(a.coefficient * b.coefficient * uniform_moment(a.exponents + b.exponents) for a in terms[i], b in terms[j]; init = 0.0) for i in eachindex(polys), j in eachindex(polys)]
-    return mean, covariance
-end
-polynomial_mean, polynomial_covariance = uniform_statistics(state)
+polynomial_mean, polynomial_covariance = polynomial_statistics(state, uniform_moment)
 @assert minimum(eigvals(Symmetric(polynomial_covariance))) > -1.0e-10
 println("Retained-polynomial mean shift from the nominal state: ", polynomial_mean - cartesian(zeros(6)))
 println("Retained-polynomial position standard deviations (km): ", sqrt.(diag(polynomial_covariance)[1:3]))

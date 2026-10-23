@@ -24,17 +24,8 @@ set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 # With ``r_1^2=(x+\mu)^2+y^2`` and ``r_2^2=(x-1+\mu)^2+y^2``,
 # ``\ddot{x}=2\dot{y}+x-(1-\mu)(x+\mu)/r_1^3-\mu(x-1+\mu)/r_2^3``
 # and ``\ddot{y}=-2\dot{x}+y-(1-\mu)y/r_1^3-\mu y/r_2^3``.
-function cr3bp(u, μ, t)
-    x, y, vx, vy = u
-    dx1, dx2 = x + μ, x - 1 + μ
-    r13 = (dx1^2 + y^2)^(3 // 2)
-    r23 = (dx2^2 + y^2)^(3 // 2)
-    return [
-        vx, vy,
-        2vy + x - (1 - μ) * dx1 / r13 - μ * dx2 / r23,
-        -2vx + y - (1 - μ) * y / r13 - μ * y / r23,
-    ]
-end
+# Both CR3BP tutorials use the same equations and Jacobi diagnostic.
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "cr3bp.jl"))
 μ = 0.01215058560962404
 l4 = [0.5 - μ, sqrt(3) / 2, 0.0, 0.0]
 initial = l4 + [0.01, 0, 0, -0.01]
@@ -50,13 +41,6 @@ problem = ODEProblem(cr3bp, initial, (0.0, final_time), μ)
 # is ``C=x^2+y^2+2(1-\mu)/r_1+2\mu/r_2-v_x^2-v_y^2``.
 # The rotating-frame energy is ``H=-C/2``; inertial Kepler energy is not
 # conserved. We report ΔC, so the corresponding energy drift is -ΔC/2.
-function jacobi(u, μ)
-    x, y, vx, vy = u
-    r1 = sqrt((x + μ)^2 + y^2)
-    r2 = sqrt((x - 1 + μ)^2 + y^2)
-    return x^2 + y^2 + 2 * ((1 - μ) / r1 + μ / r2) - vx^2 - vy^2
-end
-
 # All integrations below use Float64. Evaluating only the diagnostic with
 # 128-bit arithmetic avoids hiding small drifts in subtraction of two
 # nearly equal, rounded Float64 Jacobi constants. It does not improve the

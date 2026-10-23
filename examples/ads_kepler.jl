@@ -14,23 +14,14 @@ using DifferentialAlgebra
 using Random
 using ForwardDiff
 
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
+
 # Solve E - e sin(E) = M. Newton iteration first finds the scalar root, then
 # lifts it to the active polynomial order. The same function handles numeric
 # validation points and Taylor inputs.
 function eccentric_anomaly(mean, eccentricity)
     m, e = constant_term(mean), constant_term(eccentricity)
-    anomaly = m
-    converged = false
-    for _ in 1:40
-        s, c = sincos(anomaly)
-        step = (anomaly - e * s - m) / (1 - e * c)
-        anomaly -= step
-        if abs(step) <= 8eps(typeof(m)) * max(one(m), abs(anomaly))
-            converged = true
-            break
-        end
-    end
-    converged || error("Kepler iteration did not converge")
+    anomaly = kepler_root(m, e)
     mean isa TaylorPolynomial || return anomaly
     expansion = zero(mean) + anomaly
     for _ in 1:ceil(Int, log2(truncation_order() + 1))

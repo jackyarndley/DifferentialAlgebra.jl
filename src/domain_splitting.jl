@@ -41,17 +41,20 @@ DomainNode(::Type{T}) where {T} = DomainNode(0, zero(T), 0, 0, 0)
 
 A piecewise Taylor approximation built by [`adaptive_map`](@ref).
 Its input subdomains form a partition, with one local Taylor map per patch.
-Call `map(point)` with physical coordinates to select and evaluate a patch.
+Call `map(point)` with a vector or tuple of physical coordinates to select and
+evaluate a patch.
 `patches` holds its [`TaylorPatch`](@ref)s; `converged` is true only if every
 patch meets the requested error estimate. `lower` and `upper` bound the domain.
 Numeric evaluation remains valid after the global algebra is reinitialized.
 Construction and refinement own the domain endpoints, including BigFloat data;
 `domain(map)` returns independent bounds.
+Accessing `map.patches` copies the vector; cache it once for repeated indexing.
 Shared faces belong to the lower child of a split. Extrapolation is rejected.
 `max_order(map)` is the requested retained order; `degree(map)` is the largest
-actual stored polynomial degree. Refinement defaults to the saved order and estimator.
+actual stored polynomial degree. Refinement inherits its construction options;
+explicit keywords override individual saved values.
 """
-struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator}
+struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator, O <: NamedTuple}
     lower::Vector{T}
     upper::Vector{T}
     patches::Vector{TaylorPatch{T, C}}
@@ -60,21 +63,28 @@ struct PiecewiseTaylorMap{T <: AbstractFloat, C <: Real, E <: ADSEstimator}
     _order::Int
     scalar::Bool
     _estimator::E
+    _options::O
     converged::Bool
 end
+# Public collections own their vector; kernels read the stored patches directly.
+ads_patches(map) = getfield(map, :patches)
+Base.getproperty(map::PiecewiseTaylorMap, name::Symbol) =
+    name === :patches ? copy(ads_patches(map)) : getfield(map, name)
 nvariables(map::PiecewiseTaylorMap) = length(map.lower)
-noutputs(map::PiecewiseTaylorMap) = noutputs(first(map.patches).map)
+noutputs(map::PiecewiseTaylorMap) = noutputs(first(ads_patches(map)).map)
 degree(map::PiecewiseTaylorMap) = map.max_degree
 max_order(map::PiecewiseTaylorMap) = map._order
 domain(map::PiecewiseTaylorMap) = (lower = deepcopy(map.lower), upper = deepcopy(map.upper))
 Base.copy(map::PiecewiseTaylorMap) = PiecewiseTaylorMap(
-    deepcopy(map.lower), deepcopy(map.upper), deepcopy(map.patches), deepcopy(map.nodes),
-    map.max_degree, map._order, map.scalar, map._estimator, map.converged
+    deepcopy(map.lower), deepcopy(map.upper),
+    deepcopy(ads_patches(map)), deepcopy(map.nodes),
+    map.max_degree, map._order, map.scalar, map._estimator,
+    deepcopy(map._options), map.converged
 )
 
 function Base.show(io::IO, map::PiecewiseTaylorMap)
     return print(
-        io, "PiecewiseTaylorMap(", length(map.patches), " patches, ",
+        io, "PiecewiseTaylorMap(", length(ads_patches(map)), " patches, ",
         noutputs(map), " outputs, ", nvariables(map), " variables, ",
         map.converged ? "converged" : "unresolved", ")"
     )
@@ -116,10 +126,11 @@ resource limits or unsplittable boxes throw an error. With `strict = false`,
 unresolved patches are retained with their status and `converged = false`.
 `max_depth` counts splits along a path; `max_patches` bounds the number of patches.
 
-Construction temporarily uses a separate global algebra and restores the
-caller's configuration and polynomials, including on failure. Do not change
-the algebra or its settings inside `f`, or construct maps concurrently with
-other polynomial calculations. Evaluation of completed maps is independent.
+Construction uses a task-local temporary algebra and restores the caller's
+configuration, including on failure. Independent builders and read-only
+polynomial calculations may overlap. Do not change the algebra or its settings
+inside `f`, or reinitialize the global default while readers use it. Evaluation
+of completed maps is independent.
 
 `estimator=IntervalBound()` selects the optional validated static-map method.
 Its callback accepts Taylor models, and its returned `PiecewiseTaylorModel`
@@ -137,21 +148,27 @@ function adaptive_map(f, lower::AbstractVector{<:Real}, upper::AbstractVector{<:
 end
 
 """
-    adaptive_map(f, previous::PiecewiseTaylorMap; order = max_order(previous), estimator = previous._estimator, kwargs...)
+    adaptive_map(f, previous::PiecewiseTaylorMap; kwargs...)
 
 Refine an existing partition using the same options as `adaptive_map(f, lower,
 upper)`. Each patch is reevaluated with `f`; the input map is unchanged. Existing
 boundaries are retained, and `max_depth` and `max_patches` apply to the entire
 tree. Supply the original function, not `previous` as a surrogate: subdividing
 an already truncated polynomial cannot recover missing information.
-The retained order defaults to the originally requested order, even if an output
-has accidentally lower degree; the estimator defaults to the saved selection.
+Order, estimator, tolerances, limits, guard degrees, point checks, splitter,
+strictness, names and table budget default to their saved construction values.
+The saved order can exceed the actual retained degree. Changing the estimator
+adopts compatible guard and point-check defaults unless explicitly overridden.
+Stored tolerance and name vectors are owned by each map.
 """
 function adaptive_map(
-        f, previous::PiecewiseTaylorMap; order::Integer = max_order(previous),
+        f, previous::PiecewiseTaylorMap;
         estimator::ADSEstimator = previous._estimator, kwargs...
     )
-    return ads_construct(StaticMap(f), previous.lower, previous.upper, previous; order, estimator, kwargs...)
+    options = ads_refinement_options(previous, estimator; kwargs...)
+    return ads_construct(
+        StaticMap(f), previous.lower, previous.upper, previous; estimator, options...
+    )
 end
 
 struct StaticMap{F}
@@ -190,7 +207,7 @@ function ads_construct(
     directions === nothing || throw(ArgumentError("Supply directions with splitter=:oriented"))
     options = ads_options(;
         order, atol, rtol, estimator, splitter, guard_order,
-        max_depth, max_patches, check_points, strict
+        max_depth, max_patches, check_points, strict, names, table_bytes
     )
     T = mapreduce(x -> typeof(float(x)), promote_type, Iterators.flatten((lower, upper)))
     T <: AbstractFloat && isconcretetype(T) || throw(ArgumentError("Bounds must convert to a concrete floating-point type"))
@@ -217,23 +234,23 @@ function ads_tolerances(::Type{C}, atol, rtol, n) where {C}
     atol isa Union{Real, AbstractVector{<:Real}} || throw(ArgumentError("atol must be a real scalar or vector"))
     a = atol isa Real ? fill(C(atol), n) : C.(collect(atol))
     length(a) == n || throw(DimensionMismatch("Provide one absolute tolerance per output"))
-    all(t -> isfinite(t) && t >= 0, a) || throw(ArgumentError("atol must be finite and nonnegative"))
-    all(t -> t > 0 || C(rtol) > 0, a) || throw(ArgumentError("Each output needs a positive tolerance"))
+    ads_check_atol(a, C(rtol), GuardedTail())
     isfinite(C(rtol)) || throw(ArgumentError("rtol is not representable in the coefficient type"))
     return a
 end
 
 function ads_outputs(value)
     result = value isa Real ? [value] : value
+    result isa AbstractVector && Base.require_one_based_indexing(result)
     result isa AbstractVector && !isempty(result) && all(x -> x isa Real, result) ||
         throw(ArgumentError("The map must return a real scalar or a nonempty vector of reals"))
-    Base.require_one_based_indexing(result)
     return result, value isa Real
 end
 
 function ads_check_context(ctx, order = ctx.basis.order)
-    CURRENT_ALGEBRA[] === ctx && ctx.cutoff == order && iszero(ctx.epsilon) &&
-        ctx.big_epsilon === nothing || throw(ArgumentError("The callback changed the algebra configuration"))
+    current_algebra() === ctx && working_order(ctx) == order &&
+        iszero(float_tolerance(ctx)) && big_tolerance(ctx) === nothing ||
+        throw(ArgumentError("The callback changed the algebra configuration"))
     return nothing
 end
 
@@ -244,6 +261,11 @@ function ads_geometry(lo, hi)
     radius = max.(center - lo, hi - center)
     return (; lo, hi, center, radius)
 end
+
+# Fixed physical coordinates have normalized value zero, including dual inputs.
+# Interval models use their own outward-rounded normalization in the extension.
+ads_normalize(value, center, radius) =
+    iszero(radius) ? zero(value) : (value - center) / radius
 
 function ads_analyze(value, box, options, ctx)
     values, scalar = ads_outputs(value)
@@ -277,7 +299,7 @@ function ads_probes(box)
             sign = axis > 0 ? (i == axis ? (isodd(probe) ? -1 : 1) : 0) :
                 (isodd(probe) ? -1 : 1) * (probe <= 2n + 2 || isodd(i) ? 1 : -1)
             point[i] = sign == 0 ? center[i] : sign < 0 ? lo[i] : hi[i]
-            normalized[i] = iszero(radius[i]) ? 0 : (point[i] - center[i]) / radius[i]
+            normalized[i] = ads_normalize(point[i], center[i], radius[i])
         end
         any(p -> p[1] == point, probes) || push!(probes, (point, normalized, axis))
     end
@@ -307,18 +329,30 @@ end
 function ads_assess(p, options)
     C = eltype(p.errors)
     tolerance = ads_tolerances(C, options.atol, options.rtol, length(p.errors)) .+ C(options.rtol) .* p.scale
-    accepted = all(j -> isfinite(p.errors[j]) && p.errors[j] <= tolerance[j], eachindex(tolerance))
+    accepted = true
+    for j in eachindex(tolerance)
+        if isfinite(p.errors[j]) && p.errors[j] <= tolerance[j]
+            for i in axes(p.contributions, 2)
+                p.contributions[j, i] = zero(C)
+            end
+        else
+            accepted = false
+        end
+    end
     return ADSCandidate(p.geometry, p.compiled, p.errors, p.contributions, tolerance, p.scalar, accepted)
 end
 
-function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
+function ads_static_fit(problem::StaticMap, box, x, ctx, options)
     p = ads_analyze(problem.f(box.center .+ box.radius .* x), box, options, ctx)
     if options.check_points
         probes = ads_probes(box)
         ads_check_points!(p, probes, (problem.f(point) for (point, _, _) in probes))
     end
     ads_check_context(ctx, options.working_order)
-    return ads_assess(p, options)
+    return p
+end
+function ads_candidate(problem::StaticMap, box, x, ctx, options, allow_split)
+    return ads_assess(ads_static_fit(problem, box, x, ctx, options), options)
 end
 
 ads_ratio(error, tolerance) = iszero(tolerance) ? (iszero(error) ? zero(error) : oftype(error, Inf)) : error / tolerance
@@ -326,9 +360,13 @@ ads_ratio(error, tolerance) = iszero(tolerance) ? (iszero(error) ? zero(error) :
 function ads_patch(map::PiecewiseTaylorMap, point)
     Base.require_one_based_indexing(point)
     length(point) == nvariables(map) || throw(DimensionMismatch("Provide one coordinate per domain dimension"))
-    all(i -> !(point[i] isa TaylorPolynomial) && map.lower[i] <= point[i] <= map.upper[i], eachindex(point)) ||
+    all(
+        i -> !(point[i] isa TaylorPolynomial) &&
+            map.lower[i] <= ads_primal_coordinate(point[i]) <= map.upper[i],
+        eachindex(point)
+    ) ||
         throw(DomainError(point, "Point lies outside the map domain"))
-    return map.patches[ads_point_patch(map.nodes, point)]
+    return ads_patches(map)[ads_point_patch(map.nodes, point)]
 end
 
 """
@@ -352,7 +390,7 @@ function evaluate!(
     end
     patch = ads_patch(map, point)
     for i in eachindex(normalized)
-        normalized[i] = iszero(patch.radius[i]) ? zero(R) : (point[i] - patch.center[i]) / patch.radius[i]
+        normalized[i] = ads_normalize(point[i], patch.center[i], patch.radius[i])
     end
     return evaluate!(out, patch.map, normalized, work)
 end
@@ -364,4 +402,6 @@ function evaluate(map::PiecewiseTaylorMap{T, C}, point::AbstractVector{<:Real}) 
     out = evaluate!(zeros(R, noutputs(map)), map, point)
     return map.scalar ? only(out) : out
 end
+evaluate(map::PiecewiseTaylorMap, point::Tuple{Vararg{Real}}) = evaluate(map, collect(point))
 (map::PiecewiseTaylorMap)(point::AbstractVector{<:Real}) = evaluate(map, point)
+(map::PiecewiseTaylorMap)(point::Tuple{Vararg{Real}}) = evaluate(map, point)

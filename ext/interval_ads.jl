@@ -4,6 +4,8 @@ struct ValidatedFit{I <: Interval}
     models::Vector{TaylorModel{I}}
 end
 
+DA.ads_interval_domain(a::DA.PiecewiseTaylorModel) = a._domain
+
 # Bound the original function minus its stored midpoint-coefficient polynomial.
 # All retained widths and the entire absolute remainder enter acceptance.
 function fit_error(a::TaylorModel{I}, powers) where {I <: Interval}
@@ -38,17 +40,25 @@ function validated_fit(f, inputs, reference, ctx, order)
     DA.ads_check_context(ctx, order)
     I = DA.coefficient_type(reference)
     powers = power_cache(reference._coordinates.normalized, maximum(DA.degree, models), I)
-    errors = Tuple(fit_error(m, powers) for m in models)
+    errors = [fit_error(m, powers) for m in models]
     return (; payload = ValidatedFit(models), errors, scalar)
 end
 
+function DA.ads_check_tolerance(t::Interval, rtol, estimator)
+    estimator isa DA.IntervalBound ||
+        throw(ArgumentError("Interval tolerances require IntervalBound"))
+    checked_interval(t; guaranteed = true)
+    IA.inf(t) > 0 ||
+        throw(ArgumentError("Absolute tolerances must be finite and strictly positive"))
+    return nothing
+end
 function validated_tolerances(::Type{I}, atol, n) where {I <: Interval}
     values = atol isa Real ? fill(atol, n) : atol
     values isa AbstractVector && length(values) == n || throw(DimensionMismatch("Provide one absolute tolerance per output"))
     Base.require_one_based_indexing(values)
     return map(values) do t
         v = checked_interval(asinterval(I, t); guaranteed = true)
-        IA.inf(v) > 0 || throw(ArgumentError("Absolute tolerances must be finite and strictly positive"))
+        DA.ads_check_tolerance(v, 0, DA.IntervalBound())
         IA.inf(v) # Conservative comparison, including for nonbinary rationals.
     end
 end
@@ -76,9 +86,15 @@ end
 fit_error_size(error::Interval) = IA.sup(abs(error))
 
 function validated_candidate(f, inputs, reference, geometry, ctx, options)
-    fit = validated_fit(f, inputs, reference, ctx, options.working_order)
-    models = fit.payload.models
     I = DA.coefficient_type(reference)
+    fit = try
+        validated_fit(f, inputs, reference, ctx, options.working_order)
+    catch err
+        err isa Union{DomainError, DA.TaylorError} || rethrow()
+        DA.ads_check_context(ctx, options.working_order)
+        return DA.ADSDomainFailure(geometry, err, zero(IA.numtype(I)))
+    end
+    models = fit.payload.models
     tolerance = validated_tolerances(I, options.atol, length(models))
     contributions = zeros(IA.numtype(I), length(models), length(reference._coordinates.box))
     for j in eachindex(models)
@@ -121,7 +137,10 @@ function DA.ads_local_patch(fit::ValidatedFit, box, errors, depth, status, order
     return DA.TaylorModelPatch(compile_models(fit.models), deepcopy(errors), depth, status)
 end
 function DA.ads_result(g::DA.BoxADS, patches::Vector{DA.TaylorModelPatch{I}}, nodes, scalar, options) where {I}
-    return DA.PiecewiseTaylorModel(g.root, Tuple(patches), nodes, options.order, scalar, options.estimator, all(p -> p.status == :converged, patches))
+    return DA.PiecewiseTaylorModel(
+        collect(g.root), patches, nodes, options.order, scalar, options.estimator,
+        DA.ads_saved_options(options), all(p -> p.status == :converged, patches)
+    )
 end
 
 function DA.interval_ads(
@@ -132,20 +151,22 @@ function DA.interval_ads(
         partition = nothing
     )
     validated_rounding()
-    box isa Union{Tuple, AbstractVector} && !isempty(box) || throw(ArgumentError("Supply a nonempty interval box"))
-    interval_box(box, length(box); guaranteed = true)
-    T = mapreduce(IA.numtype, promote_type, box)
-    T in (Float64, BigFloat) || throw(ArgumentError("Certified ADS supports Float64 or BigFloat endpoints"))
+    T = model_endpoint_type(box)
     options = DA.ads_options(;
         order, atol, rtol, estimator = DA.IntervalBound(), splitter,
-        guard_order, check_points, max_depth, max_patches, strict, splitters = (:tail, :width, :oriented)
+        guard_order, check_points, max_depth, max_patches, strict,
+        splitters = (:tail, :width, :oriented), names, table_bytes
     )
     original = Tuple(deepcopy(asinterval(Interval{T}, x)) for x in box)
     if splitter == :oriented
         partition === nothing || throw(ArgumentError("Refine a box partition with splitter=:tail or :width"))
         length(box) == 2 || throw(ArgumentError("Polygonal ADS currently supports two dimensions"))
         polygon = DA.polygon_box([IA.inf(x) for x in original], [IA.sup(x) for x in original])
-        return DA.polygon_construct(f, polygon; order, atol, estimator = DA.IntervalBound(), splitter, directions, max_depth, max_patches, strict, names, table_bytes)
+        return DA.polygon_construct(
+            f, polygon; order, atol, estimator = DA.IntervalBound(), splitter,
+            directions, max_depth, max_patches, strict, names, table_bytes,
+            interval_domain = original
+        )
     end
     directions === nothing || throw(ArgumentError("Supply directions with splitter=:oriented"))
     return DA.with_algebra(options.working_order, length(box); names, table_bytes) do ctx
@@ -170,22 +191,24 @@ function piecewise_query(a::DA.PiecewiseTaylorModel{I}, box; point = false) wher
     box isa AbstractVector && Base.require_one_based_indexing(box)
     length(box) == DA.nvariables(a) || throw(DimensionMismatch("Provide exactly one physical coordinate per dimension"))
     !point && interval_box(box, length(box); guaranteed = true)
-    query = Tuple(checked_interval(asinterval(I, x); guaranteed = true) for x in box)
-    point && any(x -> x isa Interval && !IA.isthin(x), box) && throw(ArgumentError("Use enclose for interval subboxes"))
+    query = Tuple(
+        point ? point_interval(I, box[i], a._domain[i]) :
+            checked_interval(asinterval(I, box[i]); guaranteed = true)
+            for i in eachindex(box)
+    )
     all(i -> IA.issubset_interval(query[i], a._domain[i]), eachindex(query)) || throw(DomainError(box, "Query lies outside the ADS validity domain"))
     result = nothing
     DA.ads_visit_intersections(a.nodes, (IA.inf.(query), IA.sup.(query))) do index
-        patch = a.patches[index]
-        intersection = Tuple(IA.intersect_interval(query[i], first(patch.models)._coordinates.box[i]; dec = :auto) for i in eachindex(query))
+        patch = DA.ads_patches(a)[index]
+        models = DA.model_snapshots(patch)
+        original = first(models)._coordinates.box
+        intersection = Tuple(
+            IA.intersect_interval(query[i], original[i]; dec = :auto)
+                for i in eachindex(query)
+        )
         any(IA.isempty_interval, intersection) && return nothing
-        bounds = snapshot_bounds(patch.models, intersection)
-        if result === nothing
-            result = bounds
-        else
-            for j in eachindex(bounds)
-                result[j] = IA.hull(result[j], bounds[j]; dec = :auto)
-            end
-        end
+        bounds = snapshot_bounds(models, intersection)
+        result = hull_outputs!(result, bounds)
         return nothing
     end
     result === nothing && throw(ErrorException("ADS partition did not cover the query"))

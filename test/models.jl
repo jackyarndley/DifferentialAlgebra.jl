@@ -1,0 +1,195 @@
+using Test, DifferentialAlgebra, IntervalArithmetic
+using ..Fixtures
+include("support/interval_products.jl")
+const IA = IntervalArithmetic
+const DA = DifferentialAlgebra
+contains(a, x) = IA.in_interval(x, a)
+sameinterval(a, b) = IA.isequal_interval(a, b)
+
+@testset "Interval norms, outward rounding and metadata" begin
+    for T in (Float64, BigFloat)
+        x, y = variables(Interval{T}, 2; order = 2)
+        for (c, lower, upper) in (
+                (interval(T, -3, 3), 4, 5),
+                (interval(T, 3, 5), 5, sqrt(big(41))),
+                (interval(T, 3), 5, 5),
+            )
+            p = c * x + 4y
+            norm = coefficient_norm(p, 2)
+            @test contains(norm, lower) && contains(norm, upper)
+            @test IA.inf(norm) >= lower * (1 - 10eps(T))
+            @test IA.sup(norm) <= upper * (1 + 10eps(T))
+        end
+        # Total degree and x-exponent grouping have different exact Pythagorean norms.
+        grouped = 3 + 4y + 5x^2
+        @test all(sameinterval.(DA.degree_norms(grouped, 0, 2), interval.(T, [3, 4, 5])))
+        @test all(sameinterval.(DA.degree_norms(grouped, 1, 2), interval.(T, [5, 0, 5])))
+        for c in (IA.setdecoration(interval(T, 3), IA.def), convert(Interval{T}, T(3)))
+            result = coefficient_norm(c * x + 4y, 2)
+            @test IA.decoration(result) == IA.decoration(c)
+            @test IA.isguaranteed(result) == IA.isguaranteed(c)
+        end
+        for scale in (ldexp(one(T), -1000), ldexp(one(T), 1000))
+            @test sameinterval(
+                coefficient_norm(3scale * x + 4scale * y, 2), interval(T, 5scale)
+            )
+        end
+        @test !isinteger(TaylorPolynomial{Interval{T}}(convert(Interval{T}, T(2))))
+    end
+end
+
+@testset "Analytic coefficients retain interval guarantees" begin
+    for budget in (0, 32 * 1024^2)
+        x, = variables(Interval{Float64}, 1; order = 3, table_bytes = budget)
+        square = x^(2 // 1)
+        @test all(k -> sameinterval(coefficient(square, [k]), interval(k == 2 ? 1 : 0)), 0:3)
+        for (power, expected) in (
+                (1 // 2, (1, 1 // 2, -1 // 8, 1 // 16)),
+                (1 // 3, (1, 1 // 3, -1 // 9, 5 // 81)),
+            )
+            result = (1 + x)^power
+            values = [coefficient(result, [k]) for k in 0:3]
+            @test all(contains.(values, expected))
+            @test all(c -> IA.isguaranteed(c) && IA.decoration(c) == IA.com, values)
+        end
+        for result in (exp(x), log(1 + x), sin(x))
+            @test all(c -> IA.isguaranteed(c) && IA.decoration(c) == IA.com, coefficients(result))
+        end
+    end
+end
+
+@testset "Model shortcut metadata and exact irrational points" begin
+    x, = taylor_models([interval(-1, 1)]; order = 2)
+    for (value, operation, expected) in ((2, a -> a^0, 1), (0, sqrt, 0))
+        model = TaylorModel(IA.setdecoration(interval(value), IA.def), x)
+        result = enclose(operation(model))
+        @test sameinterval(result, interval(expected))
+        @test IA.decoration(result) == IA.def && IA.isguaranteed(result)
+    end
+    @test_throws DomainError x((pi,))
+    # The scalar π is exact, unlike a stored BigFloat approximation. A point
+    # enclosure must retain enough precision to fit this narrow saved domain.
+    reference = setprecision(BigFloat, 512) do
+        BigFloat(pi)
+    end
+    setprecision(BigFloat, 192) do
+        x, = taylor_models([interval(BigFloat, pi)]; order = 1)
+        snapshot = compile(x)
+        setprecision(BigFloat, 64) do
+            @test contains(x((pi,)), reference)
+            @test contains(snapshot(Real[pi]), reference)
+            @test_throws DomainError snapshot((22 // 7,))
+        end
+    end
+end
+
+@testset "Absolute remainders independently of certificates" begin
+    for budget in (0, 32 * 1024^2)
+        x, y = taylor_models(
+            [interval(1, 2), interval(0, 1)]; order = 2, table_bytes = budget
+        )
+        # Exact dyadic coordinates; high-precision scalar values are independent
+        # of both the model polynomial and its separate range certificate.
+        for (m, f) in (
+                ((x + y)^3, t -> t^3), (inv(x + y + 1), t -> inv(t + 1)),
+                (log(x + y + 1), t -> log(t + 1)), (sqrt(x + y + 1), t -> sqrt(t + 1)),
+            )
+            P, R = polynomial(m), remainder(m)
+            for (a, b) in ((1 // 1, 0 // 1), (3 // 2, 1 // 2), (2 // 1, 1 // 1))
+                value = setprecision(512) do
+                    f(BigFloat(a) + BigFloat(b))
+                end
+                raw = P([interval(2a - 3), interval(2b - 1)]) + R
+                @test contains(raw, value)
+                @test contains(evaluate(m, [a, b]), value)
+            end
+            @test IA.isguaranteed(R) && IA.isguaranteed(enclose(m))
+        end
+    end
+    # Ownership and configuration do not depend on the multiplication backend.
+    x, = taylor_models([interval(1, 2)]; order = 2)
+    before = enclose(x)
+    p, box = polynomial(x), domain(x)
+    set_coefficient!(p, [0], 99); box[1] = interval(99)
+    @test sameinterval(enclose(x), before)
+    @test sameinterval(enclose(x + 2), interval(3, 4))
+    @test_throws ArgumentError x + 0.1
+    @test_throws DomainError evaluate(x, [3])
+    # Invalid domains must fail before initialization invalidates a live model.
+    @test_throws ArgumentError taylor_models([interval(Float32, 1, 2)]; order = 2)
+    @test sameinterval(enclose(x), before)
+    with_order(1) do
+        @test_throws ArgumentError x * x
+        @test sameinterval(enclose(x), before)
+    end
+end
+
+@testset "Wide compositions, fixed axes and model snapshots" begin
+    x, = taylor_models([interval(-10, 10)]; order = 12)
+    wide = cos(cos(cos(x)))
+    for point in (-10, 0, 10)
+        reference = cos(cos(cos(BigFloat(point))))
+        @test contains(
+            polynomial(wide)([interval(point // 10)]) + remainder(wide), reference
+        )
+    end
+    x, fixed = taylor_models([interval(2, 4), interval(7)]; order = 2)
+    snapshot = compile(x + fixed)
+    @test contains(snapshot([2, 7]), 9) && contains(snapshot([4, 7]), 11)
+    initialize!(2, 1)
+    @test contains(snapshot([3, 7]), 10)
+    @test_throws ArgumentError enclose(x)
+    x, = taylor_models([interval(16, 1.0e10)]; order = 7)
+    wide = log(log(log(x)))
+    @test contains(polynomial(wide)([interval(-1)]) + remainder(wide), log(log(log(BigFloat(16)))))
+    x, = taylor_models([interval(0.1, 0.3)]; order = 2)
+    # This labelled invariant test bypasses physical-domain queries and checks
+    # the full declared normalized box, which may round beyond physical endpoints.
+    coordinates = x._coordinates
+    cover = coordinates.center[1] + coordinates.radius[1] * coordinates.normalized[1]
+    @test IA.issubset_interval(cover, enclose(x))
+end
+
+@testset "Normalized powers and discarded product oracle" begin
+    ext = Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt)
+    for (a, power, endpoints) in (
+            (interval(-1, 1), 4, (0, 1)), (interval(-1, 1), 3, (-1, 1)),
+            (interval(0), 2, (0, 0)), (interval(1, 2), -1, (1 // 2, 1)),
+        )
+        @test sameinterval(ext.coordinate_power(a, power), interval(endpoints...))
+    end
+    # x²*y² is discarded at order two; its unit-box range is exactly [0,1].
+    for budget in (0, 32 * 1024^2)
+        x, y = taylor_models(
+            [interval(-1, 1), interval(-1, 1)]; order = 2, table_bytes = budget
+        )
+        m = (x * x) * (y * y)
+        @test sameinterval(remainder(m), interval(0, 1))
+        @test all(iszero, coefficients(polynomial(m)))
+        @test contains(enclose(m), 1)
+    end
+    x, y = variables(Interval{Float64}, 2; order = 2)
+    aterms = [((2, 0), (-1 // 2, 1 // 4)), ((0, 1), (1 // 2, 1 // 2))]
+    bterms = [((1, 0), (1 // 4, 3 // 4)), ((0, 2), (-1 // 4, -1 // 4))]
+    p = sum(interval(c...) * x^i * y^j for ((i, j), c) in aterms)
+    q = sum(interval(c...) * x^i * y^j for ((i, j), c) in bterms)
+    powers = ext.power_cache([interval(-1, 1), interval(-1, 1)], 4, Interval{Float64})
+    bounds = ext.unit_product_bounds(powers, 2, Interval{Float64})
+    expected = interval(Float64, rational_discarded_product(aterms, bterms, ((-1, 1), (-1, 1)), 2)...)
+    actual = ext.discarded_unit_bound(p, q, 2, bounds, Interval{Float64})
+    @test sameinterval(actual, expected)
+    @test sameinterval(
+        ext.decorated_discarded_unit_bound(p, q, 2, bounds, Interval{Float64}), expected
+    )
+end
+
+@testset "Unsafe interval rounding fails before evaluation" begin
+    x, = taylor_models([interval(-1, 1)]; order = 2)
+    IA.configure(; rounding = :none)
+    try
+        @test_throws ArgumentError enclose(x)
+        @test_throws ArgumentError coefficient_norm(polynomial(x), 2)
+    finally
+        IA.configure(; rounding = :correct)
+    end
+end

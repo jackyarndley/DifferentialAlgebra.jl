@@ -5,7 +5,8 @@
 Construct a shared evaluation tree for repeated evaluation or composition.
 Call `map(point)` or [`evaluate`](@ref) to evaluate it. Numeric evaluation remains
 valid after algebra reinitialization because the map owns its coefficients.
-Polynomial composition requires its original algebra.
+It does not keep an obsolete monomial basis or multiplication tables alive.
+Polynomial composition requires its original algebra to remain active.
 
 `noutputs`, `degree`, `nvariables` and `nnodes` inspect its output dimension,
 maximum degree, highest variable index and number of evaluation-tree nodes.
@@ -16,7 +17,7 @@ struct CompiledMap{T <: Real}
     indices::Vector{Int}
     depth::Int
     nvars::Int
-    algebra::Algebra
+    algebra::WeakRef
 end
 CompiledMap(a::Union{TaylorPolynomial, AbstractVector{<:TaylorPolynomial}}) = compile(a)
 CompiledMap(map::CompiledMap) = copy(map)
@@ -24,6 +25,8 @@ Base.copy(map::CompiledMap) = CompiledMap(
     copy(map.coefficients), copy(map.levels),
     copy(map.indices), map.depth, map.nvars, map.algebra
 )
+Base.deepcopy_internal(map::CompiledMap, copies::IdDict) =
+    get!(() -> copy(map), copies, map)
 """
     noutputs(map::CompiledMap)
 
@@ -55,8 +58,7 @@ Build a [`CompiledMap`](@ref) from a polynomial or vector of polynomials.
 function compile(polynomials::AbstractVector{<:TaylorPolynomial})
     isempty(polynomials) && throw(ArgumentError("Cannot compile an empty map"))
     owners = collect(polynomials)
-    ctx = valid(first(owners)); basis = ctx.basis
-    all(a -> valid(a) === ctx, owners) || throw(ArgumentError("Different polynomial contexts"))
+    ctx = compatible(owners); basis = ctx.basis
     T = mapreduce(coefficient_type, promote_type, owners)
     return compile_map(T, owners, ctx, basis)
 end
@@ -76,7 +78,9 @@ function compile_map(::Type{T}, owners, ctx, basis) where {T}
         k <= a.len && (coefficients[row, column] = coefficient_convert(T, a.coeffs[k]))
     end
     levels, indices = basis.degrees[nodes], basis.factors[nodes]
-    return CompiledMap(coefficients, levels, indices, maximum(levels), maximum(indices), ctx)
+    return CompiledMap(
+        coefficients, levels, indices, maximum(levels), maximum(indices), WeakRef(ctx)
+    )
 end
 compile(a::TaylorPolynomial) = compile([a])
 
@@ -87,9 +91,10 @@ compile(a::TaylorPolynomial) = compile([a])
 Evaluate a compiled map into `result`. The three-argument method allocates
 intermediate storage and also supports composition. The four-argument method
 evaluates numerically into reusable buffers.
-`result` must have `DifferentialAlgebra.noutputs(map)` entries and `work` at least
-`DifferentialAlgebra.degree(map)+1` entries. Output, workspace and inputs must
-not overlap. The output and workspace have the same scalar element type.
+`result` must have `noutputs(map)` entries and `work` at least
+`DifferentialAlgebra.degree(map)+1` entries. In the four-argument method,
+output, workspace and inputs must not overlap, and output and workspace must
+have the same scalar element type.
 Scalar arithmetic may allocate even when these buffers are reused.
 Use [`evaluate`](@ref) for polynomial composition.
 """
@@ -101,7 +106,11 @@ function evaluate!(out::AbstractVector{T}, map::CompiledMap, args::AbstractVecto
     (Base.mightalias(out, args) || Base.mightalias(work, args) || Base.mightalias(out, work)) &&
         throw(ArgumentError("Output, inputs and workspace must not alias"))
     n = noutputs(map)
-    length(out) == n && length(work) >= map.depth + 1 || throw(DimensionMismatch("Invalid workspace"))
+    length(out) == n ||
+        throw(DimensionMismatch("Output has $(length(out)) entries; expected $n"))
+    length(work) >= map.depth + 1 || throw(
+        DimensionMismatch("Workspace needs at least $(map.depth + 1) entries")
+    )
     return if length(args) >= map.nvars
         evaluate_numeric!(out, map, args, work, Val(true))
     else
@@ -118,7 +127,9 @@ function evaluate_numeric!(out::AbstractVector{T}, map, args, work, ::Val{COMPLE
         depth, var = map.levels[i], map.indices[i]
         work[depth + 1] = COMPLETE || var <= length(args) ? work[depth] * coefficient_operand(T, args[var]) : zero(T)
         for j in 1:n
-            out[j] += work[depth + 1] * coefficient_operand(T, map.coefficients[j, i])
+            c = map.coefficients[j, i]
+            coefficient_iszero(c) && continue
+            out[j] += work[depth + 1] * coefficient_operand(T, c)
         end
     end
     return out
@@ -139,27 +150,39 @@ the first variable and treats the rest as zero. `p(coordinates)` and
 `map(coordinates)` provide call syntax. Use [`evaluate!`](@ref) to fill a buffer.
 """
 function evaluate(map::CompiledMap{T}, args::AbstractVector{<:Real}) where {T}
+    Base.require_one_based_indexing(args)
     if any(x -> x isa TaylorPolynomial, args)
+        ctx = composition_algebra(map)
         R = foldl((S, x) -> promote_type(S, x isa TaylorPolynomial ? coefficient_type(x) : typeof(x)), args; init = T)
-        return evaluate(map, TaylorPolynomial{R}.(args))
+        coordinates = [
+            x isa TaylorPolynomial ? TaylorPolynomial{R}(x) :
+                TaylorPolynomial{R}([coefficient_convert(R, x)], 1, ctx)
+                for x in args
+        ]
+        return evaluate(map, coordinates)
     end
     R = evaluation_type(T, args)
     return evaluate!(zeros(R, noutputs(map)), map, args, zeros(R, map.depth + 1))
 end
 
-function compose(map::CompiledMap{T}, args::AbstractVector{<:TaylorPolynomial}, cutoff::Int) where {T}
+function composition_algebra(map::CompiledMap)
+    ctx = map.algebra.value
+    ctx isa Algebra && algebra_active(ctx) ||
+        throw(ArgumentError("Compiled map belongs to a previous initialization"))
+    return ctx
+end
+function compose(map::CompiledMap{T}, args::AbstractVector{<:TaylorPolynomial}, cutoff::Int; filter::Bool = true) where {T}
     Base.require_one_based_indexing(args)
-    ctx = map.algebra
-    ctx.active || throw(ArgumentError("Compiled map belongs to a previous initialization"))
+    ctx = composition_algebra(map)
     all(a -> valid(a) === ctx, args) || throw(ArgumentError("Different polynomial contexts"))
     R = foldl((S, a) -> promote_type(S, coefficient_type(a)), args; init = T)
     return if isempty(ctx.basis.products)
-        compose_map(R, map, args, ctx, cutoff, Val(false))
+        compose_map(R, map, args, ctx, cutoff, Val(false); filter)
     else
-        compose_map(R, map, args, ctx, cutoff, Val(true))
+        compose_map(R, map, args, ctx, cutoff, Val(true); filter)
     end
 end
-function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where {T, TABLE}
+function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}; filter::Bool = true) where {T, TABLE}
     n = noutputs(map); capacity = ctx.basis.ends[cutoff + 1]
     result = [allocate(ctx, T, capacity) for _ in 1:n]
     @inbounds for j in 1:n
@@ -181,12 +204,11 @@ function compose_map(::Type{T}, map, args, ctx, cutoff, table::Val{TABLE}) where
             c = map.coefficients[j, i]
             coefficient_iszero(c) && continue
             for k in active[depth + 1]
-                value = result[j].coeffs[k] + c * work[depth + 1].coeffs[k]
-                result[j].coeffs[k] = keep(value, ctx) ? value : zero(T)
+                result[j].coeffs[k] += c * work[depth + 1].coeffs[k]
             end
         end
     end
-    foreach(finish!, result)
+    foreach(p -> finish!(p; filter), result)
     return result
 end
 
@@ -212,7 +234,7 @@ function sparse_multiply!(out::TaylorPolynomial{T}, oi, a, ai, b, bi, marks, sta
     end
     n, last = 0, 1
     @inbounds for k in oi
-        if keep(out.coeffs[k], out.algebra)
+        if !coefficient_iszero(out.coeffs[k])
             n += 1; oi[n] = k; last = max(last, k)
         else
             out.coeffs[k] = zero(T)
@@ -222,28 +244,73 @@ function sparse_multiply!(out::TaylorPolynomial{T}, oi, a, ai, b, bi, marks, sta
     out.len = last
     return out
 end
-evaluate(map::CompiledMap, args::AbstractVector{<:TaylorPolynomial}) = compose(map, args, map.algebra.cutoff)
-evaluate(a::TaylorPolynomial, args::AbstractVector{<:Real}) = only(evaluate(compile(a), args))
+evaluate(map::CompiledMap, args::AbstractVector{<:TaylorPolynomial}) =
+    compose(map, args, working_order(composition_algebra(map)))
+function evaluate(a::TaylorPolynomial{T}, args::AbstractVector{<:Real}) where {T}
+    Base.require_one_based_indexing(args)
+    any(x -> x isa TaylorPolynomial, args) && return only(evaluate(compile(a), args))
+    basis = valid(a).basis
+    R = evaluation_type(T, args)
+    # Reuse the basis traversal when it costs less than rebuilding each nonzero
+    # monomial from its powers. Neither path constructs a compiled snapshot.
+    terms = count(!coefficient_iszero, @view(a.coeffs[1:a.len]))
+    terms * basis.variables >= length(basis.traversal) &&
+        return evaluate_dense(a, args, R)
+    value = convert(R, coefficient_operand(R, a.coeffs[1]))
+    @inbounds for k in 2:a.len
+        c = a.coeffs[k]
+        coefficient_iszero(c) && continue
+        monomial = one(R)
+        for v in 1:basis.variables
+            power = basis.exponents[v, k]
+            iszero(power) && continue
+            if v > length(args)
+                monomial = zero(R)
+                break
+            end
+            monomial *= coefficient_power(coefficient_operand(R, args[v]), power)
+        end
+        value += monomial * coefficient_operand(R, c)
+    end
+    return value
+end
+function evaluate_dense(a::TaylorPolynomial, args, ::Type{R}) where {R}
+    basis = a.algebra.basis
+    work = Vector{R}(undef, basis.degrees[a.len] + 1)
+    work[1] = one(R)
+    value = convert(R, coefficient_operand(R, a.coeffs[1]))
+    @inbounds for k in basis.traversal
+        (k == 1 || k > a.len) && continue
+        depth, variable = basis.degrees[k], basis.factors[k]
+        work[depth + 1] = variable <= length(args) ?
+            work[depth] * coefficient_operand(R, args[variable]) : zero(R)
+        c = a.coeffs[k]
+        coefficient_iszero(c) && continue
+        value += work[depth + 1] * coefficient_operand(R, c)
+    end
+    return value
+end
 evaluate(a::AbstractVector{<:TaylorPolynomial}, args::AbstractVector{<:Real}) = evaluate(compile(a), args)
-evaluate(a::TaylorPolynomial, value::Real) = evaluate(a, [value])
-evaluate(a::Union{CompiledMap, AbstractVector{<:TaylorPolynomial}}, value::Real) = evaluate(a, [value])
+evaluate(a::Union{TaylorPolynomial, CompiledMap, AbstractVector{<:TaylorPolynomial}}, value::Real) = evaluate(a, [value])
 function evaluate!(result::AbstractVector, map::CompiledMap, args::AbstractVector{<:Real})
     values = evaluate(map, args)
     length(values) == length(result) || throw(DimensionMismatch("Invalid output length"))
     return copyto!(result, values)
 end
 
-function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:TaylorPolynomial})
+function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:TaylorPolynomial}; filter::Bool = true)
     Base.require_one_based_indexing(A, x)
     size(A, 2) == length(x) || throw(DimensionMismatch("Linear map dimensions differ"))
-    ctx = valid(first(x))
+    ctx = compatible(x)
     T = foldl((R, a) -> promote_type(R, coefficient_type(a)), x; init = eltype(A))
-    result = [allocate(ctx, T) for _ in axes(A, 1)]
+    capacity = min(maximum(a -> a.len, x), ctx.basis.ends[working_order(ctx) + 1])
+    result = [allocate(ctx, T, capacity) for _ in axes(A, 1)]
     for j in eachindex(x), i in eachindex(result)
         c = A[i, j]
         coefficient_iszero(c) && continue
-        weighted_sum!(result[i], result[i], one(T), x[j], c)
+        weighted_sum!(result[i], result[i], one(T), x[j], c; filter = false)
     end
+    foreach(p -> finish!(p; filter), result)
     return result
 end
 """
@@ -257,24 +324,34 @@ A partial map is completed with identity coordinates before inversion.
 function invert(f::AbstractVector{<:TaylorPolynomial})
     Base.require_one_based_indexing(f)
     isempty(f) && throw(DimensionMismatch("An empty map cannot be inverted"))
-    ctx = valid(first(f)); nv = ctx.basis.variables
+    ctx = compatible(f); nv = ctx.basis.variables
     1 <= length(f) <= nv || throw(DimensionMismatch("Map dimension exceeds the independent variables"))
-    all(a -> valid(a) === ctx, f) || throw(ArgumentError("Different polynomial contexts"))
     T = mapreduce(coefficient_type, promote_type, f)
     if length(f) < nv
-        return invert(vcat(f, [variable(i, T) for i in (length(f) + 1):nv]))[1:length(f)]
+        identities = [TaylorPolynomial{T}(ctx, i, one(T); filter = false) for i in (length(f) + 1):nv]
+        return invert(vcat(f, identities))[1:length(f)]
     end
-    x = [variable(i, T) for i in 1:nv]
+    x = [TaylorPolynomial{T}(ctx, i, one(T); filter = false) for i in 1:nv]
     c, A = constant_term.(f), linear_part(f)
-    Ainv = lu(A) \ Matrix{T}(I, nv, nv)
-    linear_inverse = _linear_transform(Ainv, x)
-    nonlinear = compile(_linear_transform(Ainv, trim.(f, 2)))
-    result = linear_inverse
-    # Explicit local orders avoid changing the context or racing other readers.
-    for degree in 2:ctx.cutoff
-        result = linear_inverse - compose(nonlinear, result, degree)
+    Ainv = try
+        lu(A) \ Matrix{T}(I, nv, nv)
+    catch error
+        error isa LinearAlgebra.SingularException || rethrow()
+        throw(TaylorError("Cannot invert a map with a singular linear part"))
     end
-    return compose(compile(result), x - c, ctx.cutoff)
+    linear_inverse = _linear_transform(Ainv, x; filter = false)
+    nonlinear = compile(_linear_transform(Ainv, trim.(f, 2; filter = false); filter = false))
+    result = copy.(linear_inverse)
+    # Explicit local orders avoid changing the context or racing other readers.
+    for degree in 2:working_order(ctx)
+        correction = compose(nonlinear, result, degree; filter = false)
+        for i in eachindex(result)
+            R = coefficient_type(result[i])
+            weighted_sum!(result[i], linear_inverse[i], one(R), correction[i], -one(R); order = degree, filter = false)
+        end
+    end
+    shifted = [scalar_sum(x[i], c[i], Val(:subtract); filter = false) for i in eachindex(x)]
+    return compose(compile(result), shifted, working_order(ctx))
 end
 
 # Call syntax delegates to the same numeric evaluation and composition methods.

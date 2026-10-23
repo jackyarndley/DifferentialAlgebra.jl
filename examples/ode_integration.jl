@@ -7,25 +7,18 @@
 using DifferentialAlgebra
 using OrdinaryDiffEqVerner
 using SciMLBase: successful_retcode
+using LinearAlgebra
 using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 
-# Normalized Kepler equations: acceleration = -μ r / |r|³.
-function kepler_ode!(du, u, μ, _)
-    radius2 = u[1]^2 + u[2]^2 + u[3]^2
-    factor = -μ / (radius2 * sqrt(radius2))
-    for i in 1:3
-        du[i] = u[i + 3]
-        du[i + 3] = factor * u[i]
-    end
-    return nothing
-end
+# Shared Kepler equations: acceleration = -μ r / |r|³.
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 
 μ = 1.0
 initial = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
 timespan = (0.0, 2π)
-problem = ODEProblem(kepler_ode!, initial, timespan, μ)
+problem = ODEProblem(two_body!, initial, timespan, μ)
 nominal = solve(
     problem, Vern9(); abstol = 1.0e-12, reltol = 1.0e-12,
     saveat = range(timespan...; length = 161), save_everystep = false
@@ -59,6 +52,14 @@ stm = constant_term.(jacobian(final))
 println("Maximum nominal orbit error: ", maximum(abs.(constants - initial)))
 println("State transition matrix:")
 show(stdout, MIME"text/plain"(), stm); println()
+
+# Hamiltonian Kepler flow preserves the canonical symplectic form. This checks
+# the entire STM against an independent structural invariant, not just its size.
+identity3 = Matrix{Float64}(I, 3, 3)
+symplectic_form = [zeros(3, 3) identity3; -identity3 zeros(3, 3)]
+symplectic_error = norm(stm' * symplectic_form * stm - symplectic_form, Inf)
+@assert symplectic_error < 1.0e-7
+println("STM symplectic residual: ", symplectic_error)
 
 # ## Linear and nonlinear sensitivity
 #

@@ -12,19 +12,11 @@ using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 
-function nominal_root(mean, e)
-    E = mean
-    for _ in 1:30
-        step = (E - e * sin(E) - mean) / (1 - e * cos(E))
-        E -= step
-        abs(step) < 2.0e-15 && return E
-    end
-    error("Nominal root did not converge")
-end
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "kepler.jl"))
 
 δE, δe, s = variables((:δE, :δe, :s); order = 10)
 mean, e0 = π / 2, 0.3
-E0 = nominal_root(mean, e0)
+E0 = kepler_root(mean, e0)
 slope = sin(E0) / (1 - e0 * cos(E0))
 tangent = [slope, 1.0] / hypot(slope, 1.0)
 E, e = E0 + δE, e0 + δe

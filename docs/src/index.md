@@ -1,48 +1,46 @@
 # DifferentialAlgebra.jl
 
-DifferentialAlgebra.jl computes multivariate Taylor expansions using ordinary
-Julia arithmetic. A polynomial carries its coefficients through a calculation,
-so its output describes both a value and its local dependence on the inputs.
+Compute a Taylor expansion by running ordinary Julia code on polynomial inputs.
+The resulting coefficients give local sensitivities and a reusable approximation
+for nearby inputs. Applications include implicit equations, orbit uncertainty,
+automatic domain splitting (ADS) and numerical integration.
 
-Use it to differentiate expressions, compose and invert polynomial maps, or
-propagate an expansion through a numerical integrator. The coefficient type is
-a parameter of `TaylorPolynomial{T}`; see [Coefficient types](manual/coefficient-types.md).
+## Start here
 
-## Installation
-
-Julia 1.10 or later is required.
+Install with Julia 1.12 or later:
 
 ```julia
 using Pkg
 Pkg.add(url = "https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```
 
-## A first calculation
-
 ```@example introduction
 using DifferentialAlgebra
-x, y = variables(2; order=6)
-p = sin(x) * exp(y)
-(coefficient(p, [1, 1]), p([0.1, 0.2]))
+δx, δy = variables((:δx, :δy); order=6)
+p = sin(1 + δx) * exp(δy)
+(value = p([0.1, 0.2]), gradient = constant_term(gradient(p)))
 ```
 
-Here `x` and `y` are independent perturbations about zero. The algebra retains
-monomials through total degree six.
+The variables represent perturbations about `(1, 0)`. All retained monomials
+have total degree at most six. See [Getting started](manual/getting-started.md)
+for coefficients, derivatives and algebra lifetime.
 
-Start with [Getting started](manual/getting-started.md), then explore the
-[tutorials grouped by topic](examples.md) or the [API reference](api.md).
+## Choose a workflow
 
-## Astrodynamics examples
+| Goal | Read | Worked result |
+|:--|:--|:--|
+| Build and reuse local maps | [Polynomial maps](manual/maps.md) | [Implicit Kepler solution and sensitivities](generated/implicit_maps.md) |
+| Propagate uncertain states | [Time expansions](manual/time-expansions.md) | [Orbit map and state transition matrix](generated/ode_integration.md) |
+| Cover a large input region | [Domain splitting](manual/domain-splitting.md) | [Estimator and geometry comparison](generated/ads_methods.md) |
+| Enclose the original function | [Intervals and Taylor models](manual/interval-models.md) | [Certified fitting and error bands](generated/interval_models.md) |
+| Use smooth local fits in an optimizer | [Continuous ADS](manual/continuous-ads.md) | [C2 objective and analytical minimizer](generated/ads_optimization.md) |
 
-Explore [six-variable orbital-element uncertainty](generated/six_variable_ephemeris.md)
-with linear and cubic maps, analytic polynomial moments and interval enclosures.
-Follow [injection uncertainty under J2 gravity](generated/j2_uncertainty.md) through
-inclined orbits, ground tracks and local-frame dispersion.
+Polynomial truncation, numerical integration error and interval-certified
+remainders are distinct. Each manual states the contract of its calculation.
 
-For ADS, compare the four error methods on an
-[inclined orbital ribbon with polygon splitting](generated/orbit_polygon_ads.md),
-or classify [B-plane flyby uncertainty](generated/flyby_uncertainty.md) using
-guaranteed altitude bounds. Static-function certificates and numerical orbit
-propagation have separate error contracts throughout these tutorials.
+The [tutorial catalog](examples.md) includes six-variable uncertainty, CR3BP
+flow maps, polygonal orbital ribbons and angles-only orbit determination.
+Use the [API reference](api.md) for signatures and the
+[migration guide](migration.md) when updating existing code.
 
 ![Polygon uncertainty mapped into an inclined orbital ribbon](generated/orbit_polygon_ads-figure-2.png)

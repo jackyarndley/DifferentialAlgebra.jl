@@ -6,6 +6,8 @@ initial parameter domain when an error indicator fails at a checkpoint.
 `initial(parameters)` returns the initial scalar or vector state;
 `advance(state, (tstart, tend))` propagates it over one interval and returns
 the same shape. Both callbacks must work with numbers and Taylor polynomials.
+Returned states are copied before retention, so callbacks may reuse their
+result buffers between calls without changing an earlier trajectory.
 `times` is a finite, strictly monotone vector, with at least two entries;
 backward propagation is supported. An adaptive ODE solve can implement `advance`.
 
@@ -57,6 +59,8 @@ and the restart-on-split policy are the same. With point checks enabled,
 independent numeric trajectories are advanced to each monitored time; this
 can cost substantially more than coefficient-only monitoring. Validate the
 final map on independent trajectories whichever estimator is chosen.
+The numeric propagations run from inside `monitor`, so `advance` must keep
+each active call's integration state independent when point checks are enabled.
 """
 function adaptive_flow(advance, initial, lower::AbstractVector{<:Real}, upper::AbstractVector{<:Real}, tspan::Tuple{Real, Real}; kwargs...)
     all(isfinite, tspan) && tspan[1] != tspan[2] || throw(ArgumentError("Provide distinct finite start and end times"))
@@ -71,19 +75,20 @@ end
 
 ads_continue(state, time) = false
 
+# A callback may reuse its result buffer on the next invocation. Keep each
+# propagated trajectory independent, including polynomial coefficient storage.
+function ads_flow_state(value)
+    values, scalar = ads_outputs(value)
+    return scalar ? copy(value) : copy.(values)
+end
+
 function ads_flow_result(result, time)
     result isa NamedTuple && haskey(result, :state) && haskey(result, :time) ||
         throw(ArgumentError("An online propagator must return (; state, time)"))
     result.time == time || throw(ArgumentError("The propagator returned an unexpected stopping time"))
-    return result.state
+    return ads_flow_state(result.state)
 end
 
-function ads_same_shape(p, first_patch)
-    p.scalar == first_patch.scalar && length(p.errors) == length(first_patch.errors) ||
-        throw(DimensionMismatch("The flow changed output shape"))
-    eltype(p.errors) === eltype(first_patch.errors) || throw(ArgumentError("The flow changed coefficient type"))
-    return nothing
-end
 
 function ads_flow_check(value, box, probes, states, ctx, options)
     p = ads_analyze(value, box, options, ctx)
@@ -93,9 +98,9 @@ function ads_flow_check(value, box, probes, states, ctx, options)
 end
 
 function ads_candidate(problem::CheckpointFlow, box, x, ctx, options, allow_split)
-    state = problem.initial(box.center .+ box.radius .* x)
+    state = ads_flow_state(problem.initial(box.center .+ box.radius .* x))
     probes = options.check_points ? ads_probes(box) : nothing
-    numeric_states = options.check_points ? [problem.initial(point) for (point, _, _) in probes] : nothing
+    numeric_states = options.check_points ? [ads_flow_state(problem.initial(point)) for (point, _, _) in probes] : nothing
     first_patch = ads_flow_check(state, box, probes, numeric_states, ctx, options)
     p = first_patch
     errors = copy(p.errors)
@@ -104,9 +109,9 @@ function ads_candidate(problem::CheckpointFlow, box, x, ctx, options, allow_spli
         # Never translate a failed, already truncated trajectory into children.
         !p.accepted && allow_split && return p
         span = (problem.times[k], problem.times[k + 1])
-        state = problem.advance(state, span)
+        state = ads_flow_state(problem.advance(state, span))
         if options.check_points
-            numeric_states = [problem.advance(u, span) for u in numeric_states]
+            numeric_states = [ads_flow_state(problem.advance(u, span)) for u in numeric_states]
         end
         p = ads_flow_check(state, box, probes, numeric_states, ctx, options)
         ads_same_shape(p, first_patch)
@@ -117,9 +122,9 @@ function ads_candidate(problem::CheckpointFlow, box, x, ctx, options, allow_spli
 end
 
 function ads_candidate(problem::MonitoredFlow, box, x, ctx, options, allow_split)
-    state = problem.initial(box.center .+ box.radius .* x)
+    state = ads_flow_state(problem.initial(box.center .+ box.radius .* x))
     probes = options.check_points ? ads_probes(box) : nothing
-    numeric_states = options.check_points ? [problem.initial(point) for (point, _, _) in probes] : nothing
+    numeric_states = options.check_points ? [ads_flow_state(problem.initial(point)) for (point, _, _) in probes] : nothing
     first_patch = ads_flow_check(state, box, probes, numeric_states, ctx, options)
     !first_patch.accepted && allow_split && return first_patch
     errors = copy(first_patch.errors)
@@ -134,6 +139,7 @@ function ads_candidate(problem::MonitoredFlow, box, x, ctx, options, allow_split
         isfinite(time) && direction * (time - previous_time[]) >= 0 &&
             direction * (last(problem.tspan) - time) >= 0 ||
             throw(ArgumentError("Monitor times must progress toward the end of tspan"))
+        value = ads_flow_state(value)
         if options.check_points && time != previous_time[]
             span = (previous_time[], time)
             for i in eachindex(numeric_states)
