@@ -7,6 +7,33 @@ function interval_box(box, n; guaranteed = false)
     return box
 end
 
+# Exact geometric coordinates omit interval metadata. After validating every
+# input (including NG rejection), preserve its minimum decoration in projected
+# domains and query results without changing endpoints or guarantee flags.
+function retain_decoration!(values, domain)
+    domain isa Union{Tuple, AbstractVector} || return values
+    decoration = minimum(
+        x -> x isa Interval ? IA.decoration(checked_interval(x; guaranteed = true)) : IA.com,
+        domain; init = IA.com
+    )
+    for i in eachindex(values)
+        values[i] = IA.setdecoration(values[i], min(IA.decoration(values[i]), decoration))
+    end
+    return values
+end
+
+# Validate before initializing an algebra, so invalid input cannot invalidate
+# the caller's polynomials. ADS and direct models use the same endpoint policy.
+function model_endpoint_type(box)
+    box isa Union{Tuple, AbstractVector} && !isempty(box) ||
+        throw(ArgumentError("Supply a nonempty interval box"))
+    interval_box(box, length(box); guaranteed = true)
+    T = mapreduce(IA.numtype, promote_type, box)
+    T in (Float64, BigFloat) ||
+        throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
+    return T
+end
+
 function DA.enclose(p::TaylorPolynomial, box)
     validated_rounding()
     b = DA.valid(p).basis
@@ -44,10 +71,7 @@ function model_result(
 end
 function coordinate_models(box, order)
     validated_rounding()
-    box isa Union{Tuple, AbstractVector} && !isempty(box) || throw(ArgumentError("Supply a nonempty interval box"))
-    interval_box(box, length(box); guaranteed = true)
-    T = mapreduce(IA.numtype, promote_type, box)
-    T in (Float64, BigFloat) || throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
+    T = model_endpoint_type(box)
     I = Interval{T}
     physical = [deepcopy(asinterval(I, x)) for x in box]
     centers = [
@@ -75,10 +99,7 @@ function coordinate_models(box, order)
 end
 function DA.taylor_models(box; order::Integer, names = nothing, table_bytes::Integer = 32 * 1024^2)
     validated_rounding()
-    box isa Union{Tuple, AbstractVector} && !isempty(box) || throw(ArgumentError("Supply a nonempty interval box"))
-    interval_box(box, length(box); guaranteed = true)
-    T = mapreduce(IA.numtype, promote_type, box)
-    T in (Float64, BigFloat) || throw(ArgumentError("Taylor models support Float64 or BigFloat endpoints"))
+    model_endpoint_type(box)
     DA.initialize!(order, length(box); names, table_bytes)
     return coordinate_models(box, order)
 end
@@ -513,6 +534,16 @@ function snapshot_bounds(
     normalized = normalized_box(first(models), box)
     powers = power_cache(normalized, maximum(DA.degree, models), I)
     return [deepcopy(model_bound(m, powers, I)) for m in models]
+end
+
+# Query results own their storage. Hulling every intersecting closed patch
+# preserves both boundary coverage and the minimum input decoration.
+function hull_outputs!(result, values)
+    result === nothing && return values
+    for j in eachindex(result, values)
+        result[j] = IA.hull(result[j], values[j]; dec = :auto)
+    end
+    return result
 end
 
 # Polynomial functions enclose coefficient arithmetic only. They do not acquire

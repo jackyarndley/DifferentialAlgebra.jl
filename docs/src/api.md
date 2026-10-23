@@ -43,6 +43,8 @@ hessian
 
 ## Maps and linear algebra
 
+Use `DifferentialAlgebra.eigenpairs` for polynomial eigenpairs.
+
 ```@docs
 evaluate
 evaluate!
@@ -105,6 +107,8 @@ blend_weights
 
 ## Statistical moments
 
+These operations use the `DifferentialAlgebra.` prefix.
+
 ```@docs
 raw_moments
 central_moments
@@ -118,17 +122,16 @@ roots, exponentials, logarithms, trigonometric and hyperbolic functions. Load
 SpecialFunctions.jl for error functions, gamma functions and integer-order
 Bessel functions. Availability depends on the corresponding scalar methods.
 
-The following supported, documented operations use the `DifferentialAlgebra.`
-prefix rather than exports. This catalog identifies the qualified API.
+The following operations also use the `DifferentialAlgebra.` prefix.
 
-| Function | Purpose |
-|:--|:--|
-| `trim(p, low, high)` | Retain a range of total degrees |
-| `substitute(p, i, value)` | Evaluate one variable at a scalar |
-| `translate_variable(p, i, scale, shift)` | Substitute `scale*x[i] + shift` |
-| `nthroot(p, n)` | Expand an integer-order root |
-| `degree_norms(p)` | Group coefficient norms by degree |
-| `bounds(p)` | Heuristic monomial bounds on `[-1, 1]`; floating rounding is not enclosed |
-| `estimate_norms(p)` | Estimate coefficient growth heuristically |
-| `multiindices(order, n)` | Enumerate exponent vectors through a total degree |
-| `hessian_tensor(map)` | Stack component Hessians along a third dimension |
+```@docs
+trim
+substitute
+translate_variable
+nthroot
+degree_norms
+bounds
+estimate_norms
+multiindices
+hessian_tensor
+```

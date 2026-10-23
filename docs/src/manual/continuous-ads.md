@@ -1,141 +1,99 @@
 # Continuous ADS surrogates
 
-Independent ADS expansions need not agree on a face. For optimization, use
-[`continuous_map`](@ref) to construct an optional overlapping approximation of
-the original static function. It supports ordinary box ADS, interval box ADS
-and 2D oriented/polygon ADS. The original partition and its evaluation behavior
-are preserved.
+Independent ADS expansions can disagree at shared faces. For a smooth objective,
+reevaluate the original function on overlapping supports and blend the local fits
+with [`continuous_map`](@ref). Ordinary boxes, certified boxes and 2D polygons
+are supported; the source partition is unchanged.
 
 ```@example continuous_ordinary
 using DifferentialAlgebra, ForwardDiff
-f(v) = exp(v[1] + v[2]) + (v[1] - v[2])^2
-fit = adaptive_map(f, [-1.0, -1.0], [1.0, 1.0]; order = 3, atol = 1e-4)
-smooth = continuous_map(f, fit; continuity = :c2, order = 4)
-smooth([0.2, -0.1])
-ForwardDiff.gradient(smooth, [0.2, -0.1])
-ForwardDiff.hessian(smooth, [0.2, -0.1])
+f(v) = exp(v[1]+v[2]) + (v[1]-v[2])^2
+fit = adaptive_map(f, [-1.0, -1.0], [1.0, 1.0]; order=3, atol=1e-4)
+smooth = continuous_map(f, fit; continuity=:c2, order=4)
+(value = smooth([0.2, -0.1]),
+ gradient = ForwardDiff.gradient(smooth, [0.2, -0.1]),
+ hessian = ForwardDiff.hessian(smooth, [0.2, -0.1]))
 ```
 
-| Option | Regularity of the blended surrogate | Compact taper on `0 ≤ t ≤ 1` |
+| Setting | Surrogate regularity | Taper on `0 ≤ t ≤ 1` |
 |:--|:--|:--|
-| `continuity=:c0` | Continuous values | `1-t` |
-| `continuity=:c1` | Continuous values and first derivatives | `(1-t)^2*(1+2t)` |
-| `continuity=:c2` (default) | Continuous values, first and second derivatives | `(1-t)^3*(1+3t+6t^2)` |
+| `:c0` | Continuous values | `1-t` |
+| `:c1` | Continuous values and gradients | `(1-t)^2*(1+2t)` |
+| `:c2` (default) | Continuous values, gradients and Hessians | `(1-t)^3*(1+3t+6t^2)` |
 
-These guarantees concern the ideal real surrogate defined by exact rational
-geometry and stored local coefficients. Numeric evaluation, including
-ForwardDiff, has ordinary floating rounding. C1/C2 regularity does **not** imply
-accurate gradients/Hessians of the original function. Enlarging supports can
-make derivative accuracy worse; higher local order or a finer source partition
-can help. No original-function derivative error is certified.
+Smoothness concerns the ideal real surrogate defined by stored coefficients.
+Floating evaluation has rounding error. C1/C2 alone says nothing about the
+accuracy of derivatives of the original function; compare them independently.
 
-## Construction and continuity proof
+## Construction and continuity
 
-Each original box subdomain is a core rectangle. For a polygon subdomain, the
-core is its bounding rectangle in the source's fixed projected frame `z=B*x`.
-`overlap=1//4` adds a quarter of the **full core width** on either side,
-clipped to the projected root rectangle. The callback is reevaluated on each
-new support, using the native polynomial engine. The same frame is retained;
-the inverse `B⁻¹` maps projected inputs to physical inputs. Supports may extend
-beyond a physical polygon, so the callback must be valid on their entire covers.
-Fixed box coordinates have constant weight one and zero normalized coordinate.
+The original subdomains supply core rectangles, projected into the fixed frame
+for polygon ADS. `overlap=1//4` adds one quarter of each full core width on both
+sides, clipped to the projected root rectangle. The callback must be valid on
+every complete support, which may extend outside a physical polygon.
+Fixed coordinates have weight one.
 
-For each coordinate, set the weight to one inside its core, taper it to zero
-across either overlap margin, and extend it by zero outside the support. Take
-the product across coordinates to obtain `w_i`, and define
+Each weight is one in its core, tapers to zero across the overlap and is zero
+outside its support. Coordinate weights multiply to give `w_i`. Normalize them:
 
 ```math
-\lambda_i(x)=\frac{w_i(x)}{\sum_j w_j(x)},\qquad
+\lambda_i(x)=\frac{w_i(x)}{\sum_jw_j(x)},\qquad
 S(x)=\sum_i\lambda_i(x)P_i(x).
 ```
 
-The tapers are nonnegative. For Ck, their first k derivatives vanish at both
-endpoints; their values join the constant-one plateau and constant-zero exterior.
-Their products therefore are Ck. Every physical point lies in an original
-subdomain, and hence in a core with weight one, so the denominator is at least one.
-Normalization by this positive Ck function and multiplication by polynomials
-preserve Ck regularity, including shared faces, T-junctions and polygon corners.
-Continuity is relative to the declared physical domain, including one-sided
-behavior at its boundary. The construction does not require independently
-computed patch jets to match.
+The Ck taper's first k derivatives vanish at its endpoints. Every physical point
+lies in a core with weight one, so the denominator is at least one. Products,
+normalization and polynomial blending preserve Ck at faces, T-junctions and
+corners, relative to the declared domain. Independently computed jets need not match.
 
-The result is a partition-of-unity function, generally a piecewise rational
-function rather than a polynomial. `max_order(smooth)` gives its retained local
-order; `degree(smooth)` fails explicitly. `blend_weights(smooth, point)` returns
-the normalized weights for inspection. Public evaluation requires exactly one
-finite scalar coordinate per variable and rejects points outside the physical
-domain. ForwardDiff's optional extension supports nested dual queries for
-gradients and Hessians. Loading DifferentialAlgebra alone loads neither
-ForwardDiff nor IntervalArithmetic and does not initialize an algebra.
+The blend is generally piecewise rational. `max_order(smooth)` reports local
+polynomial order; `degree(smooth)` is undefined. `blend_weights(smooth, point)`
+returns all normalized weights. Queries require exactly one finite coordinate
+per variable inside the physical domain; ForwardDiff supports nested duals.
 
-## Function accuracy and interval certificates
+## Errors on the enlarged supports
 
-For ordinary sources, `smooth.error_estimate` reports the recomputed heuristic
-overlap indicators. For interval sources, use:
+Fresh overlap fits have fresh errors. An accepted source tolerance is **not
+inherited**. Use `atol` to check the new errors; without it, construction only
+reports them. On failure, refine the source, increase local order or reduce
+overlap. Automatic overlap refinement and `rtol` are unsupported.
+
+Ordinary sources report heuristic `smooth.error_estimate`. Certified sources
+retain original-function certificates:
 
 ```@example continuous_certified
-using DifferentialAlgebra, IntervalArithmetic, ForwardDiff
-f(v) = (v[1] + v[2])^2
+using DifferentialAlgebra, IntervalArithmetic
+f(v) = (v[1]+v[2])^2
 fit = adaptive_map(f, fill(interval(-1, 1), 2);
-    estimator = IntervalBound(), splitter = :oriented, order = 1, atol = 1//64)
-smooth = continuous_map(f, fit; continuity = :c2, atol = 1//16)
-smooth([1//4, 1//4])                # Numeric surrogate S
-smooth.error_bounds                 # Uniform original-function error f-S
-enclose(smooth, [1//4, 1//4])        # Original function f at this point
-enclose(smooth)                      # Original function f on the full domain
+    estimator=IntervalBound(), splitter=:oriented, order=1, atol=1//64)
+smooth = continuous_map(f, fit; continuity=:c2, atol=1//16)
+(surrogate = smooth([1//4, 1//4]), error = smooth.error_bounds,
+ original_function = enclose(smooth, [1//4, 1//4]))
 ```
 
-Each fresh interval-coefficient Taylor model retains its domain and entire
-absolute remainder. Local callback normalization, model validation and fit-error
-assessment are shared with ADS candidates, while overlap construction stays
-separate from the ADS splitter. The default retained order and estimator come
-from the source map, including when its actual polynomial degree is lower.
-
-Stored coefficient midpoints define the **explicitly
-requested numeric surrogate**; the model certificates retain coefficient widths
-and all remainders. This does not introduce a midpoint-coefficient model backend
-or use midpoint extraction in validated arithmetic.
-
-On support i, the previously documented ADS error formula proves
-`f(x)-P_i(x) ∈ E_i`, including retained coefficient uncertainty. Since
-the normalized weights are nonnegative and sum to one,
+Coefficient midpoints define the explicitly requested numeric surrogate; the
+certificates retain coefficient widths and full remainders. If
+`f(x)-P_i(x) ∈ E_i` on support i, nonnegative weights summing to one give
 
 ```math
-f(x)-S(x)=\sum_i\lambda_i(x)(f(x)-P_i(x))
-\in\operatorname{hull}_i E_i.
+f(x)-S(x)=\sum_i\lambda_i(x)(f(x)-P_i(x))\in\operatorname{hull}_i E_i.
 ```
 
-This gives the uniform `smooth.error_bounds` separately for each output.
-It bounds error relative to the ideal real surrogate, not floating evaluation
-roundoff. `enclose(smooth, query)` instead encloses the **original function** by
-hulling fresh certificates on all intersecting supports, keeping their full
-remainders. It accepts physical points, interval subboxes and, for two variables,
-convex subpolygons; it rejects wrong dimensions and outside-domain queries.
-No continuity of the resulting interval endpoints is claimed.
+`smooth.error_bounds` encloses this ideal-surrogate error per output, excluding
+floating evaluation roundoff. `enclose(smooth, query)` instead hulls the fresh
+certificates to enclose the original function. It accepts points, interval
+subboxes and, in 2D, convex subpolygons. Interval endpoints need not be continuous.
+Function bounds certify neither derivatives nor a minimizer.
 
-Enlarged supports have new errors: an accepted source tolerance does not imply
-the same tolerance for the blend. Supply `atol` to check the newly computed
-bounds (or heuristic estimates for ordinary sources). Failure throws with
-suggestions to refine the original map, increase local order or reduce overlap.
-Omitting `atol` still reports errors but makes no new tolerance assertion.
-`rtol` and automatic refinement of overlap fits are not implemented. Domain
-failures on a complete overlap cover also throw.
+## Storage and examples
 
-The wrapper owns its compiled polynomials, certificates and geometry. `copy`
-and domain/error accessors own their storage; changing a source map cannot
-change the wrapper. Snapshots survive algebra reinitialization. Internal arrays
-are read-only implementation data. Construction uses a task-local temporary
-algebra and restores the caller's configuration, including on failure.
-Numeric evaluation and certified enclosure queries use a balanced tree of
-outward support bounds. Floating filters exclude distant supports; ambiguous
-face checks use exact rational geometry. Numeric evaluation allocates in
-proportion to the supports visited, while `blend_weights` returns a full vector.
-The original ordinary DA buffer/allocation guarantees are unchanged.
+The wrapper owns compiled fits, geometry and certificates, survives algebra
+reinitialization and copies data returned by domain/error accessors. Internal
+arrays are read-only. Construction uses a private scoped algebra and restores
+the caller's binding on failure. Query trees exclude distant supports; evaluation
+cost depends on supports visited, while `blend_weights` returns a full vector.
 
-The [continuity example](../generated/ads_continuity.md) plots values, gradients,
-Hessians and original-function interval bands. The
-[optimization example](../generated/ads_optimization.md) compares box and
-oriented partitions and uses a C2 objective with damped Newton steps. Its
-function-value bounds do not prove a minimizer or certify its gradients.
-`benchmark/continuous_ads.jl` measures construction, numeric evaluation,
-AD derivatives and enclosure width separately, including six-variable box ADS.
+The [continuity tutorial](../generated/ads_continuity.md) compares values,
+gradients and Hessians across joins. The [optimization tutorial](../generated/ads_optimization.md)
+compares box/polygon partitions and damped Newton convergence against an
+analytical minimizer, with function certificates shown separately.

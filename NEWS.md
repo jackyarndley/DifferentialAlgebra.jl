@@ -5,7 +5,8 @@
 This release removes legacy APIs and tightens numerical and ownership contracts.
 See the [migration guide](docs/src/migration.md) for replacement calls and defaults.
 
-Julia 1.12 or later is required.
+Julia 1.12 or later is required. The optional ForwardDiff integration requires
+ForwardDiff 1; support for 0.10 has been removed.
 
 - Temporary construction algebras are scoped and inherited by child tasks.
   Working orders and coefficient tolerances belong to their owning algebra.
@@ -38,5 +39,5 @@ Julia 1.12 or later is required.
 
 Optional integrations remain supported. SciML integration environments
 require OrdinaryDiffEqCore 4.18, DiffEqBase 7.21.2 and SciMLBase 3.53 or later compatible
-releases. Standalone ForwardDiff supports 0.10.36 and 1. IntervalArithmetic is limited
-to compatible 1.0 patches from 1.0.12 while its rounding configuration is checked.
+releases. IntervalArithmetic is limited to compatible 1.0 patches from 1.0.12
+while its rounding configuration is checked.

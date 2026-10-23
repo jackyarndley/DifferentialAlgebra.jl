@@ -58,8 +58,7 @@ Build a [`CompiledMap`](@ref) from a polynomial or vector of polynomials.
 function compile(polynomials::AbstractVector{<:TaylorPolynomial})
     isempty(polynomials) && throw(ArgumentError("Cannot compile an empty map"))
     owners = collect(polynomials)
-    ctx = valid(first(owners)); basis = ctx.basis
-    all(a -> valid(a) === ctx, owners) || throw(ArgumentError("Different polynomial contexts"))
+    ctx = compatible(owners); basis = ctx.basis
     T = mapreduce(coefficient_type, promote_type, owners)
     return compile_map(T, owners, ctx, basis)
 end
@@ -93,8 +92,9 @@ Evaluate a compiled map into `result`. The three-argument method allocates
 intermediate storage and also supports composition. The four-argument method
 evaluates numerically into reusable buffers.
 `result` must have `noutputs(map)` entries and `work` at least
-`DifferentialAlgebra.degree(map)+1` entries. Output, workspace and inputs must
-not overlap. The output and workspace have the same scalar element type.
+`DifferentialAlgebra.degree(map)+1` entries. In the four-argument method,
+output, workspace and inputs must not overlap, and output and workspace must
+have the same scalar element type.
 Scalar arithmetic may allocate even when these buffers are reused.
 Use [`evaluate`](@ref) for polynomial composition.
 """
@@ -150,9 +150,16 @@ the first variable and treats the rest as zero. `p(coordinates)` and
 `map(coordinates)` provide call syntax. Use [`evaluate!`](@ref) to fill a buffer.
 """
 function evaluate(map::CompiledMap{T}, args::AbstractVector{<:Real}) where {T}
+    Base.require_one_based_indexing(args)
     if any(x -> x isa TaylorPolynomial, args)
+        ctx = composition_algebra(map)
         R = foldl((S, x) -> promote_type(S, x isa TaylorPolynomial ? coefficient_type(x) : typeof(x)), args; init = T)
-        return evaluate(map, TaylorPolynomial{R}.(args))
+        coordinates = [
+            x isa TaylorPolynomial ? TaylorPolynomial{R}(x) :
+                TaylorPolynomial{R}([coefficient_convert(R, x)], 1, ctx)
+                for x in args
+        ]
+        return evaluate(map, coordinates)
     end
     R = evaluation_type(T, args)
     return evaluate!(zeros(R, noutputs(map)), map, args, zeros(R, map.depth + 1))
@@ -284,8 +291,7 @@ function evaluate_dense(a::TaylorPolynomial, args, ::Type{R}) where {R}
     return value
 end
 evaluate(a::AbstractVector{<:TaylorPolynomial}, args::AbstractVector{<:Real}) = evaluate(compile(a), args)
-evaluate(a::TaylorPolynomial, value::Real) = evaluate(a, [value])
-evaluate(a::Union{CompiledMap, AbstractVector{<:TaylorPolynomial}}, value::Real) = evaluate(a, [value])
+evaluate(a::Union{TaylorPolynomial, CompiledMap, AbstractVector{<:TaylorPolynomial}}, value::Real) = evaluate(a, [value])
 function evaluate!(result::AbstractVector, map::CompiledMap, args::AbstractVector{<:Real})
     values = evaluate(map, args)
     length(values) == length(result) || throw(DimensionMismatch("Invalid output length"))
@@ -295,7 +301,7 @@ end
 function _linear_transform(A::AbstractMatrix{<:Real}, x::AbstractVector{<:TaylorPolynomial})
     Base.require_one_based_indexing(A, x)
     size(A, 2) == length(x) || throw(DimensionMismatch("Linear map dimensions differ"))
-    ctx = valid(first(x))
+    ctx = compatible(x)
     T = foldl((R, a) -> promote_type(R, coefficient_type(a)), x; init = eltype(A))
     capacity = min(maximum(a -> a.len, x), ctx.basis.ends[working_order(ctx) + 1])
     result = [allocate(ctx, T, capacity) for _ in axes(A, 1)]
@@ -317,9 +323,8 @@ A partial map is completed with identity coordinates before inversion.
 function invert(f::AbstractVector{<:TaylorPolynomial})
     Base.require_one_based_indexing(f)
     isempty(f) && throw(DimensionMismatch("An empty map cannot be inverted"))
-    ctx = valid(first(f)); nv = ctx.basis.variables
+    ctx = compatible(f); nv = ctx.basis.variables
     1 <= length(f) <= nv || throw(DimensionMismatch("Map dimension exceeds the independent variables"))
-    all(a -> valid(a) === ctx, f) || throw(ArgumentError("Different polynomial contexts"))
     T = mapreduce(coefficient_type, promote_type, f)
     if length(f) < nv
         identities = [TaylorPolynomial{T}(ctx, i, one(T)) for i in (length(f) + 1):nv]

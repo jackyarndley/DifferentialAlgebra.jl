@@ -4,6 +4,8 @@ struct ValidatedFit{I <: Interval}
     models::Vector{TaylorModel{I}}
 end
 
+DA.ads_interval_domain(a::DA.PiecewiseTaylorModel) = a._domain
+
 # Bound the original function minus its stored midpoint-coefficient polynomial.
 # All retained widths and the entire absolute remainder enter acceptance.
 function fit_error(a::TaylorModel{I}, powers) where {I <: Interval}
@@ -149,10 +151,7 @@ function DA.interval_ads(
         partition = nothing
     )
     validated_rounding()
-    box isa Union{Tuple, AbstractVector} && !isempty(box) || throw(ArgumentError("Supply a nonempty interval box"))
-    interval_box(box, length(box); guaranteed = true)
-    T = mapreduce(IA.numtype, promote_type, box)
-    T in (Float64, BigFloat) || throw(ArgumentError("Certified ADS supports Float64 or BigFloat endpoints"))
+    T = model_endpoint_type(box)
     options = DA.ads_options(;
         order, atol, rtol, estimator = DA.IntervalBound(), splitter,
         guard_order, check_points, max_depth, max_patches, strict,
@@ -163,7 +162,11 @@ function DA.interval_ads(
         partition === nothing || throw(ArgumentError("Refine a box partition with splitter=:tail or :width"))
         length(box) == 2 || throw(ArgumentError("Polygonal ADS currently supports two dimensions"))
         polygon = DA.polygon_box([IA.inf(x) for x in original], [IA.sup(x) for x in original])
-        return DA.polygon_construct(f, polygon; order, atol, estimator = DA.IntervalBound(), splitter, directions, max_depth, max_patches, strict, names, table_bytes)
+        return DA.polygon_construct(
+            f, polygon; order, atol, estimator = DA.IntervalBound(), splitter,
+            directions, max_depth, max_patches, strict, names, table_bytes,
+            interval_domain = original
+        )
     end
     directions === nothing || throw(ArgumentError("Supply directions with splitter=:oriented"))
     return DA.with_algebra(options.working_order, length(box); names, table_bytes) do ctx
@@ -202,13 +205,7 @@ function piecewise_query(a::DA.PiecewiseTaylorModel{I}, box; point = false) wher
         )
         any(IA.isempty_interval, intersection) && return nothing
         bounds = snapshot_bounds(models, intersection)
-        if result === nothing
-            result = bounds
-        else
-            for j in eachindex(bounds)
-                result[j] = IA.hull(result[j], bounds[j]; dec = :auto)
-            end
-        end
+        result = hull_outputs!(result, bounds)
         return nothing
     end
     result === nothing && throw(ErrorException("ADS partition did not cover the query"))

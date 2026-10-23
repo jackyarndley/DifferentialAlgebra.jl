@@ -141,13 +141,8 @@ function continuity_layout(a::PiecewisePolygonMap)
     ]
     return (domain = domain(a), bounds = (collect(lo), collect(hi)), B, A, cores, scalar = a._scalar)
 end
-continuity_estimator(a::PiecewiseTaylorMap) = a._estimator
-continuity_estimator(a::PiecewiseTaylorModel) = a._estimator
-continuity_estimator(a::PiecewisePolygonMap) = a._estimator
 continuity_scalar_type(a::PiecewiseTaylorMap{T}) where {T} = T
 continuity_scalar_type(a::PiecewisePolygonMap{T}) where {T} = T
-function continuity_layout end
-function continuity_scalar_type end
 
 # Exact widening is clipped to the projected root cover. Fixed coordinates
 # have weight one and never divide by a zero radius.
@@ -224,7 +219,7 @@ function continuous_map(
         f, fit::Union{PiecewiseTaylorMap, PiecewiseTaylorModel, PiecewisePolygonMap};
         continuity::Symbol = :c2, overlap::Real = 1 // 4,
         order::Integer = max_order(fit), atol = nothing,
-        estimator::ADSEstimator = continuity_estimator(fit),
+        estimator::ADSEstimator = fit._estimator,
         guard_order::Integer = estimator isa GuardedTail ? 2 : 0,
         check_points::Bool = !(estimator isa IntervalBound), names = nothing,
         table_bytes::Integer = 32 * 1024^2
@@ -242,6 +237,7 @@ function continuous_map(
     options = (;
         order = Int(order), working_order = Int(order + guard_order),
         atol, rtol = 0, estimator, T, check_points, names, table_bytes,
+        interval_domain = ads_interval_domain(fit),
     )
     return with_algebra(Int(order + guard_order), length(layout.bounds[1]); names, table_bytes) do ctx
         patches = nothing
@@ -274,13 +270,10 @@ function continuous_map(
     end
 end
 
-continuity_primal(x::Union{Integer, Rational, AbstractFloat}) = x
-continuity_primal(x::AbstractIrrational) = ads_coordinate(x)
-continuity_primal(x) = throw(ArgumentError("Provide scalar physical coordinates; use enclose for intervals and load ForwardDiff for dual queries"))
 function continuity_point(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == nvariables(a) || throw(DimensionMismatch("Provide exactly one physical coordinate per variable"))
     point isa AbstractVector && Base.require_one_based_indexing(point)
-    x = polygon_real.(continuity_primal.(point))
+    x = polygon_real.(ads_primal_coordinate.(point))
     inside = a._domain isa ConvexPolygon ? polygon_contains(a._domain, x) : all(i -> a._bounds[1][i] <= x[i] <= a._bounds[2][i], eachindex(x))
     inside || throw(DomainError(point, "Point lies outside the continuity map domain"))
     return [sum(a._directions[i, j] * x[j] for j in eachindex(x)) for i in eachindex(x)]
@@ -293,7 +286,7 @@ function continuity_query(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == nvariables(a) ||
         throw(DimensionMismatch("Provide exactly one physical coordinate per variable"))
     point isa AbstractVector && Base.require_one_based_indexing(point)
-    x = continuity_primal.(point)
+    x = ads_primal_coordinate.(point)
     all(isfinite, x) || throw(ArgumentError("Physical coordinates must be finite"))
     bounds = ads_float_bounds(x)
     lower, upper = a._root_bounds
@@ -334,7 +327,7 @@ function continuity_side(a, p, point, bounds, i)
 end
 function continuity_weight(a, p, z, point, bounds, order)
     T = eltype(z)
-    cached = continuity_primal(first(z)) isa Float64
+    cached = coefficient_primal(first(z)) isa Float64
     weight = one(first(z))
     for i in eachindex(z)
         side = continuity_side(a, p, point, bounds, i)
@@ -357,7 +350,7 @@ function continuity_coordinates(a, point)
     primal, bounds = continuity_query(a, point)
     T = evaluation_type(eltype(first(a._patches).center), point)
     coordinates = T[point...]
-    B = continuity_primal(first(coordinates)) isa Float64 ?
+    B = coefficient_primal(first(coordinates)) isa Float64 ?
         a._float_directions : T.(a._directions)
     z = B * coordinates
     indices = continuity_indices(a, bounds)
@@ -385,8 +378,8 @@ function evaluate(a::ContinuousTaylorMap, point)
     result = zeros(R, noutputs(a))
     for (index, w) in zip(indices, weights)
         p = a._patches[index]
-        iszero(continuity_primal(w)) && continue
-        normalized = [iszero(p.radius[i]) ? zero(z[i]) : (z[i] - p.center[i]) / p.radius[i] for i in eachindex(z)]
+        iszero(coefficient_primal(w)) && continue
+        normalized = ads_normalize.(z, p.center, p.radius)
         result .+= w .* evaluate(p.map, normalized)
     end
     result ./= sum(weights)

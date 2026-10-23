@@ -1,383 +1,228 @@
 # Intervals and Taylor models
 
-Install and load the optional IntervalArithmetic dependency (compatible series
-`1.0.12` and later `1.0.x` patches). DifferentialAlgebra alone neither loads it nor
-initializes an algebra. TaylorSeries and TaylorModels are not dependencies.
+Load optional IntervalArithmetic (`1.0.12` or later `1.0.x`) for interval
+coefficients and function enclosures. Validated operations require its default
+`rounding=:correct`; other modes are rejected without changing the setting.
+Do not change rounding or algebra settings during a calculation.
 
-```julia
-using DifferentialAlgebra, IntervalArithmetic
-```
+## Choose what to enclose
 
-Validated norms, enclosures and model operations require the default
-`IntervalArithmetic.configure(rounding=:correct)` policy. Other rounding modes
-are rejected, including non-rigorous `:none`; the initial implementation also
-leaves `:ulp` unsupported. The extension checks the setting without changing it.
-Do not change interval rounding or algebra configuration during a calculation.
+| Calculation | Meaning |
+|:--|:--|
+| `enclose(p, box)` | Range of the stored polynomial, including its stored coefficients |
+| `TaylorPolynomial{Interval{T}}` | Truncated polynomial with interval coefficient arithmetic |
+| `TaylorModel` | Original function represented by a polynomial plus an absolute remainder |
 
-## Three distinct calculations
-
-`TaylorPolynomial{Float64}`, `TaylorPolynomial{BigFloat}` and
-`TaylorPolynomial{Interval{T}}` use the same representation and polynomial
-arithmetic kernels. Interval coefficients enclose coefficient uncertainty and
-supported rounding operations; terms above the working order are still discarded.
-`TaylorModel` adds an absolute remainder and validity-domain/normalization
-metadata around an interval-coefficient polynomial.
-
-The order-one product explains why those extra data matter:
+The order-one square makes the distinction explicit:
 
 ```@example interval_distinction
 using DifferentialAlgebra, IntervalArithmetic
 box = [interval(-1, 1)]
-p, = variables(Interval{Float64}, 1; order = 1)
-enclose(p * p, box)              # [0,0]: x² was discarded
+p, = variables(Interval{Float64}, 1; order=1)
+enclose(p*p, box)              # [0,0]: degree-two terms were discarded
 ```
 
 ```@example interval_distinction
-x, = taylor_models(box; order = 1)
-m = x * x
+x, = taylor_models(box; order=1)
+m = x*x
 (polynomial(m), remainder(m), enclose(m))  # zero polynomial, [0,1], [0,1]
 ```
 
-The remainder encloses the discarded square throughout the declared domain.
-Interval coefficients alone do not certify truncation error.
+Interval coefficients enclose supported coefficient arithmetic, but do not bound
+truncation. For example, enclosing an ordinary `sin(p)` polynomial does not enclose
+the original sine function. Reevaluating an expression with model inputs propagates
+its remainder at every operation.
 
-`enclose(p, box)` rigorously encloses the **stored polynomial** on an explicit
-box of decorated intervals. It does not recover terms previously truncated by
-DA or bound an unknown generating function. For example, `enclose(sin(x), box)`
-encloses the computed finite Taylor polynomial of sine, not sine itself.
-
-`variables(Interval{Float64}, n; order)` gives polynomials with interval-valued
-coefficients. Construction, promotion, sums, products, division at regular
-constant intervals, integer powers, calculus, substitution, composition,
-evaluation, `exp`, `log`, `sin`, `cos`, and `sqrt` support coefficient arithmetic.
-These polynomials still have ordinary truncation semantics and no function
-remainder. Other coefficient operations depend on scalar methods and may fail;
-there is no midpoint fallback. Only coefficients proved to be valid, guaranteed
-exact zero are skipped. An interval containing zero is retained. Approximate
-coefficient tolerance never filters interval coefficients.
-
-Taylor models retain an absolute remainder and a validity domain:
+## Build and query a model
 
 ```@example interval_models
 using DifferentialAlgebra, IntervalArithmetic
 box = [interval(Float64, -1//4, 1//4), interval(Float64, -1//8, 1//8)]
-x, y = taylor_models(box; order = 3, names = (:x, :y))
-m = exp(x + y) * cos(x * y)
-enclose(m)                       # Uniform enclosure of the original expression
-evaluate(m, [0, 0])              # Interval enclosure at a physical point
-enclose(m, [interval(Float64, 0, 1//4), interval(0)])
-polynomial(m)                    # Independent copy in normalized coordinates
-remainder(m)                     # Absolute remainder, including truncation
-domain(m)                        # Independent copy of the physical box
+x, y = taylor_models(box; order=3, names=(:x, :y))
+m = exp(x+y)*cos(x*y)
+(whole_domain = enclose(m), point = m([0, 0]),
+ subbox = enclose(m, [interval(Float64, 0, 1//4), interval(0)]))
 ```
 
-## Input semantics and guarantees
+`polynomial(m)` returns an independent polynomial in normalized coordinates;
+`remainder(m)` returns the absolute interval error and `domain(m)` the physical
+box. Restricting a query keeps the entire remainder. To improve it, reevaluate
+the original expression on a smaller domain.
 
-Float64 and BigFloat interval endpoints are supported. BareInterval is not a
-real coefficient type and is deliberately unsupported. Boxes must be finite,
-nonempty decorated intervals of the correct dimension. NaI, empty, unbounded
-and loose-evaluation (`trv`) intervals fail explicitly.
+`compile(m)` creates an owned `CompiledTaylorModel` for numeric evaluation and
+enclosure after algebra reinitialization. It does not support arithmetic or
+composition. Live models follow `variables`' lifetime rules; `taylor_models`
+reinitializes the algebra. Binary model arithmetic requires the same coordinate
+family and retained order. If the working order changed, wrap arithmetic in
+`with_order(max_order(m)) do ... end`; enclosure queries still inspect the stored model.
 
-An ordinary floating value denotes its stored binary value. In particular,
-`interval(0.1)` is a thin enclosure of the binary Float64 `0.1`, which is greater
-than the decimal real `1/10`. Use `interval(1//10)` or `I"0.1"` to enclose that
-decimal real. Already-rounded ordinary coefficients cannot recover earlier
-rounding or truncation errors.
+## Constants, domains and guarantee flags
 
-`enclose(p, box)` and `TaylorModel(p, R, reference)` apply those stored-value
-semantics to the coefficients of an existing polynomial. This construction
-asserts an absolute remainder `R`; it does not reconstruct the polynomial's
-rounding history. Model scalar construction and arithmetic follow the
-coefficient conversion hooks: exact integers, rationals and internal degree
-factors use explicit interval construction; an implicit floating operand is NG
-and is rejected. Declare a floating constant explicitly with `interval(0.1)`
-or `IntervalArithmetic.exact(0.1)`, or use `1//10` for the exact decimal value.
-For example, use `x * interval(0.1)` instead of `x * 0.1` inside a model or
-`IntervalBound` callback. Ordinary mixed float arithmetic on
-interval-coefficient polynomials follows IntervalArithmetic's implicit conversion
-semantics and may produce NG; for example `0.1 * variable(1, Interval{Float64})`.
-Use an explicitly constructed interval scalar to keep its guarantee.
-`TaylorPolynomial{Interval{Float64}}(0.1)` also preserves the NG conversion flag.
-Converting or reconstructing an existing interval never repairs NG or upgrades
-its decoration. Polynomial enclosure preserves flags; model construction and
-arithmetic reject NG and invalid or loose-evaluation intervals. Valid `def` and
-`dac` decorations propagate through coordinates, including fixed axes, and range
-queries never upgrade the input domain's decoration.
+Supported domains use finite, nonempty, guaranteed decorated intervals with
+Float64 or BigFloat endpoints. NaI, empty, unbounded, loose (`trv`) and bare
+intervals are unsupported. Interval metadata is preserved, including fixed and
+unused coordinates; copying an interval never upgrades its guarantee or decoration.
 
-See IntervalArithmetic's [guarantee rules](https://juliaintervals.github.io/IntervalArithmetic.jl/stable/manual/guarantee/)
-and [interval construction](https://juliaintervals.github.io/IntervalArithmetic.jl/stable/manual/construction/).
-These rules are distinct from a proof of uniform truncation error.
+An explicit floating interval denotes its stored binary value:
 
-## Range bounding
+| Constant | Meaning |
+|:--|:--|
+| `interval(0.1)` or `IntervalArithmetic.exact(0.1)` | The binary Float64 value `0.1` |
+| `interval(1//10)` or `I"0.1"` | An enclosure of the exact decimal real 1/10 |
+| `x*(1//10)` in a model callback | Exact rational converted outward |
+| `x*0.1` in a model callback | Implicit floating conversion; NG and rejected |
 
-The initial range bounder sums interval monomials with outward rounding. It uses
-the existing exponent matrix and caches integer powers of each coordinate.
-The public `pown` operation preserves even powers: `[-1,1]^2` is bounded by
-`[0,1]`, not `[-1,1]`. Sums can overestimate because repeated occurrences of
-the same coordinate are evaluated independently. The bounder does not change
-the algebra, its working order or the polynomial.
+Use explicitly declared interval constants in validated callbacks. Ordinary
+interval-coefficient polynomials preserve NG flags rather than reject every such
+operation; model construction/arithmetic reject NG and invalid metadata.
+See IntervalArithmetic's [construction](https://juliaintervals.github.io/IntervalArithmetic.jl/stable/manual/construction/)
+and [guarantee rules](https://juliaintervals.github.io/IntervalArithmetic.jl/stable/manual/guarantee/).
 
-The older `DifferentialAlgebra.bounds(p)` uses ordinary accumulation and assumes
-`[-1,1]^n` implicitly. Its floating endpoints are not certified. Wrapping those
-endpoints in an interval does not make their prior calculation rigorous.
+`enclose(p, box)` uses the stored values of an existing polynomial. Likewise,
+`TaylorModel(p, R, reference)` **asserts** the supplied absolute remainder in the
+reference coordinates, copies its inputs and rejects excessive degree. Neither
+operation reconstructs earlier rounding or discarded terms. Attaching a zero or
+estimated remainder cannot certify an unknown generating function.
 
-## Representation, normalization and ownership
+## Representation and range bounds
 
-For physical coordinates `c + r .* ξ`, a model stores `(P, R)` with
+A model stores a polynomial and remainder satisfying
 
 ```math
-f(c+r\odot\xi)\in P(\xi)+R.
+f(c+r\odot\xi)\in P(\xi)+R,\qquad \xi\in[-1,1]^n.
 ```
 
-Midpoints are chosen as explicit stored binary values. Each radius is the upper
-endpoint of an outward-rounded enclosure of both distances to the physical
-endpoints. This conservatively covers the physical domain by `[-1,1]^n`.
-The symmetric normalized box may cover extra physical points when a midpoint
-rounds; domain validation on that larger box is conservative. Fixed coordinates
-have zero radius and normalized value zero. Physical queries normalize with
-interval subtraction and division and intersect with the declared normalized
-box. Subboxes keep the entire original remainder.
+Centers are stored binary midpoints; radii bound both endpoint distances outward.
+The normalized cover can include extra physical points, so function-domain checks
+must hold throughout that cover. Fixed coordinates have zero radius and normalized
+value zero. Physical queries normalize with outward interval subtraction/division.
 
-Elementary results also store an independent interval image of the whole input
-enclosure. Range queries intersect `P + R` with this certificate; for example,
-sine and cosine stay within `[-1,1]`, and exponential and square root stay
-nonnegative. Arithmetic propagates these value bounds with outward rounding.
-Coordinate certificates bound the entire affine normalized cover, including any
-extra points introduced by outward rounding of its center and radius.
-They do not reduce the absolute remainder, certify derivatives, or change ADS
-fit-error estimates. Copies and compiled snapshots own the certificates,
-including BigFloat endpoints. Explicit scalar and `TaylorModel(p, R, reference)`
-construction do not inherit the reference's generating-function certificate.
+Range bounding sums interval monomials, caching coordinate powers. Even powers
+retain their sign information (`[-1,1]^2=[0,1]`), but repeated-coordinate dependency
+can still widen bounds. This does not alter the polynomial or working order.
+`DifferentialAlgebra.bounds(p)` instead uses ordinary arithmetic on an implicit
+unit box; wrapping those floating endpoints in an interval adds no certificate.
 
-Each coordinate family has an identity, domain, normalization, algebra owner
-and retained order. Binary arithmetic requires the same family and order.
-`taylor_models` follows `variables`' algebra-lifetime rules: reinitialization
-invalidates earlier polynomials and models. Model arithmetic rejects a changed
-working order rather than silently reducing the polynomial. Restore the recorded
-order with `with_order(max_order(model))`. Enclosure and evaluation still use the
-stored model when only the working order has changed.
+Elementary operations also keep an independent interval image of the complete
+input enclosure. Queries intersect it with `P+R`, and arithmetic propagates it
+outward. This can retain range facts such as `sin(X) ⊆ [-1,1]`; it does not reduce
+`R`, certify derivatives or change ADS errors. Explicit scalar/model constructors
+do not inherit the reference's generating-function certificate.
 
-Model constructors and `copy` own coefficients. The public accessors return
-independent copies, including BigFloat endpoints. Assignment shares a model;
-internal fields are read-only implementation data. No supported mutation API
-can modify a model's polynomial, remainder or normalization in place.
+Models, copies and snapshots own coefficients, remainders and certificates,
+including BigFloat endpoints. Accessors return independent data. Assignment shares
+a model; internal arrays are read-only and no public in-place mutation is provided.
 
-`TaylorModel(p, R, reference)` explicitly asserts a supplied absolute error in
-the reference coordinates, copies its inputs, and rejects terms above the
-reference order. It represents the stored polynomial plus that asserted error.
-Attaching zero or an estimated remainder does **not** certify the generating
-function of an existing truncated DA polynomial. To obtain a function enclosure,
-reevaluate the original expression using model inputs.
+## Supported arithmetic and remainder bounds
 
-## Arithmetic and its justification
+Models support constants, coordinates, unary signs, addition, subtraction,
+multiplication, integer powers, division/reciprocal, `exp`, `log`, `sin`, `cos`,
+`sincos` and `sqrt`. Retained coefficients round outward; tolerance pruning and
+midpoint arithmetic are not used. Interval-coefficient polynomials additionally
+support their ordinary calculus, substitution and composition operations, with
+coefficient arithmetic rather than function-remainder guarantees.
 
-Constants, independent coordinates, unary signs, addition, subtraction,
-multiplication, integer powers, reciprocal/division, `exp`, `log`, `sin`, `cos`,
-and `sqrt` are supported. Retained coefficients use outward-rounded intervals.
-No tolerance pruning or midpoint extraction is used.
-
-For `A=P+R_A` and `B=Q+R_B`, multiplication retains the polynomial product up to
-the recorded total degree and encloses
+For `A=P+R_A` and `B=Q+R_B`, multiplication retains the product through the
+recorded degree and bounds every discarded ordered product:
 
 ```math
 R_{AB}=\operatorname{bound}(\text{discarded products})
- +\operatorname{bound}(P)R_B+\operatorname{bound}(Q)R_A+R_AR_B.
++\operatorname{bound}(P)R_B+\operatorname{bound}(Q)R_A+R_AR_B.
 ```
 
-Every ordered coefficient product above that degree is bounded on the normalized
-box, including mixed-variable terms. On unit boxes, all-even exponents give
-`[0,1]`, an odd exponent gives `[-1,1]`, and a fixed-axis factor gives zero.
-These exact ranges avoid repeated interval products along the coordinate axes.
-General boxes use cached integer powers. Both paths preserve every coordinate's
-metadata, including unused axes, and use the original basis without constructing
-another algebra. Retained multiplication uses the existing table-backed or
-table-free kernel. Tail enumeration is quadratic in the active term counts.
+Unit-box monomial ranges use exponent parity and fixed-axis zeros; general boxes
+use cached powers. Both multiplication backends share this invariant. Tail
+enumeration is quadratic in the numbers of active terms.
 
-Elementary functions first bound the **whole** input model by `X` and choose a
-thin binary expansion point `s` inside `X`. Exponential, sine and cosine evaluate
-the scalar Taylor polynomial in `A-s` using remainder-aware Horner arithmetic.
-Taylor's theorem adds the absolute interval
+Elementary functions first enclose the whole input by `X`, choose a thin center
+`s` within it, then compose with remainder-aware Horner arithmetic. Exponential,
+sine and cosine add the Taylor-theorem tail
 
 ```math
 \frac{f^{(n+1)}(X)}{(n+1)!}(X-s)^{n+1}.
 ```
 
-The entire segment from `s` to each possible input lies in `X`. Derivatives use
-interval exponential or sine/cosine cycles divided by enclosed factorials.
-If a computed remainder is wider than the whole interval image, or an
-intermediate polynomial operation overflows, the elementary operation returns
-a constant midpoint model with that image's absolute remainder. The normalized
-box invariant still holds; certified ADS can refine this coarse bound.
-`sincos(model)` shares the input bound, expansion point, displacement and scalar
-coefficient generation; its two outputs own independent polynomial storage.
-
-Reciprocal, logarithm and square root instead compose in `(A-s)/s`, dividing
-the owned displacement's coefficients directly. This avoids large powers of
-`s` and an overflowing intermediate reciprocal at subnormal centers. With
-`U=(X-s)/s`, the additional geometric and integral tails satisfy
+Reciprocal and logarithm use `U=(A-s)/s` to avoid overflowing powers of `s`.
+With the interval counterpart `U_X=(X-s)/s`, their additional tails satisfy
 
 ```math
-T_{\mathrm{inv}} = \frac{(-U)^{n+1}}{X}, \qquad
-T_{\log} \subseteq
-\frac{(-1)^n U^{n+1}}{(n+1)(X/s)}.
+T_{\mathrm{inv}}=\frac{(-U_X)^{n+1}}{X},\qquad
+T_{\log}\subseteq\frac{(-1)^n U_X^{n+1}}{(n+1)(X/s)}.
 ```
 
-Here `X/s` contains one and bounds the logarithm's integral denominator along
-the entire segment. If that estimate overflows or its rounded denominator
-includes zero, an independent interval residual `log(X)-log(s)-P_n(U)` supplies
-a finite bound; `P_n` contains the nonconstant scalar Taylor terms.
-
-For square root, the center also satisfies `s ≥ sup(X)/2`. Thus `|U| ≤ r ≤ 1`.
-The absolute binomial tail is bounded by
+If the logarithm tail overflows or its rounded denominator contains zero, an
+independent interval residual `log(X)-log(s)-P_n(U_X)` supplies the bound.
+For square root, choose `s ≥ sup(X)/2`, so `|U_X| ≤ r ≤ 1`, and use
 
 ```math
-\sqrt{s}\,B_n r^{n+1}, \qquad
-B_n = \sum_{k>n}\left|\binom{1/2}{k}\right|
-= \frac{\binom{2n}{n}}{4^n}.
+|T_{\sqrt{\cdot}}|\le\sqrt{s}\,\frac{\binom{2n}{n}}{4^n}\,r^{n+1}.
 ```
 
-This remains finite at `r=1`. When `r<1`, the first omitted coefficient divided
-by `1-r` supplies another upper bound; the smaller bound is used. The tail is
-nonpositive for odd `n`. Integer, binomial and factorial factors are accumulated
-as enclosed constants. Native Horner arithmetic also accounts for incoming
-remainders and coefficient rounding. No fitted decay, sample discrepancy or
-epsilon padding is part of the proof.
+For `r<1`, the first omitted binomial coefficient divided by `1-r` supplies an
+additional bound; use the smaller. The tail is nonpositive for odd `n`.
+All integer/factorial factors are enclosed. Incoming remainders and rounding are
+already included by model arithmetic. Samples or fitted decay play no role.
 
-Reciprocal must exclude zero in `X`; log and the implemented square-root expansion
-require `inf(X)>0`. The identically zero enclosure has an exact square root.
-Other square-root inputs touching zero fail. A valid constant term is insufficient
-when the full enclosure violates these conditions; loose interval evaluation
-does not establish validity. Wide enclosures may reject a function that is
-actually valid; use smaller input domains and reevaluate the original expression.
-Finite stored coefficients and remainders are required; overflow fails clearly.
+Reciprocal requires `0 ∉ X`; log and nonconstant square root require `inf(X)>0`.
+An identically zero enclosure has an exact square root. A regular center alone
+is insufficient. A wide enclosure may fail despite a valid original function;
+refine and reevaluate. When elementary polynomial intermediates overflow or a
+constant image yields a tighter remainder, the result can fall back to that
+constant model while preserving the invariant. Otherwise nonfinite results fail.
 
 ## Certified domain splitting
 
-Select `estimator=IntervalBound()` in `adaptive_map` for the validated ADS
-method through the same construction driver as ordinary ADS. It reevaluates the original function with Taylor-model inputs on every
-child and uses rigorous interval bounds to decide whether a fit needs splitting.
-Analytic domain failures also trigger subdivision: a wide enclosure can fail to
-establish positivity even when the original function is valid. Each child must
-form a valid model before it can be accepted. If splitting reaches a limit or
-roundoff while the domain failure remains, construction throws with the cause,
-including with `strict=false`; an invalid model has no inspectable error bound.
-
 ```@example interval_models
-f(v) = exp(v[1] + v[2]) * cos(v[1] * v[2])
-a = adaptive_map(f, box; estimator = IntervalBound(), order = 3, atol = 1e-5)
-a.converged
-length(a.patches)
-evaluate(a, [0, 0])              # Enclosure, including the selected remainders
-enclose(a)                       # Enclosure on the entire partition
-enclose(a, [interval(Float64, 0, 1//4), interval(0)])
-fine = adaptive_map(f, a; atol = 1e-6)  # Fresh fits, saved estimator/order
+f(v) = exp(v[1]+v[2])*cos(v[1]*v[2])
+fit = adaptive_map(f, box; estimator=IntervalBound(), order=3, atol=1e-5)
+fine = adaptive_map(f, fit; atol=1e-6)
+(converged = fine.converged, patches = length(fine.patches), range = enclose(fine))
 ```
 
-Refinement preserves existing boundaries and defaults to the saved estimator
-and **requested retained order**, even when the stored outputs have lower degree.
-`degree(fit)` inspects the actual polynomial degree; `max_order(fit)` inspects
-the requested retained order. Both boxes and polygons support refinement.
-
-For each output, acceptance bounds the difference from the polynomial with
-stored midpoint coefficients. If `m_k` is a stored midpoint and `C_k` its retained
-interval coefficient, the uniform error bound is
+Each child reevaluates the deterministic callback with fresh models. For a stored
+midpoint `m_k` of coefficient interval `C_k`, its uniform fit error is
 
 ```math
-E=R+\sum_k (C_k-[m_k,m_k])\,\operatorname{bound}(\xi^{\alpha_k}).
+E=R+\sum_k(C_k-[m_k,m_k])\,\operatorname{bound}(\xi^{\alpha_k}).
 ```
 
-All operations in this bound round outward. A patch is accepted only when
-`sup(abs(E)) ≤ atol` for every output. Checking `R` alone would omit coefficient
-uncertainty. Midpoints here define the comparison polynomial for acceptance;
-there is no midpoint-coefficient model arithmetic backend. Scalar or per-output
-absolute tolerances are supported; relative tolerances are not yet implemented.
-The deterministic callback must return models or real constants and must not
-change algebra settings.
+A patch passes only when `sup(abs(E)) ≤ atol` for every output. This includes
+coefficient uncertainty; checking `R` alone would not. Midpoints define the
+comparison polynomial only. Relative tolerances are unsupported; use scalar or
+per-output absolute tolerances.
 
-On boxes, `splitter=:width` bisects the longest side relative to the original
-box, skipping fixed or unsplittable coordinates. `:tail` ignores outputs whose
-error bounds already satisfy their tolerances. Its directional heuristic uses
-the last two nonlinear retained degrees and lower-degree coefficient uncertainty,
-so a large exact affine term does not dominate unrelated approximation error.
-A scalar remainder has no exact directional attribution. When this information
-is absent (including an exact affine retained polynomial at order one), relative
-widths supply the fallback and break ties. These
-heuristic direction scores affect efficiency, not validity: only the uniform
-interval error decides acceptance. `max_depth` and `max_patches` bound the work. Limits throw unless
-`strict=false`, which retains valid unresolved models and records their status.
-Failed full-enclosure function-domain checks still throw; the algorithm does
-not assume validity at the center or automatically retry a failed expansion.
+Analytic domain failures, including callback `DomainError`s, trigger subdivision.
+Use a different exception for callback errors that should propagate immediately.
+If no valid model exists at a splitting/roundoff limit, construction throws even
+with `strict=false`. Otherwise `strict=false` retains valid unresolved models
+with their status. The [ADS manual](domain-splitting.md) defines refinement,
+direction scores and resource limits.
 
-`compile(model)` produces an owned `CompiledTaylorModel` containing coefficients,
-monomial exponents, normalization, domain and remainder. It supports numeric
-enclosure/evaluation, not arithmetic or composition. Certified ADS stores these
-snapshots in its patches, uses a temporary algebra during construction, and restores
-the caller's configuration on success or failure. Returned maps and snapshots
-remain usable after global algebra changes. Public domain/remainder accessors
-return independent copies; internal arrays are read-only. Outputs of a validated
-patch share owned read-only coordinate and exponent metadata; enclosure computes
-normalization and integer powers once per patch. Copying a public model/snapshot
-still gives independent storage, including BigFloat endpoints.
-Queries navigate the partition tree, intersect every relevant patch and hull
-their enclosures with preserved interval flags. A query touching a split face
-visits both closed children; a straddling subbox visits both branches rather
-than following its midpoint. Ordinary point queries select the lower child on
-a shared face. These policies preserve their different evaluation contracts.
-
-GuardedTail, ExtrapolatedTail, LastTerms and `adaptive_flow`
-retain their heuristic contracts. They do not acquire certified error bounds by
-passing intervals to ordinary DA. Restricting an existing Taylor model can tighten
-its polynomial range but keeps its full remainder. Certified splitting needs
-fresh evaluation of the **original function** on both children.
+Queries intersect relevant closed patches and hull their enclosures. A split-face
+point visits both children; a straddling subbox visits both branches. Snapshots
+survive algebra changes, and public accessors own their returned storage.
 
 ## Non-axis-aligned domains
 
-Use `splitter=:oriented` on a 2D box, or pass a `ConvexPolygon` directly to
-`adaptive_map`. All four error methods share this geometry. Projection rows
-come from an automatic sensitivity probe or an explicit nonsingular matrix
-`directions=B`. The exact rational inverse `A=B⁻¹` defines `f(A*z)` for model
-construction; a numerical transpose is never substituted for the inverse.
-Each polygon is enclosed by its exact projected extents in `z=B*x`. Rational
-endpoints and inverse entries are enclosed by outward-rounded intervals before
-any polynomial arithmetic. The model proof holds over this whole parallelogram,
-so it holds on the physical polygon contained within it.
+`splitter=:oriented` or a `ConvexPolygon` selects 2D polygon ADS. A nonsingular
+projection matrix `B` defines `z=B*x`; the exact inverse maps back to physical
+coordinates. Models enclose the full projected parallelogram using outward
+interval endpoints. Exact clipping preserves the partition and shared boundaries.
 
-Each split exactly clips the parent's closed polygon into two closed children.
-Their union equals the parent; interiors are disjoint and the shared cut belongs
-to both. Physical queries use exact rational containment. Query intersections
-are projected and outwardly bounded, then evaluated using stored snapshots and
-their entire remainders. Shared faces and degenerate point/line subboxes are
-included. `enclose(map, subpolygon)` supports a convex subpolygon; interval
-subboxes must lie entirely inside the original physical polygon.
+`enclose(fit, subpolygon)` accepts convex subpolygons; interval subboxes must lie
+inside the physical root polygon. All intersecting patches contribute, including
+closed faces. Automatic frame selection is heuristic and does not affect the
+certificate. Exact geometry can cost more even when it reduces patch counts.
+See [polygon usage](domain-splitting.md#Oriented-and-polygonal-splitting).
 
-Automatic directions use midpoint coefficients only for a heuristic choice of
-frame. This does not enter certified coefficients, errors or acceptance. There
-is no guarantee of an optimal direction or improved speed: fewer patches may
-still cost more because exact geometry is more expensive. Frames stay fixed
-during a construction. General nonconvex polygons, changing local frames,
-higher-dimensional polyhedra, polygon-constrained range optimization and verified
-flow propagation are not implemented. A parallelogram cover can be too wide
-to establish a valid function domain; this throws rather than accepting a
-valid center. See the [polygon example](../generated/polygon_ads.md) for plots
-and the [ADS manual](domain-splitting.md#Oriented-and-polygonal-splitting) for usage.
+## Limits
 
-## Remaining limits
+No derivative remainder, verified inversion or validated time integration is
+provided. Whole-model comparisons, scalar conversion, model calculus and
+model-vector compilation are unsupported. `TaylorMethod`, `taylor_expand` and
+`adaptive_flow` retain numerical/heuristic error contracts.
 
-Whole-model comparisons, scalar conversion, certified differentiation/integration,
-verified map inversion and model-vector compilation are unsupported. An absolute
-value remainder gives no derivative remainder. Independent time and uncertainty
-orders and the existing time solver are unchanged. TaylorMethod, adaptive_flow
-and taylor_expand are not validated integrators.
-
-Uncertainty-domain validation does not bound time integration error. Certified
-ADS currently supports deterministic static maps on boxes and 2D convex polygons
-with absolute tolerances.
-
-See the [Literate example](../generated/interval_models.md) and
-`benchmark/unified_ads.jl` and `benchmark/interval_models.jl` for separate timing,
-allocation and width reports, including a six-coordinate uncertainty map.
-Benchmark widths measure different
-objects: stored-polynomial range versus original-function enclosure.
-
-The remainder invariant follows the usual [Taylor-model definition](https://juliaintervals.github.io/TaylorModels.jl/stable/);
-the implementation uses DifferentialAlgebra's native polynomial engine.
+The [interval tutorial](../generated/interval_models.md) plots the three distinct
+range targets and the effect of fresh child fits. The remainder invariant follows
+the [Taylor-model definition](https://juliaintervals.github.io/TaylorModels.jl/stable/)
+using this package's native polynomial engine.

@@ -67,11 +67,11 @@ end
 Return a monomial coefficient without factorial scaling. Supply one nonnegative
 exponent per independent variable, with total degree at most `max_order()`.
 """
-function coefficient(a::TaylorPolynomial{T}, powers::AbstractVector{<:Integer}) where {T}
+function coefficient(a::TaylorPolynomial, powers::AbstractVector{<:Integer})
     basis = valid(a).basis
     total = checked_counts(powers, basis)
     i = rank(basis, powers, total)
-    return i <= a.len ? a.coeffs[i] : zero(T)
+    return coefficient_at(a, i)
 end
 """
     set_coefficient!(p, exponents, value)
@@ -123,6 +123,13 @@ function monomial(a::TaylorPolynomial, pos::Integer)
     end
     throw(BoundsError(a, pos))
 end
+"""
+    DifferentialAlgebra.trim(p, low, high = max_order(p))
+
+Copy the terms whose total degrees lie in `low:high`, applying the coefficient
+tolerance. The bounds must be nonnegative. An empty range returns zero; `high`
+is limited by the stored algebra order rather than the current working order.
+"""
 function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a))
     ctx = valid(a)
     low >= 0 && high >= 0 || throw(ArgumentError("Invalid order range"))
@@ -134,114 +141,18 @@ function trim(a::TaylorPolynomial, low::Integer, high::Integer = max_order(a))
     end
     return finish!(out, n)
 end
-"""
-    DifferentialAlgebra.coefficient_product(p, q)
+trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer) = trim.(a, low)
+trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer) =
+    trim.(a, low, high)
 
-Internal coefficient-wise product retaining the original monomials.
-For example, `(1 + 2x)` and `(3 + 4x)` give `3 + 8x`. The result uses the
-working order and coefficient tolerance. Both inputs must share an algebra.
 """
-function coefficient_product(a::TaylorPolynomial, b::TaylorPolynomial)
-    ctx = compatible(a, b)
-    n = min(a.len, b.len, ctx.basis.ends[working_order(ctx) + 1])
-    out = allocate(ctx, promote_type(coefficient_type(a), coefficient_type(b)), n)
-    @inbounds for i in 1:n
-        out.coeffs[i] = a.coeffs[i] * b.coeffs[i]
-    end
-    return finish!(out, n)
-end
-function calculus(
-        a::TaylorPolynomial, v::Integer, operation::Symbol, p::Integer = 1;
-        order::Int = working_order(a.algebra), filter::Bool = true
-    )
-    ctx = valid(a); b = ctx.basis
-    1 <= v <= b.variables ||
-        throw(ArgumentError("Variable index $v is outside 1:$(b.variables)"))
-    0 <= p <= b.order ||
-        throw(ArgumentError("Variable power $p is outside 0:$(b.order)"))
-    T = if operation === :integrate
-        unit = one(coefficient_type(a))
-        typeof(unit / degree_factor(unit, 1))
-    else
-        coefficient_type(a)
-    end
-    degree = b.degrees[a.len]
-    output_degree = operation === :integrate ? degree + 1 :
-        operation === :differentiate ? degree - 1 : degree - p
-    capacity = b.ends[clamp(output_degree, 0, order) + 1]
-    out = allocate(ctx, T, capacity)
-    exponents = zeros(Int, b.variables)
-    for i in 1:a.len
-        c = a.coeffs[i]
-        coefficient_iszero(c) && continue
-        exponents .= @view b.exponents[:, i]
-        degree = b.degrees[i]
-        if operation === :integrate
-            degree >= order && continue
-            exponents[v] += 1
-            out.coeffs[rank(b, exponents, degree + 1)] = c / degree_factor(c, exponents[v])
-        elseif operation === :differentiate
-            exponents[v] == 0 && continue
-            power = exponents[v]; exponents[v] -= 1
-            degree - 1 <= order && (out.coeffs[rank(b, exponents, degree - 1)] = degree_factor(c, power) * c)
-        else
-            exponents[v] < p && throw(TaylorError("Polynomial is not divisible by this variable power"))
-            exponents[v] -= p
-            degree - p <= order && (out.coeffs[rank(b, exponents, degree - p)] = c)
-        end
-    end
-    return finish!(out; filter)
-end
-"""
-    differentiate(p, i)
-    differentiate(p, counts)
+    DifferentialAlgebra.degree_norms(p, variable = 0, power = 0)
 
-Differentiate a polynomial with respect to variable `i`, or by a vector of
-derivative counts. Indices start at one. For example, `differentiate(p, [2, 1])`
-computes the mixed partial with two derivatives in the first variable and one
-in the second. An array and an integer index differentiate each entry, preserving
-the array's shape.
+Group coefficient norms by total degree, or by the exponent of one variable.
+`power = 0` selects the maximum absolute coefficient; positive integer powers
+select the corresponding norm. Entry `k + 1` describes degree `k`. Stored
+degrees are included independently of the working order.
 """
-differentiate(a::TaylorPolynomial, i::Integer) = calculus(a, i, :differentiate)
-"""
-    integrate(p, i)
-    integrate(p, counts)
-
-Integrate a polynomial with respect to variable `i`, choosing zero integration constant.
-A vector `counts` requests repeated integrals. Terms above the working order are
-discarded. The coefficient type follows the scalar division operation.
-An array and an integer index integrate each entry, preserving the array's shape.
-"""
-integrate(a::TaylorPolynomial, i::Integer) = calculus(a, i, :integrate)
-"""
-    DifferentialAlgebra.divide_variable(p, i, power = 1)
-
-Internal variable-power division. Divide every monomial by `x[i]^power`.
-Throw `TaylorError` if a retained term
-is not divisible. The result uses the working order and coefficient tolerance.
-"""
-divide_variable(a::TaylorPolynomial, i::Integer, p::Integer = 1) = calculus(a, i, :divide, p)
-for fn in (:differentiate, :integrate)
-    @eval function $fn(a::TaylorPolynomial, counts::AbstractVector{<:Integer})
-        ctx = valid(a)
-        remaining = checked_counts(counts, ctx.basis; limit = typemax(Int))
-        out = copy(a)
-        for (i, n) in enumerate(counts)
-            for _ in 1:n
-                remaining -= 1
-                order = if $(fn === :differentiate)
-                    working_order(ctx) +
-                        min(remaining, ctx.basis.order - working_order(ctx))
-                else
-                    working_order(ctx)
-                end
-                out = calculus(out, i, $(QuoteNode(fn)); order, filter = false)
-                iszero(out) && return out
-            end
-        end
-        return finish!(out, min(out.len, ctx.basis.ends[working_order(ctx) + 1]))
-    end
-end
 function degree_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0)
     b = valid(a).basis
     0 <= v <= b.variables && p >= 0 || throw(ArgumentError("Invalid norm arguments"))
@@ -267,6 +178,18 @@ function degree_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0)
     end
     return out
 end
+"""
+    DifferentialAlgebra.estimate_norms(
+        p, variable = 0, power = 0, order = max_order(p);
+        errors = false
+    )
+
+Fit exponential growth to the nonzero positive-degree coefficient norms and
+extrapolate through `order`. Requires an algebra order of at least two.
+With `errors = true`, also return nonnegative
+observed-minus-fitted discrepancies at stored degrees. These are heuristics,
+not remainder bounds. Fewer than two usable degrees produce a warning and zeros.
+"""
 function estimate_norms(a::TaylorPolynomial, v::Integer = 0, p::Integer = 0, n::Integer = max_order(a); errors::Bool = false)
     n >= 0 || throw(ArgumentError("Invalid estimated order"))
     norms = degree_norms(a, v, p)
@@ -326,13 +249,6 @@ function random_polynomial(::Type{T} = Float64; rng = Random.default_rng(), dens
     end
     return finish!(a)
 end
-# Map calculus preserves the shape of ordinary arrays, including views.
-trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer) = trim.(a, low)
-trim(a::AbstractArray{<:TaylorPolynomial}, low::Integer, high::Integer) =
-    trim.(a, low, high)
-differentiate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = differentiate.(a, i)
-integrate(a::AbstractArray{<:TaylorPolynomial}, i::Integer) = integrate.(a, i)
-
 """
     DifferentialAlgebra.coefficient_dot(p, q)
 
@@ -354,9 +270,9 @@ end
     DifferentialAlgebra.filter_terms(p, mask)
 
 Internal monomial-mask operation. Select stored coefficients of `p` whose
-monomials occur in `mask`. The mask's
-coefficient values do not scale the selected terms. The result owns its storage
-and applies the coefficient tolerance while preserving stored degrees.
+monomials occur in `mask`. The mask's coefficient values do not scale the selected
+terms. The result owns its storage and applies the coefficient tolerance while
+preserving stored degrees.
 """
 function filter_terms(p::TaylorPolynomial, mask::TaylorPolynomial)
     ctx = compatible(p, mask)
@@ -371,21 +287,12 @@ function monomial(powers::AbstractVector{<:Integer}, value::Real = 1.0)
     return set_coefficient!(TaylorPolynomial(zero(value)), powers, value)
 end
 """
-    DifferentialAlgebra.nterms(p)
-
-Internal storage inspection. Count terms using the coefficient type's
-exact-zero test, independently
-of the working order. `size(p)` keeps Julia's scalar semantics.
-"""
-nterms(p::TaylorPolynomial) = (valid(p); count(!coefficient_iszero, @view p.coeffs[1:p.len]))
-
-"""
     DifferentialAlgebra.convergence_radius(p, tolerance, power = 1)
 
 Internal convergence heuristic. Estimate the radius at which the first omitted
-degree's extrapolated coefficient
-norm reaches a positive finite `tolerance`. `power` selects the degree norm used
-by `estimate_norms`. This coefficient-decay heuristic is not a rigorous bound.
+degree's extrapolated coefficient norm reaches a positive finite `tolerance`.
+`power` selects the degree norm used by `estimate_norms`. This coefficient-decay
+heuristic is not a rigorous bound.
 """
 function convergence_radius(p::TaylorPolynomial, tolerance::Real, type::Integer = 1)
     isfinite(tolerance) && tolerance > 0 || throw(ArgumentError("Tolerance must be positive and finite"))

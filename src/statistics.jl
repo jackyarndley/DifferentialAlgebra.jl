@@ -1,4 +1,10 @@
-"All multi-indices of total degree <= order, ordered by degree then reverse lexicographically."
+"""
+    DifferentialAlgebra.multiindices(order, nvariables)
+
+Return vectors of `UInt32` exponents with total degree at most `order`,
+including the constant term. Results are ordered by total degree, then
+reverse lexicographically within each degree.
+"""
 function multiindices(no::Integer, nv::Integer)
     0 <= no <= 65535 && 1 <= nv <= 1024 || throw(ArgumentError("Invalid order or dimension"))
     count = binomial(big(no) + nv, nv)

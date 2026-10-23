@@ -2,14 +2,7 @@
 using DifferentialAlgebra, IntervalArithmetic
 
 include("measurement.jl")
-
-uncertainty_map(x) = exp(x[1] + x[2] / 2) * cos(x[3] - x[4]) +
-    log(2 + x[5] * x[6])
-
-bound_summary(x) = (;
-    lower = inf(x), upper = sup(x), decoration = decoration(x),
-    guaranteed = isguaranteed(x),
-)
+include("support/interval_workload.jl")
 
 function report(::Type{T}; table_bytes = 0) where {T}
     println("\nEndpoint type / table budget: ", (T, table_bytes))

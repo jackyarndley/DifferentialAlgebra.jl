@@ -26,14 +26,50 @@ using ..Fixtures
             order = 6, parameters = 1 + x
         )
     )
-    @test coefficients(coefficient(solution, 2)) ≈ [1 / 2, 1, 1 / 2]
+    @test hcat(coefficients.(solution.coefficients)...) ≈
+        [binomial(k, i) / factorial(k) for i in 0:2, k in 0:6]
     @test_throws MethodError TaylorMethod(20.0)
     @test DiffEqBase.value(TaylorPolynomial{typeof(ForwardDiff.Dual(2.0, 1.0))}) === Float64
-    # Eager series and recorded recurrences have separate implementations.
+    # Closed-form coefficients check eager and recorded paths independently.
+    # Non-unit expansion points exercise reciprocal factors in log and powers.
     clock = TimeSeries([0.0, 1.0, 0.0, 0.0, 0.0])
-    @test tan(clock).coefficients ≈ [0, 1, 0, 1 / 3, 0]
-    @test tanh(clock).coefficients ≈ [0, 1, 0, -1 / 3, 0]
-    @test ((1 + clock)^(3 // 2)).coefficients ≈ [1, 3 / 2, 3 / 8, -1 / 16, 3 / 128]
+    analytic_cases = (
+        (t -> exp(2t), [1, 2, 2, 4 / 3, 2 / 3]),
+        (t -> log(2 + t), [log(2), 1 / 2, -1 / 8, 1 / 24, -1 / 64]),
+        (t -> sqrt(4 + t), [2, 1 / 4, -1 / 64, 1 / 512, -5 / 16384]),
+        (tan, [0, 1, 0, 1 / 3, 0]),
+        (tanh, [0, 1, 0, -1 / 3, 0]),
+        (t -> (1 + t)^(3 // 2), [1, 3 / 2, 3 / 8, -1 / 16, 3 / 128]),
+        (t -> 1 / (2 - t), [1 / 2, 1 / 4, 1 / 8, 1 / 16, 1 / 32]),
+    )
+    for (f, expected) in analytic_cases
+        @test f(clock).coefficients ≈ expected
+        integral = only(taylor_expand((u, p, t) -> [f(t)], [0.0], 0.0; order = 5))
+        @test integral.coefficients ≈ [0; expected ./ (1:5)]
+    end
+    shifted = only(taylor_expand((u, p, t) -> [t^2], [8.0], 2.0; order = 3))
+    @test shifted.coefficients ≈ [8, 4, 2, 1 / 3]
+    @test shifted(0.5) ≈ 8 + (2.5^3 - 2^3) / 3 # Evaluate a local offset.
+
+    @test_throws ArgumentError TimeSeries(Float64[])
+    @test_throws ArgumentError TimeSeries([1.0]) + clock
+    @test_throws DimensionMismatch taylor_expand((u, p, t) -> [1, 2], [0.0], 0.0)
+    @test_throws DifferentialAlgebra.TaylorError taylor_expand((u, p, t) -> [sqrt(t)], [0.0], 0.0)
+    @test iszero(sqrt(TimeSeries([0.0])))
+    # Nonzero partials do not make a zero primal invertible, even for nested duals.
+    tangent = ForwardDiff.Dual(0.0, 1.0)
+    for center in (tangent, ForwardDiff.Dual{:outer}(tangent, zero(tangent)))
+        @test iszero(sqrt(TimeSeries([zero(center)])))
+        series = TimeSeries([center, one(center)])
+        for f in (inv, log, sqrt)
+            @test_throws DifferentialAlgebra.TaylorError f(series)
+        end
+        @test_throws DifferentialAlgebra.TaylorError series^(3 // 2)
+        @test_throws DifferentialAlgebra.TaylorError sqrt(TimeSeries([center]))
+        @test_throws DifferentialAlgebra.TaylorError taylor_expand(
+            (u, p, t) -> [sqrt(t)], [zero(center)], center; order = 1
+        )
+    end
 end
 
 @testset "Solver mutation, rejection and historical interpolation" begin
@@ -95,4 +131,11 @@ end
         @test out ≈ reverse(expected[d + 1])
         @test solution(0.3, Val{d}; idxs = 2) ≈ expected[d + 1][2]
     end
+    backward = solve(
+        ODEProblem(forcing, [4.144, 4.28], (0.6, 0.0)), TaylorMethod(3);
+        adaptive = false, dt = -0.6, saveat = [0.45, 0.15],
+        save_start = false, save_end = false
+    )
+    @test backward.t == [0.45, 0.15]
+    @test hcat(backward.u...) ≈ [2.872 1.381; 4.595 4.955]
 end

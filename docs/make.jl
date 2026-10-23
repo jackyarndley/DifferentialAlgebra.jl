@@ -36,7 +36,7 @@ makedocs(
     root = @__DIR__,
     sitename = "DifferentialAlgebra.jl",
     modules = [DifferentialAlgebra],
-    checkdocs = :exports,
+    checkdocs = :public,
     plugins = [
         CitationBibliography(joinpath(@__DIR__, "src", "references.bib"); style = :authoryear),
         CodeBlocks(),
@@ -46,6 +46,7 @@ makedocs(
         # Keep the same tutorial topics and links visible on every page.
         collapselevel = 3,
         canonical = "https://jackyarndley.github.io/DifferentialAlgebra.jl/",
+        edit_link = "main",
     ),
     pages = [
         "Home" => "index.md",

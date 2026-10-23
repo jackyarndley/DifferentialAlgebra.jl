@@ -16,23 +16,9 @@ set_theme!(palette = (color = Makie.to_colormap(:tab10),))
 # ## A two-dimensional uncertainty box
 #
 # The model and nominal state match [Long-term CR3BP propagation](taylor_cr3bp.md).
-# The equations are repeated here so this script runs independently. Positions
-# and rotating-frame velocities are nondimensional, following [JPL's convention](https://ssd-api.jpl.nasa.gov/doc/periodic_orbits.html).
-function cr3bp(u, μ, t)
-    x, y, vx, vy = u
-    dx1, dx2 = x + μ, x - 1 + μ
-    r13 = (dx1^2 + y^2)^(3 // 2)
-    r23 = (dx2^2 + y^2)^(3 // 2)
-    return [
-        vx, vy,
-        2vy + x - (1 - μ) * dx1 / r13 - μ * dx2 / r23,
-        -2vx + y - (1 - μ) * y / r13 - μ * y / r23,
-    ]
-end
-function jacobi(u, μ)
-    x, y, vx, vy = u
-    return x^2 + y^2 + 2 * ((1 - μ) / sqrt((x + μ)^2 + y^2) + μ / sqrt((x - 1 + μ)^2 + y^2)) - vx^2 - vy^2
-end
+# Both tutorials load the same dynamics and Jacobi diagnostic. Positions and
+# rotating-frame velocities are nondimensional, following [JPL's convention](https://ssd-api.jpl.nasa.gov/doc/periodic_orbits.html).
+include(joinpath(pkgdir(DifferentialAlgebra), "examples", "support", "cr3bp.jl"))
 μ = 0.01215058560962404
 nominal = [0.5 - μ + 0.01, sqrt(3) / 2, 0.0, -0.01]
 width = 5.0e-4

@@ -50,21 +50,12 @@ when unbounded exact affine arithmetic is required.
 """
 translate_variable(p::TaylorPolynomial, v::Integer, a::Real = 1, c::Real = 0) = affine_variable(p, v, v, a, c)
 """
-    DifferentialAlgebra.replace_variable(p, from, to, scale = 1)
+    DifferentialAlgebra.substitute(p, variable, value = 0)
 
-Internal affine-substitution helper. Replace `x[from]` by `scale*x[to]`,
-retaining the other coordinates. This uses
-the affine-substitution coefficient rules of `translate_variable`.
+Replace one coordinate by a scalar, keeping the other coordinates as polynomial
+variables. Apply the working order and coefficient tolerance. Arrays are processed
+elementwise and retain their shape.
 """
-replace_variable(p::TaylorPolynomial, from::Integer, to::Integer, a::Real = 1) = affine_variable(p, from, to, a, 0)
-"""
-    DifferentialAlgebra.scale_variable(p, i, scale = 1)
-
-Internal affine-substitution helper. Replace `x[i]` by `scale*x[i]`, retaining
-the other coordinates. This uses the
-affine-substitution coefficient rules of `translate_variable`.
-"""
-scale_variable(p::TaylorPolynomial, v::Integer, a::Real = 1) = affine_variable(p, v, v, a, 0)
 substitute(p::TaylorPolynomial, v::Integer, value::Real = 0) =
     affine_variable(p, v, v, 0, value; cutoff = working_order(valid(p)))
 

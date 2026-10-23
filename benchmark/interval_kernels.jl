@@ -3,6 +3,7 @@ using DifferentialAlgebra, IntervalArithmetic
 using Profile
 
 include("measurement.jl")
+include("support/interval_workload.jl")
 
 const DA = DifferentialAlgebra
 const IA = IntervalArithmetic
@@ -10,14 +11,6 @@ const EXT = Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt)
 
 # Longer trials reduce clock and scheduling variation on heterogeneous CPUs.
 measure_kernel(f) = measure(f; samples = 1000, seconds = 1.0)
-
-uncertainty_map(x) = exp(x[1] + x[2] / 2) * cos(x[3] - x[4]) +
-    log(2 + x[5] * x[6])
-
-bound_summary(x) = (;
-    lower = inf(x), upper = sup(x), decoration = IA.decoration(x),
-    guaranteed = IA.isguaranteed(x),
-)
 
 function dense_models(; order = 3, table_bytes = 0)
     x = taylor_models(fill(interval(-1, 1), 6); order, table_bytes)

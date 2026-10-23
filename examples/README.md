@@ -1,23 +1,24 @@
 # Examples
 
-Run a standalone tutorial from the repository root:
+Each Literate tutorial runs directly from the checkout, with numerical checks
+and figures. Shared physical models live in `support/` so companion tutorials
+use the same equations. Start with `implicit_maps.jl` for nonlinear sensitivity,
+`ode_integration.jl` for a six-state flow map, or `interval_models.jl` for rigorous
+enclosures. `daiod.jl` combines implicit maps, uncertainty and a measurement update.
 
 ```sh
-julia --project=examples -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-julia --project=examples examples/ads_methods.jl
+julia --project=examples -e 'using Pkg; Pkg.instantiate()'
+julia --project=examples examples/implicit_maps.jl
 ```
 
-For interactive figures, start Julia with `julia --project=examples` and use
-`include("examples/ads_methods.jl")`. Each figure is returned as the last
-expression of its plotting block.
+For interactive figures, start `julia --project=examples` and run
+`include("examples/implicit_maps.jl")`. Each plotting block returns its figure;
+terminal execution prints reports. Use `CairoMakie.save("figure.png", fig)` to
+export a figure.
 
-The [tutorial catalog](../docs/src/examples.md) and documentation sidebar group
-the scripts into polynomial arithmetic/calculus, implicit equations, time
-integration, orbit propagation, ADS methods/geometry, continuous ADS/optimization,
-validated intervals, orbit determination, and storage.
-`ads_methods.jl` compares the heuristic methods with interval-based splitting
-and oriented geometry. `ads_kepler.jl` adds oriented fits and C2 blending;
-`ads_flow.jl` compares three unvalidated flow-splitting strategies.
-Interval bands cover complete cells; sampled error plots are numerical checks.
-The [documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/examples/)
-includes their executed numerical output and figures.
+The [catalog](../docs/src/examples.md) lists all 30 scripts by question and result.
+The [rendered tutorials](https://jackyarndley.github.io/DifferentialAlgebra.jl/examples/)
+include their executed reports and plots. Sampled discrepancies and numerical
+integration checks are labeled separately from interval-certified bounds.
+
+Examples carrying Apache-2.0 headers retain their [third-party notices](../THIRD_PARTY_NOTICES.md).

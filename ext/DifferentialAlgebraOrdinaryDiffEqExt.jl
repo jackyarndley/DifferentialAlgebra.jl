@@ -16,6 +16,9 @@ ODECore.alg_order(alg::TaylorAlgorithm) = alg.order
 ODECore.alg_adaptive_order(alg::TaylorAlgorithm) = alg.order - 2
 ODECore.isfsal(::TaylorAlgorithm) = false
 
+# SciML dispatches on distinct cache supertypes for allocating and in-place
+# problems. Keep those concrete containers; their stepping/interpolation logic
+# is shared through TaylorCaches below.
 mutable struct TaylorCache{F, W, U, T} <: ODECore.OrdinaryDiffEqConstantCache
     order::Int
     rhs::F

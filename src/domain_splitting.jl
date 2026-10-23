@@ -41,7 +41,8 @@ DomainNode(::Type{T}) where {T} = DomainNode(0, zero(T), 0, 0, 0)
 
 A piecewise Taylor approximation built by [`adaptive_map`](@ref).
 Its input subdomains form a partition, with one local Taylor map per patch.
-Call `map(point)` with physical coordinates to select and evaluate a patch.
+Call `map(point)` with a vector or tuple of physical coordinates to select and
+evaluate a patch.
 `patches` holds its [`TaylorPatch`](@ref)s; `converged` is true only if every
 patch meets the requested error estimate. `lower` and `upper` bound the domain.
 Numeric evaluation remains valid after the global algebra is reinitialized.
@@ -240,9 +241,9 @@ end
 
 function ads_outputs(value)
     result = value isa Real ? [value] : value
+    result isa AbstractVector && Base.require_one_based_indexing(result)
     result isa AbstractVector && !isempty(result) && all(x -> x isa Real, result) ||
         throw(ArgumentError("The map must return a real scalar or a nonempty vector of reals"))
-    Base.require_one_based_indexing(result)
     return result, value isa Real
 end
 
@@ -260,6 +261,11 @@ function ads_geometry(lo, hi)
     radius = max.(center - lo, hi - center)
     return (; lo, hi, center, radius)
 end
+
+# Fixed physical coordinates have normalized value zero, including dual inputs.
+# Interval models use their own outward-rounded normalization in the extension.
+ads_normalize(value, center, radius) =
+    iszero(radius) ? zero(value) : (value - center) / radius
 
 function ads_analyze(value, box, options, ctx)
     values, scalar = ads_outputs(value)
@@ -293,7 +299,7 @@ function ads_probes(box)
             sign = axis > 0 ? (i == axis ? (isodd(probe) ? -1 : 1) : 0) :
                 (isodd(probe) ? -1 : 1) * (probe <= 2n + 2 || isodd(i) ? 1 : -1)
             point[i] = sign == 0 ? center[i] : sign < 0 ? lo[i] : hi[i]
-            normalized[i] = iszero(radius[i]) ? 0 : (point[i] - center[i]) / radius[i]
+            normalized[i] = ads_normalize(point[i], center[i], radius[i])
         end
         any(p -> p[1] == point, probes) || push!(probes, (point, normalized, axis))
     end
@@ -356,7 +362,7 @@ function ads_patch(map::PiecewiseTaylorMap, point)
     length(point) == nvariables(map) || throw(DimensionMismatch("Provide one coordinate per domain dimension"))
     all(
         i -> !(point[i] isa TaylorPolynomial) &&
-            map.lower[i] <= ads_coordinate(point[i]) <= map.upper[i],
+            map.lower[i] <= ads_primal_coordinate(point[i]) <= map.upper[i],
         eachindex(point)
     ) ||
         throw(DomainError(point, "Point lies outside the map domain"))
@@ -384,7 +390,7 @@ function evaluate!(
     end
     patch = ads_patch(map, point)
     for i in eachindex(normalized)
-        normalized[i] = iszero(patch.radius[i]) ? zero(R) : (point[i] - patch.center[i]) / patch.radius[i]
+        normalized[i] = ads_normalize(point[i], patch.center[i], patch.radius[i])
     end
     return evaluate!(out, patch.map, normalized, work)
 end
@@ -396,4 +402,6 @@ function evaluate(map::PiecewiseTaylorMap{T, C}, point::AbstractVector{<:Real}) 
     out = evaluate!(zeros(R, noutputs(map)), map, point)
     return map.scalar ? only(out) : out
 end
+evaluate(map::PiecewiseTaylorMap, point::Tuple{Vararg{Real}}) = evaluate(map, collect(point))
 (map::PiecewiseTaylorMap)(point::AbstractVector{<:Real}) = evaluate(map, point)
+(map::PiecewiseTaylorMap)(point::Tuple{Vararg{Real}}) = evaluate(map, point)

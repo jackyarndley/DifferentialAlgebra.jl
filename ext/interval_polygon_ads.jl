@@ -2,6 +2,11 @@
 # and its inverse frame live in DA; every coefficient/range operation uses IA.
 DA.polygon_mid(x::Interval) = IA.mid(x)
 
+function DA.ads_interval_domain(a::DA.PiecewisePolygonMap{T, P, DA.IntervalBound}) where {T, P}
+    patch = first(DA.ads_patches(a))._patch
+    return first(DA.model_snapshots(patch))._coordinates.box
+end
+
 function DA.polygon_candidate(
         f, polygon::DA.ConvexPolygon{T}, B, A, options, ctx,
         estimator::DA.IntervalBound; probe::Bool = false
@@ -11,6 +16,7 @@ function DA.polygon_candidate(
     I = Interval{T}
     lo, hi = DA.polygon_projection_bounds(polygon, B)
     box = [checked_interval(IA.interval(T, lo[i], hi[i]); guaranteed = true) for i in 1:2]
+    retain_decoration!(box, options.interval_domain)
     z = coordinate_models(box, options.order)
     x = [sum(IA.interval(T, A[i, j]) * z[j] for j in 1:2) for i in 1:2]
     candidate = validated_candidate(f, x, first(z), box, ctx, options)
@@ -29,15 +35,6 @@ function DA.polygon_candidate(
     end
     cover = (; geometry..., projection = (lo, hi), directions)
     return DA.ADSCandidate(cover, candidate.payload, candidate.errors, candidate.contributions, candidate.tolerance, candidate.scalar, candidate.accepted)
-end
-
-function polygon_query_constraints(p::DA.ConvexPolygon)
-    v = p._vertices
-    return map(eachindex(v)) do i
-        a, b = v[i], v[mod1(i + 1, length(v))]
-        normal = (b[2] - a[2], a[1] - b[1])
-        (normal, normal[1] * a[1] + normal[2] * a[2])
-    end
 end
 
 function polygon_interval_point(a, point)
@@ -60,7 +57,7 @@ end
 function polygon_interval_constraints(a, query)
     if query isa DA.ConvexPolygon
         all(v -> DA.polygon_contains(a._domain, v), query._vertices) || throw(DomainError(query, "Query polygon lies outside the validity domain"))
-        return polygon_query_constraints(query)
+        return [DA.polygon_halfspace(query, i) for i in eachindex(query._vertices)]
     end
     interval_box(query, 2; guaranteed = true)
     lo = DA.polygon_real.(IA.inf.(query))
@@ -128,9 +125,10 @@ function DA.polygon_interval_query(a::DA.PiecewisePolygonMap, query = nothing; p
         models = DA.model_snapshots(patch._patch)
         values = point ? polygon_projected_snapshot_bounds(models, projected) :
             polygon_snapshot_bounds(models, points, a._directions)
-        result = result === nothing ? values : [IA.hull(x, y; dec = :auto) for (x, y) in zip(result, values)]
+        result = hull_outputs!(result, values)
         return nothing
     end
     result === nothing && throw(ErrorException("Polygon partition has a coverage gap"))
+    retain_decoration!(result, query)
     return a._scalar ? only(result) : result
 end

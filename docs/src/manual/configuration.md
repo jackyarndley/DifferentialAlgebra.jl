@@ -2,74 +2,68 @@
 
 ## Algebra lifetime
 
-`variables(n; order)` creates the global default algebra. The lower-level
-`DifferentialAlgebra.initialize!(order, n)` initializes the same configuration without
-constructing variables. Reinitializing invalidates existing polynomials, even
-when the dimensions are unchanged.
+`variables(n; order)` creates the global default algebra;
+`initialize!(order, n)` creates the same configuration without variables.
+Reinitializing invalidates all live polynomials belonging to the previous
+algebra, even when its dimension and order are unchanged.
 
-Initialize the global default before concurrent calculations. Reinitializing it
-or mutating shared polynomials must not overlap readers. Operations may share
-read-only inputs, while each task owns its outputs.
+Initialize before parallel work. Read-only operations can share polynomials;
+mutation and reinitialization must not overlap readers. Each task owns its outputs.
+Working orders and coefficient tolerances belong to the algebra and are shared
+by child tasks. Configure them before parallel calculations and await children
+inside `with_order`. Distributed workers need their own initialization.
 
-Working orders and coefficient tolerances belong to the owning algebra. Child
-tasks and threaded loops share that policy. Configure it before parallel work;
-do not change it while other tasks calculate with that algebra. Await all child
-tasks inside `with_order` before it restores the order. Distributed workers have
-independent global algebras: initialize and configure each worker explicitly.
+ADS builders use private scoped algebras inherited by their child tasks. Other
+tasks retain their default binding. Object-based operations always use the
+object's owning algebra; logging scopes do not change that ownership.
 
-ADS builders use private temporary algebras. Child tasks inherit their builder's
-binding, including variable/type-based factories. Independent tasks continue to
-use the global default. Object-based operations always use their owning algebra.
-Julia's native scoped values supply this binding. Logging scopes do not change it.
+## Working order and coefficient tolerance
 
-A polynomial owns mutable coefficient storage. Assignment shares that object;
-`copy(p)` creates independent storage. A compiled map owns its coefficients, so
-numeric evaluation continues to work after reinitialization. Polynomial
-composition still requires the original algebra.
+```@example configuration
+using DifferentialAlgebra
+x, = variables(1; order=6)
+p = exp(x)
+low_order = with_order(2) do
+    exp(x)
+end
+(stored_degree = degree(p), low_degree = degree(low_order), restored = truncation_order())
+```
 
-Julia manages polynomial memory automatically. A standard array copy, `copy(A)`,
-shares its polynomial entries; use `copy.(A)` for independent coefficients.
-When creating mutable work buffers, a comprehension such as
-`[zero(p) for _ in 1:n]` creates independent entries. `fill(p, n)` shares `p`.
+`set_truncation_order!(n)` changes the working cutoff within the initialized
+maximum and returns the previous value. `with_order(n) do ... end` restores it
+on success or failure. Changing the cutoff does not mutate existing polynomials.
+Arithmetic results obey it, including scalar addition, unary signs and `p^1`.
+Copies, coefficient conversion and inspection preserve stored terms.
 
-## Truncation and filtering
+`set_coefficient_tolerance!(tol)` discards small floating coefficients from
+arithmetic results. The default is zero; a BigFloat tolerance keeps its precision.
+Filtering and truncation are approximations, not error bounds. Taylor models
+record their retained order and reject arithmetic under a different working
+order; their queries preserve the stored polynomial and remainder.
 
-`DifferentialAlgebra.set_truncation_order!(order)` changes the current algebra's
-working order without changing the maximum order chosen at initialization. It
-returns the previous working order.
-`with_order(order) do ... end` restores the previous order even when the calculation throws.
-Ordinary arithmetic results discard terms above the working order, including
-scalar addition, unary signs and `p^1`. `copy`, coefficient conversion and
-inspection preserve stored terms;
-changing the order alone does not mutate existing polynomials. Taylor models
-instead record their retained order and reject arithmetic at a different working
-order; enclosure and evaluation retain all their stored terms and remainder.
+## Ownership and repeated evaluation
 
-`DifferentialAlgebra.set_coefficient_tolerance!(tolerance)` selects the current
-algebra's threshold for discarding small floating-point coefficients. The default
-threshold is zero. An explicit BigFloat threshold retains its precision;
-`coefficient_tolerance()` returns that value, or Float64 for other settings.
-Filtering and truncation are
-approximations, not rigorous error bounds.
+| Operation | Storage behavior |
+|:--|:--|
+| `q = p` | Shares the mutable polynomial |
+| `copy(p)` | Independent polynomial coefficients |
+| `copy(A)` | New array, shared polynomial entries |
+| `copy.(A)` | Independent polynomial entries |
+| `[zero(p) for _ in 1:n]` | Independent work buffers |
+| `fill(p, n)` | Every entry shares `p` |
+| `CompiledMap(A)` | Owns coefficients; numeric evaluation survives reinitialization |
 
-## Memory and repeated calculations
+Reuse compiled maps for many evaluations. `evaluate!` and `LinearAlgebra.mul!`
+reuse buffers, although scalar arithmetic may allocate. Polynomial composition
+with a compiled map still requires the original algebra.
 
-The `table_bytes` keyword of `variables` and `initialize!` bounds the multiplication
-lookup tables. Larger bases calculate indices as needed. This budget excludes
-polynomial coefficients and basis metadata.
-
-Reuse compiled maps when evaluating many points. The in-place operations
-`evaluate!` and `LinearAlgebra.mul!` can reuse storage. Scalar types with
-allocating arithmetic may still allocate inside these operations.
+`table_bytes` bounds multiplication lookup tables in `variables`/`initialize!`.
+Larger bases compute indices when needed. This budget excludes coefficients and
+basis metadata; table-backed and table-free products have the same semantics.
 
 ## Package compilation
 
-PrecompileTools records a small, two-variable workload for common arithmetic,
-elementary functions, differentiation and compiled-map evaluation. It uses
-ordinary vectors and a single coefficient type. Polynomial order and variable
-count are runtime data, so they do not create a separate family of types.
-Other scalar types and application callbacks compile when first used.
-
-Plotting packages and ODE solvers are optional application
-dependencies; none is loaded or exercised by the package's precompile workload.
-Loading DifferentialAlgebra leaves the algebra uninitialized.
+A small PrecompileTools workload covers Float64 arithmetic, elementary functions,
+calculus and compiled evaluation. Variable count/order are runtime data; other
+scalar types and application callbacks compile when first used. Loading the
+package leaves its algebra uninitialized and loads no plotting or ODE package.

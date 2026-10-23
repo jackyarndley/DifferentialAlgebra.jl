@@ -4,8 +4,18 @@ const DA = DifferentialAlgebra
 # This is first in the fresh Pkg.test process, before any extension imports.
 @testset "Fresh-process loading and optional diagonal fast path" begin
     @test !DA.isinitialized()
-    @test Base.get_extension(DA, :DifferentialAlgebraIntervalArithmeticExt) === nothing
-    @test Base.get_extension(DA, :DifferentialAlgebraOrdinaryDiffEqExt) === nothing
+    qualified = (
+        :eigenpairs, :raw_moments, :central_moments, :random_polynomial,
+        :trim, :substitute, :translate_variable, :nthroot, :degree_norms,
+        :bounds, :estimate_norms, :multiindices, :hessian_tensor,
+    )
+    @test all(name -> Base.ispublic(DA, name) && !Base.isexported(DA, name), qualified)
+    for extension in (
+            :DifferentialAlgebraForwardDiffExt, :DifferentialAlgebraIntervalArithmeticExt,
+            :DifferentialAlgebraDiffEqBaseExt, :DifferentialAlgebraOrdinaryDiffEqExt,
+        )
+        @test Base.get_extension(DA, extension) === nothing
+    end
     @test_throws ArgumentError TaylorMethod(12)
     @test_throws MethodError TaylorMethod(12.0)
     @test !any(nameof(m) == :GenericLinearAlgebra for m in values(Base.loaded_modules))

@@ -1,88 +1,57 @@
 # Benchmarks
 
-Run from the repository root in the small benchmark environment. It includes
-BenchmarkTools and the optional interval, AD and ODE interfaces used below.
-Plotting, Documenter and GenericLinearAlgebra are not required.
+Prepare the separate environment from the repository root:
 
 ```sh
-julia --startup-file=no --project=benchmark -e 'using Pkg; Pkg.develop(path=".")'
 julia --startup-file=no --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-julia --startup-file=no --project=benchmark benchmark/compound_kernels.jl
-julia --startup-file=no --project=benchmark benchmark/numerical_kernels.jl
 julia --startup-file=no --project=benchmark benchmark/review_kernels.jl
-julia --startup-file=no --project=benchmark benchmark/cleanup.jl
-julia --startup-file=no --project=benchmark benchmark/unified_ads.jl
-julia --startup-file=no --project=benchmark benchmark/interval_models.jl
-julia --startup-file=no --project=benchmark benchmark/interval_kernels.jl
-julia --startup-file=no --project=benchmark benchmark/interval_cleanup.jl --bigfloat
-julia --startup-file=no --project=benchmark benchmark/polygon_ads.jl
-julia --startup-file=no --project=benchmark benchmark/continuous_ads.jl
 ```
 
-Use separate environments for Julia 1.12 and latest stable. The setup uses
-`Pkg.develop`. Shared compatibility entries follow the
-package's integration bounds; see [Contributing](../docs/src/contributing.md).
+Run each script in a fresh process. Algebra initialization invalidates earlier
+live polynomials, so preconstructing all workloads as one shared suite is unsafe.
+Plotting, Documenter and GenericLinearAlgebra are not required.
 
-All scripts use `measurement.jl`. Each log starts with the loaded package's full
-revision, Julia version, CPU, thread count and loaded dependency versions.
-Workloads also print regression coefficients, interval bounds, patch counts or
-other numerical diagnostics alongside their measurements.
+## Choose a workload
 
-The harness reports warmed minimum runtime, bytes, allocation count, evaluations
-per sample, first-call elapsed time and compilation within that first call.
-BenchmarkTools calibrates the sample batch for each workload. The defaults request
-30 samples with a 0.5-second trial budget; `samples`, `seconds` and an explicit
-`batch` can be supplied to `measure`. Use `batch=1` for nonrepeatable mutations.
-Existing buffer workloads overwrite their output on every call.
+| Script | Measures | Recorded output |
+|:--|:--|:--|
+| `compound_kernels.jl` | Compound polynomial arithmetic | [Log](measurements/compound_kernels.txt) |
+| `numerical_kernels.jl` | Numerical kernel costs | [Log](measurements/numerical_kernels.txt) |
+| `review_kernels.jl` | Hypot/Bessel, Duffing, eigenpairs, policy/model/geometry paths | [Log](measurements/review_kernels.txt) |
+| `cleanup.jl` | Calculus, time series and solver buffers | [Log](measurements/cleanup.txt) |
+| `unified_ads.jl` | Shared construction/refinement driver | [Log](measurements/unified_ads.txt) |
+| `interval_models.jl` | Model arithmetic, ranges and six-coordinate uncertainty | [Log](measurements/interval_models.txt) |
+| `interval_kernels.jl` | Coordinate powers, discarded products and both table budgets | [Log](measurements/interval_kernels.txt) |
+| `interval_cleanup.jl` | Scalar model operations and live/snapshot queries | [Log](measurements/interval_cleanup.txt) |
+| `polygon_ads.jl` | Box versus exact polygon geometry | [Log](measurements/polygon_ads.txt) |
+| `continuous_ads.jl` | Blending, AD derivatives and enclosure queries | [Log](measurements/continuous_ads.txt) |
 
-First-call compilation is measured before tuning the warmed loop. Package loading
-and harness compilation are excluded. Later workloads reuse earlier specializations,
-so compilation rows describe their script order rather than isolated function costs.
+`interval_cleanup.jl --bigfloat` adds 256-bit endpoints.
+`interval_kernels.jl --profile` collects CPU/allocation samples. Logs include
+coefficients, bounds/metadata, patch counts or conservation checks alongside costs.
+Their headers identify the measured revision; they are not claims about an
+unmeasured current checkout.
 
-Run paired revisions sequentially on the same machine with matching dependencies
-and the same script/harness source. Compare allocations and numerical results as
-well as timings. Baselines with incorrect coefficients do less mathematical work;
-their timings describe a correctness tradeoff.
+## Interpret measurements
 
-Keep only the latest output per script in `measurements/`, with its revision in the
-header. Historical logs remain in Git history. Release changes and API migration
-instructions live in [NEWS](../NEWS.md) and the [migration guide](../docs/src/migration.md).
+All scripts use `measurement.jl`, which records revision, Julia/dependency versions,
+CPU and threads. It reports warmed minimum runtime, bytes, allocations, batch size,
+first-call elapsed time and compilation. Defaults request 30 samples and a
+0.5-second trial budget; `measure` accepts `samples`, `seconds` and `batch`.
+Use `batch=1` for nonrepeatable mutations; existing buffer workloads overwrite
+outputs on every call.
 
-Latest recorded outputs (headers identify the measured revision and Julia version):
+First-call measurements exclude package loading and harness compilation. Later
+workloads reuse earlier specializations, so they describe script order rather
+than isolated compilation costs. Run paired revisions sequentially with matching
+hardware, dependencies and harness. Compare numerical results and allocations
+before interpreting a timing difference; an inaccurate baseline may do less work.
 
-| Script | Output |
-|:--|:--|
-| Compound kernels | [Measurements](measurements/compound_kernels.txt) |
-| Numerical kernels | [Measurements](measurements/numerical_kernels.txt) |
-| Policies, analytic kernels, model bounds and geometry | [Measurements](measurements/review_kernels.txt) |
-| Calculus, time series and solver buffers | [Measurements](measurements/cleanup.txt) |
-| Shared ADS driver | [Measurements](measurements/unified_ads.txt) |
-| Interval models | [Measurements](measurements/interval_models.txt) |
-| Interval kernel comparison | [Measurements](measurements/interval_kernels.txt) |
-| Interval cleanup | [Measurements](measurements/interval_cleanup.txt) |
-| Polygon ADS | [Measurements](measurements/polygon_ads.txt) |
-| Continuous ADS | [Measurements](measurements/continuous_ads.txt) |
+Interval widths describe their stated target: a stored-polynomial range differs
+from an original-function enclosure. Fewer polygon patches do not necessarily
+mean less time because exact geometry costs more. Separate construction,
+evaluation and derivative costs when choosing a method.
 
-The scripts retain separate algebra setup and numerical diagnostics. Run them in
-fresh processes: preconstructing a shared suite across initializations would leave
-earlier polynomial fixtures invalid. Performance comparisons use a controlled local
-machine; portable CI checks numerical contracts and formatting.
-
-The interval kernel experiment compares normalized-coordinate powers with direct
-`IntervalArithmetic.pown`, and discarded products with the decorated fallback.
-It also measures dense model multiplication and the uncertainty expression under
-both multiplication-table budgets. Pass `--profile` to collect CPU samples and
-allocation stacks. Run paired revisions sequentially using the same script; the
-reference revision can omit the new private discarded-product comparison.
-Full-precision bounds, decorations and guarantee flags accompany each workload.
-Keep paired comparisons, accuracy tradeoffs and validation results in the PR
-description; the measurement files contain one complete run per script.
-
-The interval cleanup script measures scalar addition/subtraction, model construction,
-and live/snapshot range queries. Pass `--bigfloat` to include 256-bit endpoints.
-Every case prints bounds and metadata for comparison between revisions.
-
-`review_kernels.jl` covers tiny arithmetic, both table budgets, hypotenuses,
-scaled Bessel functions, certificate shifts, Duffing expansion/integration,
-eigenpairs and ordinary box/polygon construction. The Duffing cases report
-accepted steps and an independent energy check alongside runtime and storage.
+Keep one current log per script in `measurements/`, with older results in Git
+history and paired comparisons in the PR description. Portable CI checks
+numerical contracts and formatting; controlled local runs measure performance.

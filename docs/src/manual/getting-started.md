@@ -4,59 +4,49 @@
 CurrentModule = DifferentialAlgebra
 ```
 
+A polynomial carries a value and its dependence on small input perturbations.
+First choose the perturbations and maximum total degree; then evaluate the same
+expression you would use with numbers.
+
 ## Create variables
 
 ```@example basics
 using DifferentialAlgebra
-x, y = variables((:x, :y); order=4)
-p = 2 + 3x + x*y + y^2
+δx, δy = variables((:δx, :δy); order=4)
+p = sin(1 + δx) * exp(δy)
 ```
 
-[`variables`](@ref) initializes an algebra and returns its independent variables
-in an ordinary Julia vector. Every monomial has total degree at most `order`;
-multiplication and analytic functions discard higher-degree terms.
+This expands around `(x, y) = (1, 0)`. [`variables`](@ref) returns a normal
+Julia vector. Multiplication and analytic functions discard terms above total
+degree four. To choose the coefficient type, use
+`variables(BigFloat, (:δx, :δy); order=4)`; the default is `Float64`.
 
-Names may be symbols or strings in a tuple or vector. They must be distinct
-identifiers and are displayed exactly as supplied, including Unicode names such
-as `:δx` or `:q₁`. The number of variables is inferred from the names. You can
-also write `variables(2; order=4, names=("x", "y"))` or choose a coefficient type
-with `variables(T, (:x, :y); order=4)`.
+Use `variables(2; order=4)` for automatic names. Names are distinct identifiers,
+copied for display only; coefficient and derivative queries use indices.
+[`variable(1)`](@ref variable) retrieves a coordinate without reinitializing.
+`TaylorPolynomial(1)` constructs the constant one, rather than a variable.
 
-For automatic names, use `variables(2; order=4)`. Assigning the returned values
-to Julia bindings does not rename the polynomial coordinates. Names are copied
-at initialization and affect display only; coefficients and derivatives still
-use variable indices.
-
-To expand about a nonzero point, add that point to the independent variables:
-`sin(2 + x)` expands around 2. To retrieve a variable without reinitializing
-the algebra, use [`variable`](@ref).
-
-`TaylorPolynomial(c)` creates a constant polynomial. In particular, `TaylorPolynomial(1)` is constant one.
-
-## Display polynomials
-
-Polynomials print with Unicode superscripts for powers, such as `x²` and `y¹²`.
-Automatic variable names use subscripts: `x₁`, `x₂`, …, `x₁₀`. With the names
-chosen above, the following expression displays as `2.0 + 3.0 x - 1.0 y²`:
-
-```@example basics
-2 + 3x - y^2
-```
-
-Array displays use the same expressions. Julia's limited displays abbreviate
-long polynomials with `…`; `print(p)` or `string(p)` includes every term.
-Display is for reading, rather than a serialization format. Use
-[`monomials(p)`](@ref monomials) to inspect coefficient and exponent data.
+**Calling `variables` again invalidates existing polynomials**, even with the
+same dimension and order. Finish a calculation or compile its numeric map before
+starting another algebra. [Configuration](configuration.md) covers ownership,
+working orders and concurrent calculations.
 
 ## Inspect and evaluate
 
 ```@example basics
-constant_term(p), coefficient(p, [1, 1]), p([0.2, -0.1])
+(value_at_center = constant_term(p),
+ mixed_coefficient = coefficient(p, [1, 1]),
+ nearby_value = p([0.1, 0.2]))
 ```
 
-[`coefficient`](@ref) takes one nonnegative exponent per variable. It returns
-the coefficient of the ordinary monomial, without factorial scaling.
-`p(point)` is equivalent to [`evaluate(p, point)`](@ref evaluate).
+[`coefficient`](@ref) takes one nonnegative exponent per variable and returns the
+ordinary monomial coefficient: `c_α = ∂^α f / α!`. `p(point)` is equivalent to
+[`evaluate(p, point)`](@ref evaluate); the input is a perturbation, so `[0.1, 0.2]`
+corresponds to the physical point `(1.1, 0.2)` here.
+
+Printed expressions use the chosen names and Unicode powers. `print(p)` shows
+all terms; limited array displays may abbreviate them. Use [`monomials`](@ref)
+for coefficient/exponent data rather than parsing display text.
 
 ## Differentiate and integrate
 
@@ -64,42 +54,34 @@ the coefficient of the ordinary monomial, without factorial scaling.
 dx = differentiate(p, 1)
 mixed = differentiate(p, [1, 1])
 primitive = integrate(p, 2)
-(constant_term(dx), constant_term(mixed), primitive)
+(gradient = constant_term(gradient(p)), hessian = constant_term(hessian(p)),
+ mixed_derivative = constant_term(mixed))
 ```
 
-Variable indices start at one. A vector of counts requests repeated partial
-derivatives. Integration chooses a zero integration constant and truncates to
-the current order.
+Indices start at one; a vector of counts requests repeated partial derivatives.
+`gradient`, `jacobian` and `hessian` return arrays of polynomials, which can be
+evaluated away from the center. Apply `constant_term` for their center values.
+Integration chooses a zero integration constant and obeys the working order.
 
-[`gradient`](@ref), [`jacobian`](@ref) and [`hessian`](@ref) return arrays of
-polynomials. Apply `constant_term` to obtain their values at the expansion point.
+## Reuse the calculation
 
 ```@example basics
-constant_term(gradient(p))
+map = CompiledMap([p, δx + δy])
+map([0.1, 0.2])
 ```
+
+A compiled map owns a shared evaluation tree and remains numerically evaluable
+after algebra reinitialization. See [Polynomial maps](maps.md) for composition,
+inversion and buffered evaluation.
 
 ## Compare polynomials
 
-Arithmetic comparisons (`==`, `<`, `<=`, `>`, `>=` and `isless`) use the constant
-part, so scalar branch conditions can be reused in differentiated code.
-`isequal` and `hash` use the complete coefficient sequence and coordinate
-dimension; sets and dictionaries distinguish different polynomials. Structural
-identity remains available after reinitialization. Avoid mutating dictionary
-keys. `iszero`, `isone`, `isinteger` and `coefficient_norm` inspect the complete
-polynomial. Subtraction applies the current order and
-coefficient tolerance, so `coefficient_norm(p - q)` measures the resulting
-truncated, filtered difference. To compare every stored coefficient of two
-polynomials in the same algebra, inspect coefficients before subtracting scalars:
+`==`, `<`, `<=`, `>`, `>=`, `isless`, `sign` and `signbit` inspect the constant
+part so existing scalar branches can run on polynomials. They do not establish
+equality of expansions. `isequal` and `hash` inspect the complete stored
+coefficient sequence and dimension; avoid mutating dictionary keys.
 
-```@example basics
-q = p + x^4
-indices = DifferentialAlgebra.multiindices(max_order(p), nvariables(p))
-maximum(abs(coefficient(p, alpha) - coefficient(q, alpha)) for alpha in indices)
-```
-
-Use scalar `isapprox` on the coefficient pairs when an approximate comparison
-is intended.
-
-Calling `variables` again starts a new algebra and invalidates existing
-polynomials. See [Configuration and storage](configuration.md) when managing
-several calculations.
+`iszero`, `isone`, `isinteger` and `coefficient_norm` inspect all terms.
+However, `coefficient_norm(p-q)` first applies the current arithmetic order and
+coefficient tolerance. For an unfiltered comparison, extract matching scalar
+coefficients with `coefficient` and compare them directly.

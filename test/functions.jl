@@ -3,30 +3,32 @@ using ..Fixtures
 const DA = DifferentialAlgebra
 
 @testset "Analytic coefficient oracles" begin
-    x, = variables(1; order = 4)
-    cases = (
-        (exp(x), [1, 1, 1 / 2, 1 / 6, 1 / 24]),
-        (inv(1 + x), [1, -1, 1, -1, 1]),
-        (log(1 + x), [0, 1, -1 / 2, 1 / 3, -1 / 4]),
-        (sin(x), [0, 1, 0, -1 / 6, 0]),
-        (cos(x), [1, 0, -1 / 2, 0, 1 / 24]),
-        (tan(x), [0, 1, 0, 1 / 3, 0]),
-        (sinh(x), [0, 1, 0, 1 / 6, 0]),
-        (cosh(x), [1, 0, 1 / 2, 0, 1 / 24]),
-        (tanh(x), [0, 1, 0, -1 / 3, 0]),
-        (asin(x), [0, 1, 0, 1 / 6, 0]),
-        (atan(x), [0, 1, 0, -1 / 3, 0]),
-        (asinh(x), [0, 1, 0, -1 / 6, 0]),
-        (atanh(x), [0, 1, 0, 1 / 3, 0]),
-        (sqrt(1 + x), [1, 1 / 2, -1 / 8, 1 / 16, -5 / 128]),
-    )
-    for (result, expected) in cases
-        @test coefficients(result) ≈ expected atol = 2.0e-15
+    for budget in (0, 32 * 1024^2)
+        x, = variables(1; order = 4, table_bytes = budget)
+        cases = (
+            (exp(x), [1, 1, 1 / 2, 1 / 6, 1 / 24]),
+            (inv(1 + x), [1, -1, 1, -1, 1]),
+            (log(1 + x), [0, 1, -1 / 2, 1 / 3, -1 / 4]),
+            (sin(x), [0, 1, 0, -1 / 6, 0]),
+            (cos(x), [1, 0, -1 / 2, 0, 1 / 24]),
+            (tan(x), [0, 1, 0, 1 / 3, 0]),
+            (sinh(x), [0, 1, 0, 1 / 6, 0]),
+            (cosh(x), [1, 0, 1 / 2, 0, 1 / 24]),
+            (tanh(x), [0, 1, 0, -1 / 3, 0]),
+            (asin(x), [0, 1, 0, 1 / 6, 0]),
+            (atan(x), [0, 1, 0, -1 / 3, 0]),
+            (asinh(x), [0, 1, 0, -1 / 6, 0]),
+            (atanh(x), [0, 1, 0, 1 / 3, 0]),
+            (sqrt(1 + x), [1, 1 / 2, -1 / 8, 1 / 16, -5 / 128]),
+        )
+        for (result, expected) in cases
+            @test coefficients(result) ≈ expected atol = 2.0e-15
+        end
+        @test coefficient(acos(x), [3]) ≈ -1 / 6
+        @test coefficient(acosh(2 + x), [1]) ≈ 1 / sqrt(3)
+        @test coefficient(cbrt(1 + x), [2]) ≈ -1 / 9
+        @test coefficient(DA.nthroot(1 + x, 5), [2]) ≈ -2 / 25
     end
-    @test coefficient(acos(x), [3]) ≈ -1 / 6
-    @test coefficient(acosh(2 + x), [1]) ≈ 1 / sqrt(3)
-    @test coefficient(cbrt(1 + x), [2]) ≈ -1 / 9
-    @test coefficient(DA.nthroot(1 + x, 5), [2]) ≈ -2 / 25
 end
 
 @testset "Final-only filtering, including compound operations" begin
@@ -95,4 +97,15 @@ end
         @test_throws DA.TaylorError f(p)
     end
     @test constant_term(asin(one(x))) == pi / 2
+    @test iszero(sqrt(zero(x)))
+    wrapped = 5 + 2x + 3x^2
+    @test all(
+        coefficients(p) == [2, 2, 3] for p in
+            (mod(wrapped, 3), mod(wrapped, TaylorPolynomial(3)))
+    )
+    @test_throws ArgumentError mod(wrapped, 3 + x)
+    @test_throws ArgumentError mod(3, wrapped)
+    with_order(1) do
+        @test coefficients(mod(wrapped, 3)) == [2, 2, 0]
+    end
 end

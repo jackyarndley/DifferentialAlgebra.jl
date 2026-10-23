@@ -1,5 +1,6 @@
-# Record an analytic RHS once, then compute one new coefficient per node and
-# degree. Runtime graph storage keeps compilation independent of graph size.
+# Record an analytic RHS once per expansion, then compute one new coefficient
+# per node and degree using time_kernels.jl. Runtime graph storage keeps
+# compilation independent of graph size.
 @enum TimeOperation::UInt8 begin
     TimeInput
     TimeConstant
@@ -153,95 +154,6 @@ function Base.tanh(a::TimeNode)
     return s / c
 end
 
-function time_convolution(a, b, k, prototype)
-    value = zero(prototype)
-    @inbounds for j in 0:k
-        aj, bj = a[j + 1], b[k - j + 1]
-        (iszero(aj) || iszero(bj)) && continue
-        value = muladd(aj, bj, value)
-    end
-    return value
-end
-function time_convolution(a::Vector{T}, b::Vector{T}, k, prototype::T) where {T <: Union{Float32, Float64}}
-    value = zero(T)
-    @inbounds @simd for j in 0:k
-        value += a[j + 1] * b[k - j + 1]
-    end
-    return value
-end
-function time_convolution(a::Vector{P}, b::Vector{P}, k, prototype::P) where {P <: TaylorPolynomial}
-    value, scratch = zero(prototype), zero(prototype)
-    @inbounds for j in 0:k
-        (iszero(a[j + 1]) || iszero(b[k - j + 1])) && continue
-        LinearAlgebra.mul!(scratch, a[j + 1], b[k - j + 1])
-        add!(value, value, scratch)
-    end
-    return value
-end
-
-@inline time_weight(j, k, p, ::Val{:exp}) = j
-@inline time_weight(j, k, p, ::Val{:log}) = j - k
-@inline time_weight(j, k, p, ::Val{:power}) = p * j - (k - j)
-
-# Normalize scalar exponent weights once, keeping exact coefficient arithmetic
-# and the wider working type used by BigInt rationals. Polynomial and dual
-# coefficients only supply the scalar type; their values remain untouched.
-time_exponent(p, value) = p
-time_exponent(p::Rational, value::AbstractFloat) =
-    convert(promote_type(typeof(p), typeof(value)), p)
-time_exponent(p::Rational, value::TaylorPolynomial) =
-    time_exponent(p, constant_term(value))
-
-function time_weighted_sum(a, c, k, p, mode)
-    value = zero(c[1])
-    @inbounds for j in 1:k
-        weight = time_weight(j, k, p, mode)
-        iszero(weight) && continue
-        value += weight * a[j + 1] * c[k - j + 1]
-    end
-    return value
-end
-function time_weighted_sum(a::Vector{T}, c::Vector{T}, k, p, mode) where {T <: Union{Float32, Float64}}
-    value = zero(T)
-    @inbounds @simd for j in 1:k
-        value += time_weight(j, k, p, mode) * a[j + 1] * c[k - j + 1]
-    end
-    return value
-end
-function time_weighted_sum(a::Vector{P}, c::Vector{P}, k, p, mode) where {P <: TaylorPolynomial}
-    value, scratch = zero(c[1]), zero(c[1])
-    unit = one(coefficient_type(value))
-    @inbounds for j in 1:k
-        weight = time_weight(j, k, p, mode)
-        (iszero(weight) || iszero(a[j + 1]) || iszero(c[k - j + 1])) && continue
-        LinearAlgebra.mul!(scratch, a[j + 1], c[k - j + 1])
-        weighted_sum!(value, value, unit, scratch, weight)
-    end
-    return value
-end
-time_normalize(value, reciprocal, k) = (value / k) * reciprocal
-function time_normalize(value::TaylorPolynomial, reciprocal::TaylorPolynomial, k)
-    scale!(value, value, inv(convert(coefficient_type(value), k)))
-    return value * reciprocal
-end
-function time_quotient_coefficient(a, b, c, k, reciprocal)
-    value = a[k + 1]
-    @inbounds for j in 1:k
-        value -= b[j + 1] * c[k - j + 1]
-    end
-    return time_normalize(value, reciprocal, 1)
-end
-function time_quotient_coefficient(a::Vector{P}, b::Vector{P}, c::Vector{P}, k, reciprocal) where {P <: TaylorPolynomial}
-    value, scratch = copy(a[k + 1]), zero(c[1])
-    unit = one(coefficient_type(value))
-    @inbounds for j in 1:k
-        (iszero(b[j + 1]) || iszero(c[k - j + 1])) && continue
-        LinearAlgebra.mul!(scratch, b[j + 1], c[k - j + 1])
-        weighted_sum!(value, value, unit, scratch, -unit)
-    end
-    return time_normalize(value, reciprocal, 1)
-end
-
 function advance_time_coefficient!(values, instructions, reciprocals, k)
     @inbounds for node in eachindex(instructions)
         instruction = instructions[node]
@@ -267,17 +179,19 @@ function advance_time_coefficient!(values, instructions, reciprocals, k)
             end
         elseif op === TimeDivide
             a, b = values[left], values[right]
-            c[k + 1] = instructions[right].operation === TimeConstant ? a[k + 1] * reciprocals[node] : time_quotient_coefficient(a, b, c, k, reciprocals[node])
+            c[k + 1] = if instructions[right].operation === TimeConstant
+                a[k + 1] * reciprocals[node]
+            else
+                time_quotient_coefficient(a, b, c, k, reciprocals[node])
+            end
         elseif op === TimeExp
             a = values[left]
-            c[k + 1] = time_weighted_sum(a, c, k, 0, Val(:exp)) / k
+            c[k + 1] = time_unary_coefficient(a, c, k, 0, nothing, Val(:exp))
         elseif op === TimePower || op === TimeLog
             a = values[left]
-            iszero(constant_term(a[1])) && throw(TaylorError("The time expansion is not analytic here"))
-            p = instruction.power
-            value = op === TimeLog ? time_weighted_sum(a, c, k, p, Val(:log)) : time_weighted_sum(a, c, k, p, Val(:power))
-            op === TimeLog && (value += k * a[k + 1])
-            c[k + 1] = time_normalize(value, reciprocals[node], k)
+            !invertible_constant(constant_term(a[1])) && throw(TaylorError("The time expansion is not analytic here"))
+            mode = op === TimeLog ? Val(:log) : Val(:power)
+            c[k + 1] = time_unary_coefficient(a, c, k, instruction.power, reciprocals[node], mode)
         else # Coupled trigonometric recurrences use only earlier degrees.
             a, partner = values[left], values[right]
             value = time_weighted_sum(a, partner, k, 0, Val(:exp))
@@ -300,7 +214,10 @@ end
 function time_workspace(f, initial, epoch, order, parameters, ::Type{T}) where {T <: Real}
     R = typeof(float(constant_term(zero(T))))
     tape = TimeTape(TimeInstruction{R}[], T[])
-    workspace = TimeWorkspace(tape, Vector{T}[], TimeNode{T, R}[], Int[], TimeSeries{T}[], T[], order, length(initial))
+    workspace = TimeWorkspace(
+        tape, Vector{T}[], TimeNode{T, R}[], Int[], TimeSeries{T}[], T[],
+        order, length(initial)
+    )
     update_time_expansion!(workspace, f, initial, epoch, parameters)
     return workspace
 end
@@ -340,8 +257,10 @@ function update_time_expansion!(workspace::TimeWorkspace{T}, f, initial, epoch, 
     for i in eachindex(tape.instructions)
         node = tape.instructions[i]
         if node.operation in (TimeDivide, TimePower, TimeLog)
-            denominator = values[node.operation === TimeDivide ? node.right : node.left][1]
-            iszero(constant_term(denominator)) && throw(TaylorError("The time expansion is not analytic here"))
+            input = node.operation === TimeDivide ? node.right : node.left
+            denominator = values[input][1]
+            !invertible_constant(constant_term(denominator)) &&
+                throw(TaylorError("The time expansion is not analytic here"))
             reciprocals[i] = inv(denominator)
         end
     end

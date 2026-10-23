@@ -22,12 +22,18 @@ export TimeSeries, taylor_expand, TaylorMethod
 export TaylorModel, taylor_models, polynomial, remainder, domain, enclose
 export CompiledTaylorModel, PiecewiseTaylorModel, TaylorModelPatch
 
+public eigenpairs, raw_moments, central_moments, random_polynomial
+public trim, substitute, translate_variable, nthroot, degree_norms, bounds
+public estimate_norms, multiindices, hessian_tensor
+
 include("basis.jl")
 include("polynomial.jl")
 include("arithmetic.jl")
 include("special_scalars.jl")
 include("functions.jl")
+include("special_functions.jl")
 include("coefficients.jl")
+include("calculus.jl")
 include("substitution.jl")
 include("display.jl")
 include("evaluation.jl")
@@ -42,6 +48,7 @@ include("polygon_domains.jl")
 include("polygon_ads.jl")
 include("continuous_ads.jl")
 include("adaptive_flow.jl")
+include("time_kernels.jl")
 include("time_series.jl")
 include("time_recurrence.jl")
 include("precompile.jl")

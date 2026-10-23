@@ -7,6 +7,7 @@
 using DifferentialAlgebra
 using OrdinaryDiffEqVerner
 using SciMLBase: successful_retcode
+using LinearAlgebra
 using CairoMakie
 
 set_theme!(palette = (color = Makie.to_colormap(:tab10),))
@@ -59,6 +60,14 @@ stm = constant_term.(jacobian(final))
 println("Maximum nominal orbit error: ", maximum(abs.(constants - initial)))
 println("State transition matrix:")
 show(stdout, MIME"text/plain"(), stm); println()
+
+# Hamiltonian Kepler flow preserves the canonical symplectic form. This checks
+# the entire STM against an independent structural invariant, not just its size.
+identity3 = Matrix{Float64}(I, 3, 3)
+symplectic_form = [zeros(3, 3) identity3; -identity3 zeros(3, 3)]
+symplectic_error = norm(stm' * symplectic_form * stm - symplectic_form, Inf)
+@assert symplectic_error < 1.0e-7
+println("STM symplectic residual: ", symplectic_error)
 
 # ## Linear and nonlinear sensitivity
 #

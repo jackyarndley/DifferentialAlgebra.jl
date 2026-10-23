@@ -79,7 +79,7 @@ end
 function Base.:/(a::TimeSeries, b::TimeSeries)
     n = time_order(a, b)
     b0 = constant_term(b)
-    iszero(constant_term(b0)) && throw(TaylorError("Division needs an invertible constant coefficient"))
+    !invertible_constant(constant_term(b0)) && throw(TaylorError("Division needs an invertible constant coefficient"))
     c0 = constant_term(a) / b0
     c = Vector{typeof(c0)}(undef, n + 1)
     c[1] = c0
@@ -112,30 +112,32 @@ end
 function time_recurrence(a::TimeSeries, c0, p, ::Val{MODE}) where {MODE}
     n = max_order(a)
     c = Vector{typeof(c0)}(undef, n + 1)
-    c[1] = c0
     a0 = constant_term(a)
-    MODE !== :exp && n > 0 && iszero(constant_term(a0)) &&
+    c[1] = n == 0 && MODE === :power && coefficient_iszero(a0) ? zero(c0) : c0
+    # A time-constant dual or polynomial can still carry coefficient perturbations.
+    MODE !== :exp && (n > 0 || !coefficient_iszero(a0)) &&
+        !invertible_constant(constant_term(a0)) &&
         throw(TaylorError("The expansion needs an invertible constant coefficient"))
     reciprocal = MODE === :exp || n == 0 ? one(c0) : inv(a0)
     exponent = MODE === :power ? time_exponent(p, c0) : p
     @inbounds for k in 1:n
-        value = time_weighted_sum(a.coefficients, c, k, exponent, Val(MODE))
-        MODE === :log && (value += k * a.coefficients[k + 1])
-        c[k + 1] = MODE === :exp ? value / k : time_normalize(value, reciprocal, k)
+        c[k + 1] = time_unary_coefficient(
+            a.coefficients, c, k, exponent, reciprocal, Val(MODE)
+        )
     end
     return TimeSeries{eltype(c)}(c)
 end
 Base.exp(a::TimeSeries) = time_recurrence(a, exp(constant_term(a)), 0, Val(:exp))
 function Base.log(a::TimeSeries)
     a0 = constant_term(a)
-    iszero(constant_term(a0)) && throw(TaylorError("Logarithm needs a nonzero expansion point"))
+    !invertible_constant(constant_term(a0)) && throw(TaylorError("Logarithm needs an invertible expansion point"))
     return time_recurrence(a, domain_call(log, a0), 0, Val(:log))
 end
 function time_power(a::TimeSeries, p::Real)
     p isa TaylorPolynomial && return exp(p * log(a))
     isinteger(p) && return a^BigInt(p)
     a0 = constant_term(a)
-    iszero(constant_term(a0)) && throw(TaylorError("Fractional powers need a nonzero expansion point"))
+    !invertible_constant(constant_term(a0)) && throw(TaylorError("Fractional powers need an invertible expansion point"))
     return time_recurrence(a, domain_call(x -> x^p, a0), p, Val(:power))
 end
 Base.:^(a::TimeSeries, p::Real) = time_power(a, p)
@@ -256,7 +258,7 @@ OrdinaryDiffEqCore (or an OrdinaryDiffEq solver package) to enable this optional
 extension. Supports in-place and out-of-place analytic vector ODEs, numeric or
 [`TaylorPolynomial`](@ref) states, forward/backward integration, `saveat`, dense
 Taylor interpolation and callbacks. Time order is independent of uncertainty
-order. Choose `order ≥ 3`; the state dimension stays fixed during a solve.
+order. Choose `order ≥ 3`; use a dense `Vector` whose dimension stays fixed during a solve.
 Use polynomial initial states for uncertain polynomial parameters. Interval
 states and parameters are rejected at initialization; this algorithm does not
 certify time-integration errors.

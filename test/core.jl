@@ -18,10 +18,11 @@ const DA = DifferentialAlgebra
                 sum(gamma) <= order && (oracle[gamma] += ac * bc)
             end
             with_order(order) do
-                product, out = p * right, zero(p)
-                mul!(out, p, right)
-                @test all(coefficient(product, collect(k)) == v for (k, v) in oracle)
-                @test samecoefficients(out, product)
+                out = copy(p)
+                mul!(out, out, right === p ? out : right)
+                for result in (p * right, out)
+                    @test all(coefficient(result, collect(k)) == v for (k, v) in oracle)
+                end
             end
         end
     end
@@ -78,6 +79,7 @@ end
 @testset "Stored identity, copy and inspection" begin
     x, y = variables(2; order = 4)
     p = 2 + x + 3x * y
+    @test isequal(constant_term(Real[p, 3]), [2.0, 3.0])
     @test p == 2 && !isequal(p, 2)
     @test length(Set([p, copy(p), 2 + y])) == 2
     q = copy(p)

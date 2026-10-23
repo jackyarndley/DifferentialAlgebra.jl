@@ -16,6 +16,7 @@ function DA.continuity_candidate(f, lo, hi, A, options, ctx, ::DA.IntervalBound)
     validated_rounding()
     T = options.T
     box = [checked_interval(IA.interval(T, a, b); guaranteed = true) for (a, b) in zip(lo, hi)]
+    retain_decoration!(box, options.interval_domain)
     z = coordinate_models(box, options.order)
     x = [sum(IA.interval(T, A[i, j]) * z[j] for j in eachindex(z)) for i in eachindex(z)]
     fit = validated_fit(f, x, first(z), ctx, ctx.basis.order)
@@ -32,7 +33,11 @@ end
 function DA.continuity_errors(
         patches::AbstractVector{<:DA.ContinuityPatch{T, C, V, E}}
     ) where {T, C, V, E <: AbstractVector{<:Interval}}
-    return [foldl((a, p) -> IA.hull(a, p.errors[j]; dec = :auto), Iterators.drop(patches, 1); init = first(patches).errors[j]) for j in eachindex(first(patches).errors)]
+    errors = deepcopy(first(patches).errors)
+    for patch in Iterators.drop(patches, 1)
+        hull_outputs!(errors, patch.errors)
+    end
+    return errors
 end
 function DA.continuity_check_tolerance(errors::AbstractVector{I}, atol) where {I <: Interval}
     atol === nothing && return nothing
@@ -91,8 +96,9 @@ function DA.enclose(a::DA.ContinuousTaylorMap, query = nothing)
         T = IA.numtype(typeof(m._remainder))
         box = [IA.intersect_interval(IA.interval(T, l, h), b; dec = :auto) for (l, h, b) in zip(lower, upper, m._coordinates.box)]
         values = snapshot_bounds(patch.certificates, box)
-        result = result === nothing ? values : map((x, y) -> IA.hull(x, y; dec = :auto), result, values)
+        result = hull_outputs!(result, values)
     end
     result === nothing && throw(ErrorException("Overlap fits did not cover the query"))
+    retain_decoration!(result, query)
     return a._scalar ? only(result) : collect(result)
 end

@@ -231,9 +231,8 @@ function polygon_probe(p::ConvexPolygon{T}) where {T}
     radii = ((hi[1] - lo[1]) / 2, (hi[2] - lo[2]) / 2)
     factor = one(PolygonReal)
     for i in eachindex(v)
-        a, b = v[i], v[mod1(i + 1, length(v))]
-        normal = (b[2] - a[2], a[1] - b[1])
-        slack = normal[1] * (a[1] - center[1]) + normal[2] * (a[2] - center[2])
+        normal, cut = polygon_halfspace(p, i)
+        slack = cut - normal[1] * center[1] - normal[2] * center[2]
         factor = min(factor, slack / (abs(normal[1]) * radii[1] + abs(normal[2]) * radii[2]))
     end
     r = (factor * radii[1] / 2, factor * radii[2] / 2)
@@ -260,9 +259,7 @@ function polygon_candidate(f, polygon, B, A, options, ctx, estimator::ADSEstimat
         push!(points, ntuple(i -> sum(v -> v[i], polygon._vertices) / length(polygon._vertices), 2))
         probes = map(points) do v
             projected = T.(collect(polygon_project(B, v)))
-            normalized = map(projected, geometry.center, geometry.radius) do x, c, r
-                iszero(r) ? zero(T) : (x - c) / r
-            end
+            normalized = ads_normalize.(projected, geometry.center, geometry.radius)
             (T.(collect(v)), normalized, 0)
         end
         ads_check_points!(p, probes, (f(point) for (point, _, _) in probes))
@@ -329,7 +326,8 @@ function polygon_construct(
         guard_order::Integer = estimator isa GuardedTail ? 2 : 0,
         check_points::Bool = !(estimator isa IntervalBound), strict::Bool = true,
         directions = nothing, max_depth::Integer = 20, max_patches::Integer = 1024,
-        names = nothing, table_bytes::Integer = 32 * 1024^2, partition = nothing
+        names = nothing, table_bytes::Integer = 32 * 1024^2, partition = nothing,
+        interval_domain = ads_interval_domain(partition)
     ) where {T}
     settings = ads_options(;
         order, atol, rtol, estimator, splitter, guard_order,
@@ -338,7 +336,7 @@ function polygon_construct(
     )
     ads_check_partition(partition, settings)
     probe, scales = polygon_probe(polygon)
-    options = (; settings..., scales)
+    options = (; settings..., scales, interval_domain)
     automatic = directions === nothing || directions === :auto
     probe_order = clamp(options.working_order, 3, 5)
     basis_order = max(options.working_order, automatic ? probe_order : 2)
@@ -369,7 +367,7 @@ function polygon_query(a, point)
     point isa Union{Tuple, AbstractVector} && length(point) == 2 || throw(DimensionMismatch("Provide two physical coordinates"))
     point isa AbstractVector && Base.require_one_based_indexing(point)
     x = (
-        continuity_primal(point[1]), continuity_primal(point[2]),
+        ads_primal_coordinate(point[1]), ads_primal_coordinate(point[2]),
     )
     all(isfinite, x) || throw(ArgumentError("Physical coordinates must be finite"))
     bounds = ads_float_bounds(x)
@@ -384,12 +382,10 @@ function evaluate(a::PiecewisePolygonMap, point)
     p = ads_patches(a)[patch]._patch
     T = evaluation_type(eltype(p.center), point)
     coordinates = T[point[1], point[2]]
-    B = continuity_primal(first(coordinates)) isa Float64 ?
+    B = coefficient_primal(first(coordinates)) isa Float64 ?
         a._lookup.directions : T.(a._directions)
     projected = B * coordinates
-    z = map(projected, p.center, p.radius) do value, center, radius
-        iszero(radius) ? zero(T) : (value - center) / radius
-    end
+    z = ads_normalize.(projected, p.center, p.radius)
     result = evaluate(p.map, z)
     return a._scalar ? only(result) : result
 end

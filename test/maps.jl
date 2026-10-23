@@ -16,6 +16,24 @@ end
     @test map([2, 3]) == [7]
 end
 
+@testset "Map operations require one owning algebra" begin
+    x, y = variables(2; order = 2)
+    map = compile([1 + x + 3000y])
+    set_coefficient_tolerance!(0.01)
+    DA.with_algebra(2, 2) do _
+        z = variable(1)
+        mixed = [x, z]
+        @test_throws ArgumentError linear_part(mixed)
+        @test_throws ArgumentError jacobian(mixed)
+        @test_throws ArgumentError DA.hessian_tensor(mixed)
+        @test_throws ArgumentError DA.eigenpairs([x zero(x); zero(z) z])
+        # Zero weights must not bypass ownership checks in the shared transform.
+        @test_throws ArgumentError DA._linear_transform(zeros(2, 2), mixed)
+        @test coefficients(only(map(Real[x, 0.005]))) == [16, 1, 0, 0, 0, 0]
+    end
+    @test x([0.5]) == 0.5
+end
+
 @testset "Calculus through stored higher degrees" begin
     for budget in (0, 32 * 1024^2)
         x, y = variables(2; order = 4, table_bytes = budget)
@@ -31,7 +49,8 @@ end
             @test degree(abs(positive)) == degree(abs(negative)) == 0
         end
         @test degree(p) == 4 && truncation_order() == 4
-        @test samecoefficients(differentiate(integrate(x + y, 1), 1), x + y)
+        @test coefficients(integrate(x + y, [1, 1])) ==
+            [0, 0, 0, 0, 0, 0, 0, 1 / 2, 1 / 2, 0, zeros(5)...]
         p = 1.0e-5x^4
         set_coefficient_tolerance!(1.0e-4)
         @test coefficient(differentiate(p, [2, 0]), [2, 0]) ≈ 0.00012
@@ -41,22 +60,31 @@ end
     p = 2 + x + 3x * y + y^2
     @test all(samecoefficients.(gradient(p), [1 + 3y, 3x + 2y]))
     @test constant_term.(jacobian([p, x * y])) == [1 0; 0 0]
-    @test size(DA.hessian_tensor([p, x * y])) == (2, 2, 2)
+    tensor = DA.hessian_tensor([p, x * y])
+    @test all(iszero, degree.(tensor)) &&
+        constant_term.(tensor) == cat([0 3; 3 2], [0 1; 1 0]; dims = 3)
 end
 
 @testset "Evaluation, composition and inverse maps" begin
     x, y = variables(2; order = 4)
     p = 2 + x + 3x * y + y^2
     map = CompiledMap([p, x + y])
+    @test_throws ArgumentError map(ShiftedVector([2, 3]))
     point = [2.0, 3.0]
     out, work = zeros(2), zeros(nnodes(map))
     evaluate!(out, map, point, work)
     @test out == [31, 5] && p(point) == 31
-    @test samecoefficients(only(compile([x + y])([x, x])), 2x)
-    inverse = invert([2x + y^2, y])
-    @test all(samecoefficients.(inverse, [x / 2 - y^2 / 2, y]))
+    @test coefficients.(map([1 + x, 2 + y])) ==
+        [[13, 7, 7, 0, 3, 1, zeros(9)...], [3, 1, 1, zeros(12)...]]
+    inverse = invert([2 + 2x + y^2, -1 + y])
+    @test coefficients.(inverse) ==
+        [[-1.5, 0.5, -1, 0, 0, -0.5, zeros(9)...], [1, 0, 1, zeros(12)...]]
     @test_throws DA.TaylorError invert([x, 2x])
     @test_throws DimensionMismatch evaluate!(zeros(1), map, point, work)
+    @test_throws DimensionMismatch evaluate!(out, map, point, zeros(degree(map)))
+    for (result, coordinates, scratch) in ((out, out, work), (out, point, out), (out, point, point))
+        @test_throws ArgumentError evaluate!(result, map, coordinates, scratch)
+    end
     # A snapshot owns its coefficients and survives global reinitialization.
     set_coefficient!(p, [0, 0], 99)
     @test map(point) == [31, 5]

@@ -82,10 +82,8 @@ function Base.isequal(a::TaylorPolynomial, b::TaylorPolynomial)
     a.len > 1 && a.algebra.basis.variables != b.algebra.basis.variables && return false
     return all(i -> coefficient_isequal(a.coeffs[i], b.coeffs[i]), 1:a.len)
 end
-Base.isequal(a::TaylorPolynomial, b::Real) =
-    a.len == 1 && coefficient_isequal(a.coeffs[1], b)
-Base.isequal(a::Real, b::TaylorPolynomial) = isequal(b, a)
-for S in (:AbstractFloat, :AbstractIrrational)
+# The narrower scalar methods resolve Base's floating/irrational ambiguities.
+for S in (:Real, :AbstractFloat, :AbstractIrrational)
     @eval begin
         Base.isequal(a::TaylorPolynomial, b::$S) =
             a.len == 1 && coefficient_isequal(a.coeffs[1], b)
@@ -122,8 +120,7 @@ end
     R = coefficient_type(out)
     alpha, beta = coefficient_operand(R, alpha), coefficient_operand(R, beta)
     @inbounds @simd for i in 1:n
-        ac = i <= a.len ? a.coeffs[i] : zero(coefficient_type(a))
-        bc = i <= b.len ? b.coeffs[i] : zero(coefficient_type(b))
+        ac, bc = coefficient_at(a, i), coefficient_at(b, i)
         out.coeffs[i] = alpha * coefficient_operand(R, ac) + beta * coefficient_operand(R, bc)
     end
     return finish!(out, n; filter)
@@ -142,10 +139,10 @@ Base.muladd(a::TaylorPolynomial, b::TaylorPolynomial, c::TaylorPolynomial) =
 """
     DifferentialAlgebra.add!(out, p, q)
 
-Internal addition buffer kernel. Store `p + q` in `out`, applying its
-coefficient type and the working order
-and tolerance. All three polynomials must share an algebra. Either input may
-alias `out`; operand precision is retained until assignment to its coefficients.
+Internal addition buffer kernel. Store `p + q` in `out`, applying its coefficient
+type and the working order and tolerance. All three polynomials must share an
+algebra. Either input may alias `out`; operand precision is retained until
+assignment to its coefficients.
 """
 function add!(out::TaylorPolynomial, a::TaylorPolynomial, b::TaylorPolynomial)
     return weighted_sum!(out, a, one(coefficient_type(a)), b, one(coefficient_type(b)))
@@ -209,7 +206,7 @@ Base.:+(a::Real, b::TaylorPolynomial) = b + a
 Base.:-(a::TaylorPolynomial, b::Real) = scalar_sum(a, b, Val(:subtract))
 Base.:-(a::Real, b::TaylorPolynomial) = scalar_sum(b, a, Val(:subtract_from))
 function Base.:/(a::TaylorPolynomial, b::Real)
-    coefficient_iszero(b) && throw(TaylorError("Division by zero"))
+    invertible_constant(b) || throw(TaylorError("Division requires a denominator excluding zero"))
     # Invert in the coefficient precision. inv(3) would promote Float32 to
     # Float64 and inject a rounded Float64 reciprocal into BigFloat coefficients.
     return a * inv(coefficient_convert(promote_type(coefficient_type(a), typeof(b)), b))

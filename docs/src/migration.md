@@ -1,91 +1,74 @@
-# API migrations
+# API migration
 
 ## 0.2.0 (unreleased)
 
-Julia 1.12 or later is required. Upgrade older Julia installations before upgrading
-the package. Optional integrations remain optional.
+Requires Julia 1.12 or later. Optional integrations remain optional; the
+ForwardDiff integration now requires version 1. Deprecated wrappers and redundant
+SpecialFunctions aliases have been removed.
 
-### Removed APIs
+## Replace removed calls
 
-- `push_order!(n)` / `pop_order!()` → `with_order(n) do … end`, which restores
-  the working order after an exception.
-- `validated_adaptive_map(f, box)` →
-  `adaptive_map(f, box; estimator=IntervalBound(), order=3, atol=1e-6, splitter=:width)`.
-  These explicit options preserve the wrapper's defaults. The canonical defaults
-  remain order five, tolerance `1e-8`, and `:tail`.
-- `DifferentialAlgebra.erf(p)` → `SpecialFunctions.erf(p)`. Likewise import `erfc`,
-  `gamma`, `loggamma`, `besselj`, `bessely`, `besseli`, `besselk`, `besselix`, and
-  `besselkx` from SpecialFunctions; their polynomial methods remain supported.
-- `round(p)` → `round(constant_term(p))` when a scalar result is intended.
-- `trunc(p)` → `trunc(constant_term(p))` when a scalar result is intended.
-  Julia's fallbacks do not provide polynomial rounding. `mod` keeps its semantics.
+| Previous use | Replacement |
+|:--|:--|
+| `push_order!(n)` / `pop_order!()` | `with_order(n) do ... end` restores order on success and failure |
+| `validated_adaptive_map(f, box)` | `adaptive_map(f, box; estimator=IntervalBound())` |
+| `DifferentialAlgebra.erf(p)` and other special-function aliases | Import the operation from `SpecialFunctions`; polynomial methods remain available |
+| `round(p)`, `trunc(p)` | Apply to `constant_term(p)` for a scalar result |
+| `Float64(p)` to discard higher terms | `Float64(constant_term(p))` |
+| `TaylorPolynomial{Real}(c)` | A concrete coefficient type, such as `TaylorPolynomial{Float64}(c)` |
 
-### Changed semantics
+The former validated wrapper used `order=3, atol=1e-6, splitter=:width`.
+Specify these to preserve its behavior; the unified defaults are `order=5`,
+`atol=1e-8`, `splitter=:tail`.
 
-- `Float64(p)` → `Float64(constant_term(p))` to discard derivatives explicitly.
-  Scalar conversion, including `Bool`, rejects nonconstant polynomials.
-  Structural `isequal` and `hash` inspect all stored coefficients; ordinary `==`
-  still compares constant parts.
-- `TaylorPolynomial{Real}(c)` → `TaylorPolynomial{Float64}(c)` or another concrete
-  coefficient type. `float(p)` now matches `float(typeof(p))`.
-- `central_moments(mgf, n)` → `with_order(n) do; central_moments(mgf, n); end` if
-  the requested order exceeds the working cutoff. The constant coefficient must
-  be one. Raw moments still inspect all stored orders.
+## Make inputs explicit
 
-Working orders and coefficient tolerances belong to the owning algebra and reach
-child tasks. Configure them before parallel calculations and await children inside
-`with_order`. Distributed workers need explicit configuration. ADS uses private
-scoped algebras; `initialize!` inside a construction replaces only that binding.
-Global initialization still invalidates the previous default's polynomials.
+- Exponent/repeated-calculus vectors require one nonnegative count per variable:
+  use `[1,0]` for a two-variable coefficient. Numeric evaluation retains its
+  documented padding behavior.
+- Time orders must be integers: `TaylorMethod(20)`.
+- With uncertain polynomial ODE parameters, use polynomial initial states too:
+  `ODEProblem(f, [one(x)], span, 1+x)`. Interval ODE states remain unsupported.
+- Supply variable names once: `variables((:x,:y); order=5)`.
+- Scalar conversion, including `Bool`, rejects nonconstant polynomials.
+  Arithmetic comparisons still inspect constants; `isequal`/`hash` inspect all terms.
+- Polynomial-map operations require one owning algebra, including zero-weight
+  linear transforms and diagonal eigenproblems.
+- `central_moments(mgf,n)` requires constant coefficient one and a sufficient
+  working cutoff; use `with_order(n) do ... end` if needed. Raw moments inspect
+  all stored orders.
 
-Repeated derivatives and Hessians preserve intermediate degrees needed for the
-requested result; both `abs` branches use the working cutoff. Norms use stable
-floating accumulation for ordinary coefficients and outward bounds for intervals.
-Diagonal eigenpairs need no optional scalar solver, including BigFloat and
-Rational{BigInt}. Root and hypotenuse coefficient types follow their scalar
-operations. NaN constants propagate through polynomial analytic functions.
-`TimeSeries(vector)` owns its storage, including input views and ranges.
+Working order and coefficient tolerance belong to the owning algebra and reach
+child tasks. Configure before parallel work and await children inside `with_order`.
+Distributed workers require explicit initialization. ADS uses private scoped
+algebras; global reinitialization still invalidates earlier default polynomials.
+See [Configuration](manual/configuration.md).
 
-### New errors
+## Adaptive maps and snapshots
 
-- `coefficient(p, [1])` → `coefficient(p, [1, 0])` for a two-variable polynomial.
-  Exponent and repeated-calculus vectors require one nonnegative count per variable;
-  remove extra entries explicitly. Numeric evaluation keeps its documented padding.
-- `TaylorMethod(20.0)` → `TaylorMethod(20)`; time orders must be integers.
-- `ODEProblem(f, [1.0], span, 1+x)` → `ODEProblem(f, [one(x)], span, 1+x)` for
-  uncertain polynomial parameters. Interval states and parameters remain unsupported.
-- `variables((:x, :y); names=...)` → `variables((:x, :y))`: supply names once.
+Refinement now inherits the estimator, requested order, tolerances and resource
+limits. Override only the settings to change:
+`adaptive_map(f, previous; atol=..., max_depth=...)`.
+Patch errors consistently use one entry per output; use `only(...)` for scalars.
 
-Unsupported axes fail before indexing. Eigenpairs require symmetry through the
-working order. Converting `Monomial{T}(c, integer_exponents)` is supported again;
-negative exponents and values beyond `UInt32` are rejected.
+`map.patches` copies its vector, so cache it before repeated indexing. Entries
+are read-only; use `copy(map)` for independent patch storage. Irrational query coordinates
+use BigFloat for routing; supply explicit BigFloat values when boundary precision
+matters. See [Domain splitting](manual/domain-splitting.md).
 
-### ADS
+## Validated arithmetic
 
-- `adaptive_map(f, previous)` → `adaptive_map(f, previous; atol=…, max_depth=…)`
-  when changing saved settings. Refinement now inherits tolerances and resource limits.
-- `map.error_estimate` → `only(map.error_estimate)` for a scalar interval-polygon
-  estimate; output estimates consistently use vectors.
-- Repeated `map.patches[i]` → `patches = map.patches; patches[i]`: the public
-  accessor copies the vector. Snapshot entries are read-only; copy them to own storage.
-- Queries such as `[π]` → `[BigFloat(π)]` when choosing boundary precision
-  explicitly. Irrational containment and routing now consistently use BigFloat.
+Declare floating constants explicitly: `x*interval(0.1)` means the stored binary
+value; `x*(1//10)` means the exact decimal rational. Implicit `x*0.1` is NG and
+rejected by model arithmetic. Similarly, use an interval remainder in
+`TaylorModel(p, interval(0), reference)`; that remainder is an assertion, not a
+reconstruction of prior errors.
 
 Certified ADS subdivides on analytic domain failures, including callback
-`DomainError`s. A failure remaining at a splitting limit throws even with
-`strict=false`. Use another exception type for errors that should propagate at once.
+`DomainError`s. A failure remaining at a limit throws even with `strict=false`;
+use another exception type for errors that should propagate immediately.
 
-### Interval models
-
-- `x * 0.1` → `x * interval(0.1)` or `x * IntervalArithmetic.exact(0.1)` to declare
-  the stored binary constant. Use `x * (1//10)` for an exact decimal rational.
-- `TaylorModel(p, 0.0, reference)` → `TaylorModel(p, interval(0), reference)`.
-  Polynomial coefficients have stored-binary semantics; the supplied remainder is
-  an assertion, not a reconstruction of earlier rounding or truncation errors.
-
-Queries intersect `P+R` with an independent range certificate when available.
-Certificates retain the full normalized cover and propagate through arithmetic;
-copies and compiled snapshots own them. They do not reduce the absolute remainder.
-Wide elementary compositions may return a constant image model when its bound is
-tighter or polynomial intermediates overflow. The uniform remainder invariant still
-holds. Validated arithmetic requires correct interval rounding and preserves metadata.
+Range queries can intersect `P+R` with an independent interval certificate.
+Wide elementary compositions may return a constant image model when tighter or
+needed to avoid overflowing intermediates. The absolute remainder invariant and
+input metadata remain intact. See [Intervals and Taylor models](manual/interval-models.md).

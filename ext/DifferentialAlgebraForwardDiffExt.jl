@@ -5,21 +5,14 @@ import ForwardDiff
 
 # Only branch/domain checks inspect primal values. All surrogate arithmetic
 # retains the original (possibly nested) dual numbers.
-DA.continuity_primal(x::ForwardDiff.Dual) = DA.continuity_primal(ForwardDiff.value(x))
+DA.coefficient_primal(x::ForwardDiff.Dual) = DA.coefficient_primal(ForwardDiff.value(x))
 DA.taylor_solver_coefficient(::Type{<:ForwardDiff.Dual{Tag, V}}) where {Tag, V} =
     DA.taylor_solver_coefficient(V)
 DA.time_exponent(p::Rational, value::ForwardDiff.Dual) =
     DA.time_exponent(p, ForwardDiff.value(value))
 
-# Older ForwardDiff predicates inspect only the primal. A zero-valued
-# coefficient with nonzero partials must remain stored; a reciprocal still
-# requires an invertible primal, including through nested Duals.
-DA.coefficient_iszero(c::ForwardDiff.Dual) =
-    DA.coefficient_iszero(ForwardDiff.value(c)) &&
-    all(DA.coefficient_iszero, ForwardDiff.partials(c))
-DA.coefficient_isone(c::ForwardDiff.Dual) =
-    DA.coefficient_isone(ForwardDiff.value(c)) &&
-    all(DA.coefficient_iszero, ForwardDiff.partials(c))
+# ForwardDiff 1 preserves partials in zero/one predicates. Invertibility is
+# different: it requires a nonzero primal, including through nested Duals.
 DA.invertible_constant(c::ForwardDiff.Dual) =
     DA.invertible_constant(ForwardDiff.value(c))
 

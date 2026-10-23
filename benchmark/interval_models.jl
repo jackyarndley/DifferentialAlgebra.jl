@@ -2,9 +2,8 @@
 # julia --project=benchmark benchmark/interval_models.jl
 using DifferentialAlgebra, IntervalArithmetic, LinearAlgebra
 
-uncertainty_map(x) = exp(x[1] + x[2] / 2) * cos(x[3] - x[4]) + log(2 + x[5] * x[6])
-
 include("measurement.jl")
+include("support/interval_workload.jl")
 
 function report(; order = 3, table_bytes = 32 * 1024^2)
     box = fill(interval(Float64, -1 // 50, 1 // 50), 6)

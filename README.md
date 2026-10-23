@@ -3,74 +3,62 @@
 [![Tests](https://github.com/jackyarndley/DifferentialAlgebra.jl/actions/workflows/test.yml/badge.svg)](https://github.com/jackyarndley/DifferentialAlgebra.jl/actions/workflows/test.yml)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
 
-Multivariate Taylor polynomials in Julia for derivatives, polynomial maps and
-numerical integration. Coefficients are parameterized by a real scalar type;
-operations use that type's arithmetic and mathematical functions.
+Multivariate Taylor arithmetic for derivatives, local inverse maps, uncertainty
+propagation and numerical integration. Write a calculation with polynomial inputs
+to obtain its dependence on those inputs through a chosen total degree.
 
-## Installation
+## Install
 
-Requires Julia 1.12 or later. Install directly from GitHub:
+Requires Julia 1.12 or later:
 
 ```julia
 using Pkg
 Pkg.add(url = "https://github.com/jackyarndley/DifferentialAlgebra.jl")
 ```
 
-## Quick start
+## One calculation, many nearby inputs
 
 ```julia
 using DifferentialAlgebra
 
-x, y = variables((:x, :y); order = 6)
-p = sin(x) * exp(y)
+δx, δy = variables((:δx, :δy); order = 6)
+p = sin(1 + δx) * exp(δy)      # Expand around (x, y) = (1, 0)
 
-p([0.1, 0.2])                  # Evaluate the polynomial
-coefficient(p, [1, 1])          # Coefficient of x*y
-differentiate(p, 1)             # Partial derivative with respect to x
-constant_term(p)                # Value at the expansion point
+p([0.1, 0.2])                 # Predict the value at (1.1, 0.2)
+constant_term(gradient(p))      # Gradient at the expansion point
+constant_term(hessian(p))       # Hessian at the expansion point
+coefficient(p, [1, 1])         # Coefficient of δx*δy
 
-map = CompiledMap([p, x + y])   # Reuse the evaluation tree
-map([0.1, 0.2])
+map = CompiledMap([p, δx + δy])
+map([0.1, 0.2])                # Reuse a shared evaluation tree
 ```
 
-`variables(T, n; order)` selects a coefficient type. Creating a new algebra
-invalidates existing polynomials; see the [user guide](https://jackyarndley.github.io/DifferentialAlgebra.jl/manual/getting-started/).
+Coordinates are perturbations about the expansion point. Calling `variables`
+again creates a new algebra and invalidates its existing polynomials; compiled
+maps remain usable for numeric evaluation.
 
-`TaylorPolynomial{Float64}`, `TaylorPolynomial{BigFloat}` and other ordinary
-coefficient types use truncated DA arithmetic. Loading optional IntervalArithmetic
-also supports `TaylorPolynomial{Interval{T}}` through the same polynomial engine.
-Interval coefficients enclose supported coefficient arithmetic; discarded terms
-are still discarded. `TaylorModel` adds an absolute remainder and validity-domain
-normalization for validated function enclosures. See
-[intervals and Taylor models](docs/src/manual/interval-models.md), including the
-order-one `x*x` example.
+## Choose the calculation
 
-`adaptive_map` is the common construction and refinement interface. Ordinary
-estimators report heuristic errors; `estimator=IntervalBound()` uses rigorous
-interval error bounds. Both reevaluate the original callback on refined children
-and retain the requested order and selected estimator for subsequent refinement.
-See [domain splitting](docs/src/manual/domain-splitting.md) for both patterns.
-`adaptive_map` defaults to `order=5`, `atol=1e-8`, `splitter=:tail` for boxes.
-See the [migration note](docs/src/migration.md) for the former validated wrapper's defaults. The
-[interval fitting example](examples/interval_models.jl) plots enclosures,
-partitions, and accepted error bounds. `splitter=:oriented` adds 2D convex polygon
-ADS with automatic or supplied projection directions to all four error methods;
-see the [polygon fitting plots](examples/polygon_ads.jl). GuardedTail,
-ExtrapolatedTail, LastTerms and time solvers keep their heuristic contracts.
+| Need | Interface | Error contract |
+|:--|:--|:--|
+| Derivatives or a local map | `TaylorPolynomial`, `CompiledMap` | Truncated polynomial |
+| A larger input region | `adaptive_map` | Heuristic with `GuardedTail`, `ExtrapolatedTail` or `LastTerms` |
+| Original-function enclosures | `TaylorModel`, `IntervalBound` | Outward interval arithmetic plus an absolute remainder |
+| Smooth ADS for optimization | `continuous_map(...; continuity=:c2)` | Smooth surrogate; derivative accuracy requires separate checks |
+| ODE propagation | `taylor_expand`, SciML `TaylorMethod` | Independent time/uncertainty orders; numerical error estimate |
 
-For smooth optimization objectives, `continuous_map(f, fit; continuity=:c2)`
-optionally blends fresh overlapping fits with C0/C1/C2 continuity and supports
-ForwardDiff gradients/Hessians. Interval sources retain function certificates
-and report the new overlap error bounds. See the [continuity plots](examples/ads_continuity.jl),
-[oriented optimization example](examples/ads_optimization.jl) and
-[accuracy contract](docs/src/manual/continuous-ads.md).
+IntervalArithmetic, ForwardDiff and SciML integrations load only when requested.
+Interval coefficients alone do not bound discarded polynomial terms; use Taylor
+models when a function enclosure is required.
 
-Astrodynamics tutorials include [six-variable orbital-element uncertainty](examples/six_variable_ephemeris.jl),
-[J2 injection uncertainty and ground tracks](examples/j2_uncertainty.jl),
-[polygon ADS on an inclined orbital ribbon](examples/orbit_polygon_ads.jl), and
-[B-plane flyby uncertainty](examples/flyby_uncertainty.jl). Their plots distinguish
-static interval certificates from sampled clouds and numerical time integration.
+## Learn by solving a problem
 
-- [Documentation](https://jackyarndley.github.io/DifferentialAlgebra.jl/)
-- [Runnable examples](examples)
-- [Contributing](docs/src/contributing.md)
+- [Getting started](https://jackyarndley.github.io/DifferentialAlgebra.jl/manual/getting-started/)
+  and [API reference](https://jackyarndley.github.io/DifferentialAlgebra.jl/api/).
+- [Orbit maps and state transition matrices](examples/ode_integration.jl),
+  [six-variable uncertainty](examples/six_variable_ephemeris.jl), and
+  [angles-only orbit determination](examples/daiod.jl).
+- [Certified interval fitting](examples/interval_models.jl) and
+  [C2 surrogate optimization](examples/ads_optimization.jl).
+- [All executable tutorials](docs/src/examples.md),
+  [migration guide](docs/src/migration.md), and [contributing](docs/src/contributing.md).

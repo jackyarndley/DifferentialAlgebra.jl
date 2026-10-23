@@ -1,5 +1,11 @@
 # One construction lifecycle for static boxes/polygons and ordinary flows.
 # Geometry supplies domains and splits; local fitting supplies payloads and errors.
+#
+# Geometry adapters implement ads_root_node, ads_patch_domain, ads_fit,
+# ads_relative_width, ads_split, ads_patch_type, ads_finalize and ads_result.
+# BoxADS below is the ordinary-box implementation; polygon and interval files
+# extend the same functions. Only this driver owns queueing, resource limits,
+# domain-failure retries and convergence status.
 struct ADSCandidate{G, P, E, C, T}
     geometry::G
     payload::P
@@ -33,6 +39,10 @@ struct BoxADS{D, X}
     root::D
     variables::X
 end
+
+# The interval extension supplies source metadata when refitting a validated
+# domain in new coordinates. Exact geometry alone cannot carry decorations.
+ads_interval_domain(source) = nothing
 
 function ads_check_order(order, guard_order, estimator)
     1 <= order <= 65535 && 0 <= guard_order <= 65535 - order || throw(ArgumentError("Invalid expansion or guard order"))
@@ -300,7 +310,13 @@ end
 ads_leaf(::DomainNode{T}, patch) where {T} = DomainNode(0, zero(T), 0, 0, patch)
 ads_coordinate(x) = x
 ads_coordinate(x::AbstractIrrational) = BigFloat(x)
-ads_node_value(node::DomainNode, point) = ads_coordinate(point[node.axis])
+function ads_primal_coordinate(x)
+    primal = x isa Real ? coefficient_primal(x) : x
+    primal isa Union{Integer, Rational, AbstractFloat, AbstractIrrational} ||
+        throw(ArgumentError("Provide scalar physical coordinates; use enclose for intervals and load ForwardDiff for dual queries"))
+    return ads_coordinate(primal)
+end
+ads_node_value(node::DomainNode, point) = ads_primal_coordinate(point[node.axis])
 ads_query_bounds(node::DomainNode, query) = (query[1][node.axis], query[2][node.axis])
 ads_point_left(node, point) = ads_node_value(node, point) <= node.midpoint
 function ads_point_patch(nodes, point)

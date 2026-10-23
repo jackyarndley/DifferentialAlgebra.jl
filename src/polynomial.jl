@@ -68,6 +68,20 @@ end
     return ctx
 end
 
+# A polynomial map has one owning algebra, even when some entries are zero.
+function compatible(polynomials::AbstractArray{<:TaylorPolynomial})
+    ctx = valid(first(polynomials))
+    all(p -> valid(p) === ctx, polynomials) ||
+        throw(ArgumentError("Polynomials have different contexts"))
+    return ctx
+end
+
+# Missing stored coefficients are exact zeros. Callers validate the algebra once
+# before entering their coefficient loop; capacity beyond len is never read.
+@inline coefficient_at(a::TaylorPolynomial, k::Int) =
+    k <= a.len ? a.coeffs[k] : zero(coefficient_type(a))
+@inline coefficient_at(a::Real, k::Int) = k == 1 ? a : zero(a)
+
 """
     initialize!(order, n; names = nothing, table_bytes = 32 * 1024^2)
 
@@ -240,6 +254,7 @@ nvariables(p::TaylorPolynomial) = valid(p).basis.variables
 
 # Narrow scalar hooks for optional coefficient types. Ordinary real kernels
 # inline to their original operations; extensions must preserve scalar metadata.
+@inline coefficient_primal(c::Real) = c
 @inline coefficient_iszero(c::Real) = iszero(c)
 @inline coefficient_isone(c::Real) = isone(c)
 @inline coefficient_isinteger(c::Real) = isinteger(c)
@@ -349,8 +364,7 @@ For a real scalar, return the scalar itself.
 """
 @inline constant_term(a::TaylorPolynomial) = (valid(a); @inbounds a.coeffs[1])
 constant_term(a::Real) = a
-constant_term(a::AbstractArray{<:TaylorPolynomial}) = constant_term.(a)
-constant_term(a::AbstractArray{<:Real}) = a
+constant_term(a::AbstractArray{<:Real}) = constant_term.(a)
 """
     linear_part(p)
     linear_part(map)
@@ -368,10 +382,12 @@ function linear_part(a::TaylorPolynomial{T}) where {T}
 end
 function linear_part(v::AbstractVector{<:TaylorPolynomial})
     T = isempty(v) ? Float64 : mapreduce(coefficient_type, promote_type, v)
-    n = isempty(v) ? nvariables() : nvariables(first(v))
+    n = isempty(v) ? nvariables() : compatible(v).basis.variables
     result = zeros(T, length(v), n)
     for (i, p) in enumerate(v)
-        result[i, :] = linear_part(p)
+        for j in 1:n
+            result[i, j] = coefficient_at(p, j + 1)
+        end
     end
     return result
 end

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   test:
-    name: Julia latest / Linux
+    name: Julia 1 / Linux
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -39,66 +39,12 @@ jobs:
         env:
           JULIA_NUM_THREADS: '4'
 
-  quality:
-    name: Aqua / Julia latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1'
-      - uses: julia-actions/cache@v2
       - name: Check package and extension hygiene
-        shell: julia --startup-file=no --project=test {0}
+        shell: julia --startup-file=no --project=test --check-bounds=yes --compile=min -O0 {0}
         run: |
-          using Pkg
-          Pkg.instantiate()
           include(joinpath(pwd(), "test", "quality.jl"))
-
-  format:
-    name: Runic
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1'
-      - uses: julia-actions/cache@v2
-      - uses: fredrikekre/runic-action@v1
+      - name: Check formatting
+        uses: fredrikekre/runic-action@v1
         with:
           version: '1.11.1'
           docstrings: 'true'
-
-  forwarddiff-010:
-    name: ForwardDiff 0.10 / Julia latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1'
-      - uses: julia-actions/cache@v2
-      - name: Test standalone ForwardDiff integration
-        shell: julia --color=yes --startup-file=no --check-bounds=yes {0}
-        env:
-          JULIA_NUM_THREADS: '4'
-          JULIA_PKG_PRECOMPILE_AUTO: '0'
-        run: |
-          using Pkg
-          checkout = pwd()
-          Pkg.activate(mktempdir())
-          Pkg.develop(path = checkout)
-          Pkg.add([
-              PackageSpec(name = "ForwardDiff", version = "0.10.36"),
-              PackageSpec(name = "LinearAlgebra"), PackageSpec(name = "Test"),
-              PackageSpec(name = "SafeTestsets"),
-          ])
-          Pkg.add(PackageSpec(name = "GenericLinearAlgebra"))
-          using SafeTestsets: @safetestset
-          include(joinpath(pwd(), "test", "support", "fixtures.jl"))
-          @safetestset "ForwardDiff integration" begin
-              include(joinpath(pwd(), "test", "interop.jl"))
-          end

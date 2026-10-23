@@ -3,6 +3,7 @@
 using DifferentialAlgebra, IntervalArithmetic
 
 include("measurement.jl")
+include("support/interval_workload.jl")
 
 function report_ads(label, build, point)
     fit = build()
@@ -49,20 +50,19 @@ for budget in (0, 32 * 1024^2)
             [0.125, -0.25]
         )
     end
-    nonlinear(v) = exp(v[1] + v[2] / 2) * cos(v[3] - v[4]) + log(2 + v[5] * v[6])
-    multi(v) = (m = nonlinear(v); [m + k * v[1] for k in 1:8])
+    multi(v) = (m = uncertainty_map(v); [m + k * v[1] for k in 1:8])
     box = fill(interval(Float64, -1 // 50, 1 // 50), 6)
     report_ads(
         "six-variable ordinary",
         () -> adaptive_map(
-            nonlinear, fill(-0.02, 6), fill(0.02, 6);
+            uncertainty_map, fill(-0.02, 6), fill(0.02, 6);
             order = 3, atol = 1.0e-6, table_bytes = budget
         ), zeros(6)
     )
     report_ads(
         "six-variable",
         () -> adaptive_map(
-            nonlinear, box; estimator = IntervalBound(),
+            uncertainty_map, box; estimator = IntervalBound(),
             order = 3, atol = 1.0e-6, table_bytes = budget
         ), zeros(6)
     )

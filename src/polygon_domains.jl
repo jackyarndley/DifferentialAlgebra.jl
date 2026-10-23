@@ -58,7 +58,11 @@ struct ConvexPolygon{T <: AbstractFloat}
 end
 function ConvexPolygon(vertices)
     vertices isa Union{Tuple, AbstractVector} && length(vertices) >= 3 || throw(ArgumentError("Supply at least three ordered polygon vertices"))
-    all(v -> v isa Union{Tuple, AbstractVector} && length(v) == 2, vertices) || throw(DimensionMismatch("Polygon vertices require two coordinates"))
+    vertices isa AbstractVector && Base.require_one_based_indexing(vertices)
+    for point in vertices
+        point isa Union{Tuple, AbstractVector} && length(point) == 2 || throw(DimensionMismatch("Polygon vertices require two coordinates"))
+        point isa AbstractVector && Base.require_one_based_indexing(point)
+    end
     v = Tuple((polygon_real(p[1]), polygon_real(p[2])) for p in vertices)
     T = mapreduce(x -> typeof(float(x)), promote_type, Iterators.flatten(vertices))
     T <: AbstractFloat && isconcretetype(T) || throw(ArgumentError("Unsupported polygon coordinate type"))
@@ -87,12 +91,20 @@ Base.deepcopy_internal(p::ConvexPolygon, copies::IdDict) = get!(() -> copy(p), c
 Base.show(io::IO, p::ConvexPolygon) = print(io, "ConvexPolygon(", length(p._vertices), " vertices)")
 polygon_contains(p::ConvexPolygon, x) = all(i -> polygon_cross(p._vertices[i], p._vertices[mod1(i + 1, length(p._vertices))], x) >= 0, eachindex(p._vertices))
 
+# Counterclockwise vertices define the closed interior by normal ⋅ point <= cut.
+# Filtering, clipping queries and direction probes share this exact orientation.
+function polygon_halfspace(p::ConvexPolygon, i)
+    vertices = p._vertices
+    a, b = vertices[i], vertices[mod1(i + 1, length(vertices))]
+    normal = (b[2] - a[2], a[1] - b[1])
+    return normal, normal[1] * a[1] + normal[2] * a[2]
+end
+
 function polygon_filter(p::ConvexPolygon)
     planes = Matrix{PolygonReal}(undef, length(p._vertices), 3)
     for i in eachindex(p._vertices)
-        a, b = p._vertices[i], p._vertices[mod1(i + 1, length(p._vertices))]
-        dx, dy = b[1] - a[1], b[2] - a[2]
-        planes[i, :] .= (dy, -dx, dy * a[1] - dx * a[2])
+        normal, cut = polygon_halfspace(p, i)
+        planes[i, :] .= (normal[1], normal[2], cut)
     end
     return ads_float_bounds(planes)
 end
@@ -142,20 +154,9 @@ function polygon_clip(p::ConvexPolygon{T}, normal, cut) where {T}
     length(result) >= 3 && polygon_signed_area(result) > 0 || return nothing
     return ConvexPolygon{T}(result, Val(:owned))
 end
-function polygon_intersection(a::ConvexPolygon, b::ConvexPolygon)
-    result = a
-    v = b._vertices
-    for i in eachindex(v)
-        x, y = v[i], v[mod1(i + 1, length(v))]
-        normal = (y[2] - x[2], x[1] - y[1])
-        result = polygon_clip(result, normal, normal[1] * x[1] + normal[2] * x[2])
-        result === nothing && return nothing
-    end
-    return result
-end
-
 function polygon_frame(directions)
     directions isa AbstractMatrix && size(directions) == (2, 2) || throw(DimensionMismatch("directions must be a 2x2 matrix of projection rows"))
+    Base.require_one_based_indexing(directions)
     B = polygon_real.(directions)
     determinant = B[1, 1] * B[2, 2] - B[1, 2] * B[2, 1]
     iszero(determinant) && throw(ArgumentError("Splitting directions must be linearly independent"))

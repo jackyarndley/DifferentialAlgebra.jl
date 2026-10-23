@@ -35,9 +35,7 @@ function checked_interval(x::Interval; guaranteed::Bool = false)
 end
 const SupportedScalar = Union{Integer, Rational, AbstractFloat, AbstractIrrational}
 # Explicit interval conversion preserves decorations and guarantee flags.
-asinterval(::Type{Interval{T}}, x::Interval) where {T <: IA.NumTypes} =
-    IA.interval(T, x)
-asinterval(::Type{Interval{T}}, x::SupportedScalar) where {T <: IA.NumTypes} =
+asinterval(::Type{Interval{T}}, x::Union{Interval, SupportedScalar}) where {T <: IA.NumTypes} =
     IA.interval(T, x)
 asinterval(::Type{Interval{T}}, x::IA.ExactReal) where {T <: IA.NumTypes} =
     asinterval(Interval{T}, x.value)

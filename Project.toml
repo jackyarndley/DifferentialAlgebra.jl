@@ -26,7 +26,7 @@ DifferentialAlgebraOrdinaryDiffEqExt = ["DiffEqBase", "OrdinaryDiffEqCore"]
 # Validated metadata/rounding hooks are checked against the IA 1.0 API.
 IntervalArithmetic = "~1.0.12"
 DiffEqBase = "7.21.2"
-ForwardDiff = "0.10.36, 1"
+ForwardDiff = "1"
 LinearAlgebra = "1"
 OrdinaryDiffEqCore = "4.18"
 PrecompileTools = "1"

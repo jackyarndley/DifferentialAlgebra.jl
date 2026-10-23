@@ -4,8 +4,8 @@
 CurrentModule = DifferentialAlgebra
 ```
 
-A standard Julia vector of polynomials represents a map. Use ordinary arrays
-and Julia broadcasting for elementwise operations, such as `sin.(f)` and `f .^ 2`.
+A vector of polynomials is a map. Ordinary Julia arrays, broadcasting and linear
+algebra apply; no map-specific container is needed for arithmetic.
 
 ## Evaluation and composition
 
@@ -13,89 +13,71 @@ and Julia broadcasting for elementwise operations, such as `sin.(f)` and `f .^ 2
 using DifferentialAlgebra
 x, y = variables(2; order=5)
 f = [x + y^2, y]
-evaluate(f, [0.1, 0.2])
+(numeric = evaluate(f, [0.1, 0.2]), composed = evaluate(f, [x+y, y]))
 ```
 
-Numeric coordinates evaluate the map. Polynomial coordinates compose it:
-
-```@example maps
-evaluate(f, [x + y, y])
-```
-
-Missing coordinates are treated as zero; extra coordinates are ignored. Supply
-one coordinate per independent variable when evaluating a complete state.
-Single-polynomial numeric evaluation visits its stored nonzero terms directly.
-It preserves their degrees even under a lower working order and does not
-recompile or filter the polynomial.
+Numeric coordinates evaluate; polynomial coordinates compose. Missing coordinates
+are zero and extra coordinates are ignored, so normally supply exactly one per
+variable. Numeric evaluation preserves every stored degree, even under a lower
+working order. Polynomial composition follows the current arithmetic policy.
 
 ## Compile repeated evaluations
 
-[`CompiledMap`](@ref) stores a shared evaluation tree for repeated use.
+[`CompiledMap`](@ref) owns coefficients and a shared evaluation tree:
 
 ```@example maps
 map = CompiledMap(f)
 map([0.1, 0.2])
 ```
 
-For repeated evaluations into existing buffers, use [`evaluate!`](@ref):
+Reuse output and workspace buffers with [`evaluate!`](@ref):
 
 ```@example maps
 point = [0.1, 0.2]
-result = zeros(2)
-work = zeros(DifferentialAlgebra.degree(map) + 1)
+result = zeros(noutputs(map))
+work = zeros(degree(map) + 1)
 evaluate!(result, map, point, work)
 ```
 
-The inputs, output and workspace must not overlap. Allocation behavior also
-depends on the scalar coefficient arithmetic.
+For this four-argument method, inputs, output and workspace must not overlap.
+Scalar types with allocating arithmetic may still allocate. Numeric compiled
+evaluation survives algebra
+reinitialization; polynomial composition requires the original algebra.
 
 ## Invert a map
 
 ```@example maps
 inverse = invert(f)
 residual = evaluate(f, inverse) .- [x, y]
-maximum(DifferentialAlgebra.coefficient_norm, residual)
+maximum(coefficient_norm, residual)
 ```
 
-This residual uses the current arithmetic order and coefficient tolerance.
-See [Compare polynomials](getting-started.md#Compare-polynomials) for inspecting
-stored coefficients without filtering their difference.
+The linear part must be nonsingular. The local inverse includes the original
+map's constant shift, so its arguments are output coordinates. A zero-constant
+map composes with its inverse to give the identity through the working order.
+The residual above uses that order and coefficient tolerance; see
+[Compare polynomials](getting-started.md#Compare-polynomials).
 
-The linear part must be nonsingular. The inverse is constructed locally about
-the input origin and includes the shift by the map's constant value, so its
-arguments are output coordinates. For a zero-constant map, composition gives
-the identity through the configured order. See the
-[inversion example](../generated/inverse_maps.md).
+Use an augmented square map to solve implicit equations: retain the uncertain
+parameters as outputs and invert the equation residual alongside them. The
+[Kepler tutorial](../generated/implicit_maps.md) checks this against scalar roots
+and analytical sensitivities; [DAIOD](../generated/daiod.md) applies it to noisy
+angles and an implicitly determined orbit.
 
-The [DAIOD tutorial](../generated/daiod.md) uses an augmented inverse map to
-express an implicitly determined orbit in terms of uncertain measured angles.
-It then computes polynomial moments and uses the map in a measurement update.
-
-## Linear algebra
-
-Use matrix literals, multiplication, solves, and the standard `LinearAlgebra`
-functions with polynomial entries:
+## Linear algebra and calculus
 
 ```@example maps
 using LinearAlgebra
-A = [2 + x y; y 4 - x]
-det(A)
+A = [2+x y; y 4-x]
+(determinant = det(A), solution = A \ f, jacobian = jacobian(f))
 ```
 
-Use dots for elementwise operations:
+`A*f` is matrix multiplication; `A.*A` and `sin.(f)` are elementwise.
+Calculus methods accept arrays and views, preserving shape. `normalize(f)` and
+`normalize!(f)` require a nonzero constant norm.
 
-```@example maps
-sin.(f)
-```
-
-The calculus functions also accept arrays and views. For example,
-`differentiate(A, 1)` differentiates each entry while preserving the matrix shape.
-`A * f` is matrix multiplication; `A .* A` multiplies entries elementwise.
-`normalize(f)` and `normalize!(f)` use the polynomial norm; its constant part
-must be nonzero for the reciprocal to have a Taylor expansion.
-
-`jacobian(f)` gives polynomial partial derivatives. Standard Julia matrix
-operations apply to arrays of `TaylorPolynomial` values. `DifferentialAlgebra.eigenpairs(A)`
-computes Taylor eigenpairs for symmetric matrices with distinct constant
-eigenvalues; constant and diagonal matrices are also supported. Other repeated
-eigenvalues do not generally define a unique Taylor eigenbasis.
+`DifferentialAlgebra.eigenpairs(A)` computes Taylor eigenpairs of symmetric
+matrices with distinct constant eigenvalues. Constant and diagonal matrices are
+also supported; other repeated eigenvalues generally lack a unique Taylor
+basis. The [linear algebra tutorial](../generated/linear_algebra.md) compares
+polynomial solves with numerical solves and their conditioning.

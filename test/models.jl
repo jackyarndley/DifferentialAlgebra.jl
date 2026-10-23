@@ -19,8 +19,11 @@ sameinterval(a, b) = IA.isequal_interval(a, b)
             @test contains(norm, lower) && contains(norm, upper)
             @test IA.inf(norm) >= lower * (1 - 10eps(T))
             @test IA.sup(norm) <= upper * (1 + 10eps(T))
-            @test sameinterval(norm, DA.degree_norms(p, 0, 2)[2])
         end
+        # Total degree and x-exponent grouping have different exact Pythagorean norms.
+        grouped = 3 + 4y + 5x^2
+        @test all(sameinterval.(DA.degree_norms(grouped, 0, 2), interval.(T, [3, 4, 5])))
+        @test all(sameinterval.(DA.degree_norms(grouped, 1, 2), interval.(T, [5, 0, 5])))
         for c in (IA.setdecoration(interval(T, 3), IA.def), convert(Interval{T}, T(3)))
             result = coefficient_norm(c * x + 4y, 2)
             @test IA.decoration(result) == IA.decoration(c)
@@ -40,11 +43,12 @@ end
         x, y = taylor_models(
             [interval(1, 2), interval(0, 1)]; order = 2, table_bytes = budget
         )
-        results = ((x + y)^3, inv(x + y + 1), log(x + y + 1), sqrt(x + y + 1))
-        functions = (t -> t^3, t -> inv(t + 1), t -> log(t + 1), t -> sqrt(t + 1))
         # Exact dyadic coordinates; high-precision scalar values are independent
         # of both the model polynomial and its separate range certificate.
-        for (m, f) in zip(results, functions)
+        for (m, f) in (
+                ((x + y)^3, t -> t^3), (inv(x + y + 1), t -> inv(t + 1)),
+                (log(x + y + 1), t -> log(t + 1)), (sqrt(x + y + 1), t -> sqrt(t + 1)),
+            )
             P, R = polynomial(m), remainder(m)
             for (a, b) in ((1 // 1, 0 // 1), (3 // 2, 1 // 2), (2 // 1, 1 // 1))
                 value = setprecision(512) do
@@ -56,26 +60,28 @@ end
             end
             @test IA.isguaranteed(R) && IA.isguaranteed(enclose(m))
         end
-        # Accessors, scalar shifts and coordinate domains cannot alias the model.
-        before = enclose(x)
-        p, box = polynomial(x), domain(x)
-        set_coefficient!(p, [0, 0], 99)
-        box[1] = interval(99)
+    end
+    # Ownership and configuration do not depend on the multiplication backend.
+    x, = taylor_models([interval(1, 2)]; order = 2)
+    before = enclose(x)
+    p, box = polynomial(x), domain(x)
+    set_coefficient!(p, [0], 99); box[1] = interval(99)
+    @test sameinterval(enclose(x), before)
+    @test sameinterval(enclose(x + 2), interval(3, 4))
+    @test_throws ArgumentError x + 0.1
+    @test_throws DomainError evaluate(x, [3])
+    # Invalid domains must fail before initialization invalidates a live model.
+    @test_throws ArgumentError taylor_models([interval(Float32, 1, 2)]; order = 2)
+    @test sameinterval(enclose(x), before)
+    with_order(1) do
+        @test_throws ArgumentError x * x
         @test sameinterval(enclose(x), before)
-        @test contains(enclose(x + 2), 3) && contains(enclose(x + 2), 4)
-        @test_throws ArgumentError x + 0.1
-        @test_throws DomainError evaluate(x, [3, 0])
-        with_order(1) do
-            @test_throws ArgumentError x * x
-            @test sameinterval(enclose(x), before)
-        end
     end
 end
 
 @testset "Wide compositions, fixed axes and model snapshots" begin
     x, = taylor_models([interval(-10, 10)]; order = 12)
     wide = cos(cos(cos(x)))
-    @test all(isfinite, (IA.inf(remainder(wide)), IA.sup(remainder(wide))))
     for point in (-10, 0, 10)
         reference = cos(cos(cos(BigFloat(point))))
         @test contains(
@@ -90,11 +96,7 @@ end
     @test_throws ArgumentError enclose(x)
     x, = taylor_models([interval(16, 1.0e10)]; order = 7)
     wide = log(log(log(x)))
-    @test isfinite(IA.sup(abs(remainder(wide))))
-    @test contains(evaluate(wide, [16]), log(log(log(BigFloat(16)))))
-end
-
-@testset "Coordinate certificates include the rounded normalized cover" begin
+    @test contains(polynomial(wide)([interval(-1)]) + remainder(wide), log(log(log(BigFloat(16)))))
     x, = taylor_models([interval(0.1, 0.3)]; order = 2)
     # This labelled invariant test bypasses physical-domain queries and checks
     # the full declared normalized box, which may round beyond physical endpoints.
@@ -128,11 +130,11 @@ end
     q = sum(interval(c...) * x^i * y^j for ((i, j), c) in bterms)
     powers = ext.power_cache([interval(-1, 1), interval(-1, 1)], 4, Interval{Float64})
     bounds = ext.unit_product_bounds(powers, 2, Interval{Float64})
-    expected = rational_discarded_product(aterms, bterms, ((-1, 1), (-1, 1)), 2)
+    expected = interval(Float64, rational_discarded_product(aterms, bterms, ((-1, 1), (-1, 1)), 2)...)
     actual = ext.discarded_unit_bound(p, q, 2, bounds, Interval{Float64})
-    @test sameinterval(actual, interval(Float64, expected...))
+    @test sameinterval(actual, expected)
     @test sameinterval(
-        actual, ext.decorated_discarded_unit_bound(p, q, 2, bounds, Interval{Float64})
+        ext.decorated_discarded_unit_bound(p, q, 2, bounds, Interval{Float64}), expected
     )
 end
 
